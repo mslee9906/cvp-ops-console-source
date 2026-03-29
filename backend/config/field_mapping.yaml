@@ -1,0 +1,8 @@
+bgp:
+  asn_field: asNumber
+  asn_value_field: value
+  router_id_field: routerId
+  shutdown_field: shutdown
+
+vrf:
+  name_field: name

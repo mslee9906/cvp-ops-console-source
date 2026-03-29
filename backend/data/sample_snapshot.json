@@ -1,0 +1,258 @@
+{
+  "devices": [
+    {
+      "device_id": "E325173ED3D9ABABBFCD20856759470C",
+      "hostname": "DC1-LEAF-01A",
+      "serial": "E325173ED3D9ABABBFCD20856759470C",
+      "mgmt_ip": "172.20.10.11",
+      "model": "DCS-7280SR3",
+      "site": "DC1",
+      "tags": ["leaf", "fabric"],
+      "last_collected_at": "2026-03-29T19:20:00+09:00"
+    },
+    {
+      "device_id": "A125173ED3D9ABABBFCD20856759470D",
+      "hostname": "DC1-LEAF-01B",
+      "serial": "A125173ED3D9ABABBFCD20856759470D",
+      "mgmt_ip": "172.20.10.12",
+      "model": "DCS-7280SR3",
+      "site": "DC1",
+      "tags": ["leaf", "fabric"],
+      "last_collected_at": "2026-03-29T19:20:00+09:00"
+    },
+    {
+      "device_id": "B225173ED3D9ABABBFCD20856759470E",
+      "hostname": "DC1-SPINE-01",
+      "serial": "B225173ED3D9ABABBFCD20856759470E",
+      "mgmt_ip": "172.20.20.21",
+      "model": "DCS-7808R3",
+      "site": "DC1",
+      "tags": ["spine", "core"],
+      "last_collected_at": "2026-03-29T19:20:00+09:00"
+    },
+    {
+      "device_id": "C325173ED3D9ABABBFCD20856759470F",
+      "hostname": "DC2-BORDER-01",
+      "serial": "C325173ED3D9ABABBFCD20856759470F",
+      "mgmt_ip": "172.30.10.41",
+      "model": "DCS-7280CR3",
+      "site": "DC2",
+      "tags": ["border", "edge"],
+      "last_collected_at": "2026-03-29T19:20:00+09:00"
+    }
+  ],
+  "bgp": [
+    {
+      "device_id": "B225173ED3D9ABABBFCD20856759470E",
+      "hostname": "DC1-SPINE-01",
+      "vrf": "default",
+      "asn": "65001",
+      "router_id": "10.0.0.11",
+      "shutdown": false,
+      "source_path": "/Devices/B225173ED3D9ABABBFCD20856759470E/versioned-data/routing/bgp/config/vrf/default"
+    },
+    {
+      "device_id": "E325173ED3D9ABABBFCD20856759470C",
+      "hostname": "DC1-LEAF-01A",
+      "vrf": "default",
+      "asn": "65101",
+      "router_id": "10.0.1.21",
+      "shutdown": false,
+      "source_path": "/Devices/E325173ED3D9ABABBFCD20856759470C/versioned-data/routing/bgp/config/vrf/default"
+    },
+    {
+      "device_id": "C325173ED3D9ABABBFCD20856759470F",
+      "hostname": "DC2-BORDER-01",
+      "vrf": "Tenant_A",
+      "asn": "65200",
+      "router_id": "10.2.255.1",
+      "shutdown": false,
+      "source_path": "/Devices/C325173ED3D9ABABBFCD20856759470F/versioned-data/routing/bgp/config/vrf/Tenant_A"
+    }
+  ],
+  "vrfs": [
+    {
+      "device_id": "E325173ED3D9ABABBFCD20856759470C",
+      "hostname": "DC1-LEAF-01A",
+      "vrf_name": "default",
+      "vrf_id": "0"
+    },
+    {
+      "device_id": "E325173ED3D9ABABBFCD20856759470C",
+      "hostname": "DC1-LEAF-01A",
+      "vrf_name": "MGMT",
+      "vrf_id": "1"
+    },
+    {
+      "device_id": "C325173ED3D9ABABBFCD20856759470F",
+      "hostname": "DC2-BORDER-01",
+      "vrf_name": "Tenant_A",
+      "vrf_id": "100"
+    }
+  ],
+  "vlans": [
+    {
+      "device_id": "E325173ED3D9ABABBFCD20856759470C",
+      "hostname": "DC1-LEAF-01A",
+      "vlan_id": "100",
+      "vlan_name": "WEB_MGMT",
+      "svi_name": "Vlan100",
+      "description": "Web Server Network",
+      "source_path": "/Sysdb/bridging/config/vlanConfig"
+    },
+    {
+      "device_id": "A125173ED3D9ABABBFCD20856759470D",
+      "hostname": "DC1-LEAF-01B",
+      "vlan_id": "100",
+      "vlan_name": "WEB_MGMT",
+      "svi_name": "Vlan100",
+      "description": "Web Server Network",
+      "source_path": "/Sysdb/bridging/config/vlanConfig"
+    },
+    {
+      "device_id": "C325173ED3D9ABABBFCD20856759470F",
+      "hostname": "DC2-BORDER-01",
+      "vlan_id": "310",
+      "vlan_name": "DMZ_OUT",
+      "svi_name": "Vlan310",
+      "description": "External DMZ",
+      "source_path": "/Sysdb/bridging/config/vlanConfig"
+    }
+  ],
+  "ip_records": [
+    {
+      "device_id": "E325173ED3D9ABABBFCD20856759470C",
+      "hostname": "DC1-LEAF-01A",
+      "interface_name": "Management1",
+      "ip": "172.20.10.11/24",
+      "address": "172.20.10.11",
+      "prefix_length": 24,
+      "network": "172.20.10.0/24",
+      "vrf": "MGMT",
+      "ip_kind": "mgmt",
+      "source": "config"
+    },
+    {
+      "device_id": "E325173ED3D9ABABBFCD20856759470C",
+      "hostname": "DC1-LEAF-01A",
+      "interface_name": "Loopback0",
+      "ip": "10.0.1.21/32",
+      "address": "10.0.1.21",
+      "prefix_length": 32,
+      "network": "10.0.1.21/32",
+      "vrf": "default",
+      "ip_kind": "loopback",
+      "source": "config"
+    },
+    {
+      "device_id": "E325173ED3D9ABABBFCD20856759470C",
+      "hostname": "DC1-LEAF-01A",
+      "interface_name": "Vlan100",
+      "ip": "10.10.100.1/24",
+      "address": "10.10.100.1",
+      "prefix_length": 24,
+      "network": "10.10.100.0/24",
+      "vrf": "default",
+      "ip_kind": "svi",
+      "source": "config"
+    },
+    {
+      "device_id": "A125173ED3D9ABABBFCD20856759470D",
+      "hostname": "DC1-LEAF-01B",
+      "interface_name": "Management1",
+      "ip": "172.20.10.12/24",
+      "address": "172.20.10.12",
+      "prefix_length": 24,
+      "network": "172.20.10.0/24",
+      "vrf": "MGMT",
+      "ip_kind": "mgmt",
+      "source": "config"
+    },
+    {
+      "device_id": "A125173ED3D9ABABBFCD20856759470D",
+      "hostname": "DC1-LEAF-01B",
+      "interface_name": "Loopback0",
+      "ip": "10.0.1.22/32",
+      "address": "10.0.1.22",
+      "prefix_length": 32,
+      "network": "10.0.1.22/32",
+      "vrf": "default",
+      "ip_kind": "loopback",
+      "source": "config"
+    },
+    {
+      "device_id": "A125173ED3D9ABABBFCD20856759470D",
+      "hostname": "DC1-LEAF-01B",
+      "interface_name": "Vlan100",
+      "ip": "10.10.100.2/24",
+      "address": "10.10.100.2",
+      "prefix_length": 24,
+      "network": "10.10.100.0/24",
+      "vrf": "default",
+      "ip_kind": "svi",
+      "source": "config"
+    },
+    {
+      "device_id": "C325173ED3D9ABABBFCD20856759470F",
+      "hostname": "DC2-BORDER-01",
+      "interface_name": "Management1",
+      "ip": "172.30.10.41/24",
+      "address": "172.30.10.41",
+      "prefix_length": 24,
+      "network": "172.30.10.0/24",
+      "vrf": "MGMT",
+      "ip_kind": "mgmt",
+      "source": "config"
+    },
+    {
+      "device_id": "C325173ED3D9ABABBFCD20856759470F",
+      "hostname": "DC2-BORDER-01",
+      "interface_name": "Loopback0",
+      "ip": "10.2.255.1/32",
+      "address": "10.2.255.1",
+      "prefix_length": 32,
+      "network": "10.2.255.1/32",
+      "vrf": "default",
+      "ip_kind": "loopback",
+      "source": "config"
+    },
+    {
+      "device_id": "C325173ED3D9ABABBFCD20856759470F",
+      "hostname": "DC2-BORDER-01",
+      "interface_name": "Vlan310",
+      "ip": "10.31.0.1/24",
+      "address": "10.31.0.1",
+      "prefix_length": 24,
+      "network": "10.31.0.0/24",
+      "vrf": "Tenant_A",
+      "ip_kind": "svi",
+      "source": "config"
+    }
+  ],
+  "configs": [
+    {
+      "device_id": "E325173ED3D9ABABBFCD20856759470C",
+      "hostname": "DC1-LEAF-01A",
+      "collected_at": "2026-03-29T19:20:00+09:00",
+      "config_text": "!\nhostname DC1-LEAF-01A\n!\nvrf instance MGMT\n!\ninterface Management1\n   vrf forwarding MGMT\n   ip address 172.20.10.11/24\n!\ninterface Loopback0\n   ip address 10.0.1.21/32\n!\ninterface Vlan100\n   description Web Server Network\n   ip address 10.10.100.1/24\n!\nrouter bgp 65101\n   router-id 10.0.1.21\n!\n"
+    },
+    {
+      "device_id": "A125173ED3D9ABABBFCD20856759470D",
+      "hostname": "DC1-LEAF-01B",
+      "collected_at": "2026-03-29T19:20:00+09:00",
+      "config_text": "!\nhostname DC1-LEAF-01B\n!\nvrf instance MGMT\n!\ninterface Management1\n   vrf forwarding MGMT\n   ip address 172.20.10.12/24\n!\ninterface Loopback0\n   ip address 10.0.1.22/32\n!\ninterface Vlan100\n   description Web Server Network\n   ip address 10.10.100.2/24\n!\nrouter bgp 65102\n   router-id 10.0.1.22\n!\n"
+    },
+    {
+      "device_id": "B225173ED3D9ABABBFCD20856759470E",
+      "hostname": "DC1-SPINE-01",
+      "collected_at": "2026-03-29T19:20:00+09:00",
+      "config_text": "!\nhostname DC1-SPINE-01\n!\ninterface Management1\n   vrf forwarding MGMT\n   ip address 172.20.20.21/24\n!\ninterface Loopback0\n   ip address 10.0.0.11/32\n!\nrouter bgp 65001\n   router-id 10.0.0.11\n!\n"
+    },
+    {
+      "device_id": "C325173ED3D9ABABBFCD20856759470F",
+      "hostname": "DC2-BORDER-01",
+      "collected_at": "2026-03-29T19:20:00+09:00",
+      "config_text": "!\nhostname DC2-BORDER-01\n!\nvrf instance MGMT\nvrf instance Tenant_A\n!\ninterface Management1\n   vrf forwarding MGMT\n   ip address 172.30.10.41/24\n!\ninterface Loopback0\n   ip address 10.2.255.1/32\n!\ninterface Vlan310\n   description External DMZ\n   vrf forwarding Tenant_A\n   ip address 10.31.0.1/24\n!\nrouter bgp 65200\n   router-id 10.2.255.1\n   vrf Tenant_A\n      rd 65200:310\n!\n"
+    }
+  ]
+}

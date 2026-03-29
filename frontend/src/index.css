@@ -1,0 +1,48 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap');
+
+:root {
+  font-family: 'Space Grotesk', 'Noto Sans KR', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: #11272b;
+  background:
+    radial-gradient(circle at top left, rgba(93, 224, 196, 0.18), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(255, 181, 103, 0.16), transparent 24%),
+    #eef3ef;
+
+  --ink-950: #11272b;
+  --ink-900: #18363c;
+  --ink-700: #43626a;
+  --ink-600: #5c757b;
+  --ink-500: #71878c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}

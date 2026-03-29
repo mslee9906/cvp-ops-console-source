@@ -1,0 +1,42 @@
+devices:
+  dataset: analytics
+  path_elements:
+    - DatasetInfo
+    - Devices
+
+vrf:
+  path_elements:
+    - Smash
+    - vrf
+    - vrfIdMapStatus
+    - vrfIdToName
+
+bgp:
+  dataset: analytics
+  device_root: Devices
+  path_suffix:
+    - versioned-data
+    - routing
+    - bgp
+    - config
+    - vrf
+
+config:
+  path_elements:
+    - Config
+    - running
+    - lines
+
+vlan:
+  config_path:
+    - Sysdb
+    - bridging
+    - config
+    - vlanConfig
+  svi_path:
+    - Sysdb
+    - interface
+    - config
+    - eth
+    - vlan
+    - intfConfig
