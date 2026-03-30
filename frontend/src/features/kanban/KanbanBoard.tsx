@@ -8,6 +8,17 @@ import { AutoGrowTextarea } from './AutoGrowTextarea'
 import { KanbanCardModal } from './KanbanCardModal'
 import './kanban.css'
 
+type DetailStepKey =
+  | 'basic'
+  | 'target'
+  | 'checklist'
+  | 'planned_config'
+  | 'snapshot'
+  | 'diff'
+  | 'validation'
+  | 'history'
+  | 'cvp_match'
+
 const COLUMN_META: Array<{ key: KanbanColumnKey; label: string; tone: string }> = [
   { key: 'blocked', label: '보류', tone: 'rose' },
   { key: 'planned', label: '작업 예정', tone: 'blue' },
@@ -15,6 +26,18 @@ const COLUMN_META: Array<{ key: KanbanColumnKey; label: string; tone: string }> 
   { key: 'in_progress', label: '작업 중', tone: 'amber' },
   { key: 'verifying', label: '검증 중', tone: 'blue' },
   { key: 'done', label: '완료', tone: 'teal' },
+]
+
+const DETAIL_STEP_META: Array<{ key: DetailStepKey; label: string; body: string; implemented: boolean }> = [
+  { key: 'basic', label: '기본 정보', body: '카드의 제목, 담당자, 상태, 유형, 설명을 정리합니다.', implemented: true },
+  { key: 'target', label: '작업 대상', body: '기존 장비 선택과 신규 장비 입력이 들어갈 단계입니다.', implemented: false },
+  { key: 'checklist', label: '체크리스트', body: '작업 체크리스트를 관리하고 진행률을 반영합니다.', implemented: true },
+  { key: 'planned_config', label: '예정 Config', body: '적용 예정 config를 정리하는 단계입니다.', implemented: false },
+  { key: 'snapshot', label: 'Snapshot', body: '현재 snapshot과 기준 상태를 확인하는 단계입니다.', implemented: false },
+  { key: 'diff', label: 'Diff', body: '예정 config와 현재 상태의 차이를 검토하는 단계입니다.', implemented: false },
+  { key: 'validation', label: '자동 검증', body: '중복, 충돌, 누락을 자동으로 확인하는 단계입니다.', implemented: false },
+  { key: 'history', label: '이력', body: '작업 변경 이력과 로그를 확인하는 단계입니다.', implemented: false },
+  { key: 'cvp_match', label: 'CVP 자동 매칭', body: '실제 CVP 장비와 연결하는 단계입니다.', implemented: false },
 ]
 
 const EMPTY_CARD_INPUT: KanbanCardInput = {
@@ -36,6 +59,7 @@ export function KanbanBoard() {
   const [editorCard, setEditorCard] = useState<KanbanCard | null>(null)
   const [selectedCardId, setSelectedCardId] = useState<number | null>(null)
   const [detailDraft, setDetailDraft] = useState<KanbanCardInput | null>(null)
+  const [activeDetailStep, setActiveDetailStep] = useState<DetailStepKey>('basic')
   const [dragCardId, setDragCardId] = useState<number | null>(null)
 
   const selectedCard = useMemo(
@@ -45,6 +69,10 @@ export function KanbanBoard() {
   const detailProgress = useMemo(
     () => calculateProgress(detailDraft?.checklist_items ?? selectedCard?.checklist_items ?? []),
     [detailDraft?.checklist_items, selectedCard?.checklist_items],
+  )
+  const activeStepMeta = useMemo(
+    () => DETAIL_STEP_META.find((step) => step.key === activeDetailStep) ?? DETAIL_STEP_META[0],
+    [activeDetailStep],
   )
 
   const groupedCards = useMemo(() => {
@@ -94,11 +122,13 @@ export function KanbanBoard() {
   function openDetail(card: KanbanCard) {
     setSelectedCardId(card.id)
     setDetailDraft(toCardInput(card))
+    setActiveDetailStep('basic')
   }
 
   function closeDetail() {
     setSelectedCardId(null)
     setDetailDraft(null)
+    setActiveDetailStep('basic')
   }
 
   async function handleCreate(values: KanbanCardInput) {
@@ -316,6 +346,10 @@ export function KanbanBoard() {
                         <span>{formatDateTime(card.updated_at)}</span>
                       </div>
 
+                      <div className="kanban-card-progress" aria-hidden="true">
+                        <span style={{ width: `${card.progress_percent}%` }} />
+                      </div>
+
                       <div className="kanban-card-foot">
                         <span className="kanban-grip">
                           <GripVertical size={14} />
@@ -342,7 +376,7 @@ export function KanbanBoard() {
         <div>
           <p className="kanban-kicker">Kanban Board</p>
           <h3>작업 칸반 보드</h3>
-          <p className="kanban-copy">이번 단계에서는 카드 생성, 수정, 삭제와 드래그 이동까지만 관리합니다. 카드를 더블클릭하면 빠른 수정이 열리고, 자세히 보기에서는 기본 정보를 저장할 수 있습니다.</p>
+          <p className="kanban-copy">보드에서는 카드 요약만 빠르게 보고, 자세히 보기로 들어가면 단계별 작업 화면으로 전환됩니다. 카드에는 작은 진행률 바만 표시합니다.</p>
         </div>
         <div className="kanban-inline-actions">
           <button className="kanban-ghost-button" type="button" onClick={() => void loadCards()} disabled={loading || submitting}>
@@ -363,18 +397,25 @@ export function KanbanBoard() {
 
       {!loading && selectedCard && detailDraft ? (
         <section className="kanban-detail-shell">
-          <div className="kanban-inline-actions left">
-            <button className="kanban-ghost-button" type="button" onClick={closeDetail}>
-              <ArrowLeft size={16} />
-              <span>보드로 돌아가기</span>
-            </button>
-          </div>
-
           <div className="kanban-detail-layout">
             <aside className="kanban-detail-sidebar">
               <article className="kanban-detail-summary-card">
-                <p className="kanban-kicker">Task Summary</p>
-                <h3>{detailDraft.title}</h3>
+                <div className="kanban-detail-back-row">
+                  <button className="kanban-ghost-button" type="button" onClick={closeDetail}>
+                    <ArrowLeft size={16} />
+                    <span>보드로 돌아가기</span>
+                  </button>
+                </div>
+                <div className="kanban-summary-head">
+                  <div className="kanban-summary-title">
+                    <p className="kanban-kicker">Selected Card</p>
+                    <h3>{detailDraft.title}</h3>
+                    <small className="kanban-summary-ticket">{selectedCard.card_code}</small>
+                  </div>
+                  <button className="kanban-link-button" type="button" onClick={() => openEditModal(selectedCard)}>
+                    빠른 수정
+                  </button>
+                </div>
                 <div className="kanban-summary-row">
                   <span>담당자</span>
                   <strong>{detailDraft.assignee.trim() || '미지정'}</strong>
@@ -411,154 +452,174 @@ export function KanbanBoard() {
 
               <section className="kanban-step-panel">
                 <p className="kanban-kicker">작업 단계</p>
-                <button className="kanban-step-link active" type="button">
-                  기본 정보
-                </button>
-                <button className="kanban-step-link active" type="button">
-                  체크리스트
-                </button>
-                <p className="kanban-step-copy">이번 시험 버전에서는 담당자, 체크리스트, 진행률까지 함께 저장합니다. 장비 연결, diff, 검증은 이후 단계에서 확장할 예정입니다.</p>
+                {DETAIL_STEP_META.map((step) => (
+                  <button
+                    key={step.key}
+                    className={`kanban-step-link ${activeDetailStep === step.key ? 'active' : ''}`}
+                    type="button"
+                    onClick={() => setActiveDetailStep(step.key)}
+                  >
+                    <div className="kanban-step-text">
+                      <strong>{step.label}</strong>
+                      <p>{step.body}</p>
+                    </div>
+                  </button>
+                ))}
               </section>
             </aside>
 
             <section className="kanban-detail-main">
               <div className="kanban-section-head">
                 <div>
-                  <p className="kanban-kicker">Card Detail</p>
-                  <h3>기본 정보 편집</h3>
+                  <p className="kanban-kicker">Stage Workspace</p>
+                  <h3>{activeStepMeta.label}</h3>
+                  <p className="kanban-stage-copy">{activeStepMeta.body}</p>
                 </div>
               </div>
 
-              <form className="kanban-form" onSubmit={handleDetailSubmit}>
-                <label className="kanban-field wide">
-                  <span>작업 제목</span>
-                  <input
-                    value={detailDraft.title}
-                    onChange={(event) => updateDetailDraft({ title: event.target.value })}
-                    required
-                  />
-                </label>
-
-                <div className="kanban-field-grid">
-                  <label className="kanban-field">
-                    <span>담당자</span>
+              {activeDetailStep === 'basic' ? (
+                <form className="kanban-form" onSubmit={handleDetailSubmit}>
+                  <label className="kanban-field wide">
+                    <span>작업 제목</span>
                     <input
-                      value={detailDraft.assignee}
-                      onChange={(event) => updateDetailDraft({ assignee: event.target.value })}
-                      placeholder="예: 김철수"
+                      value={detailDraft.title}
+                      onChange={(event) => updateDetailDraft({ title: event.target.value })}
+                      required
                     />
                   </label>
 
-                  <label className="kanban-field">
-                    <span>상태</span>
-                    <select
-                      value={detailDraft.column_key}
-                      onChange={(event) => updateDetailDraft({ column_key: event.target.value as KanbanColumnKey })}
-                    >
-                      {COLUMN_META.map((option) => (
-                        <option key={option.key} value={option.key}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <div className="kanban-field-grid">
+                    <label className="kanban-field">
+                      <span>담당자</span>
+                      <input
+                        value={detailDraft.assignee}
+                        onChange={(event) => updateDetailDraft({ assignee: event.target.value })}
+                        placeholder="예: 김철수"
+                      />
+                    </label>
 
-                  <label className="kanban-field">
-                    <span>작업 유형</span>
-                    <select
-                      value={detailDraft.card_type}
-                      onChange={(event) => updateDetailDraft({ card_type: event.target.value as KanbanCardInput['card_type'] })}
-                    >
-                      <option value="existing">기존 장비 작업</option>
-                      <option value="new">신규 장비 작업</option>
-                    </select>
-                  </label>
+                    <label className="kanban-field">
+                      <span>상태</span>
+                      <select
+                        value={detailDraft.column_key}
+                        onChange={(event) => updateDetailDraft({ column_key: event.target.value as KanbanColumnKey })}
+                      >
+                        {COLUMN_META.map((option) => (
+                          <option key={option.key} value={option.key}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
 
-                  <label className="kanban-field">
-                    <span>우선순위</span>
-                    <select
-                      value={detailDraft.priority}
-                      onChange={(event) => updateDetailDraft({ priority: event.target.value as KanbanCardInput['priority'] })}
-                    >
-                      <option value="high">높음</option>
-                      <option value="medium">중간</option>
-                      <option value="low">낮음</option>
-                    </select>
-                  </label>
-                </div>
+                    <label className="kanban-field">
+                      <span>작업 유형</span>
+                      <select
+                        value={detailDraft.card_type}
+                        onChange={(event) =>
+                          updateDetailDraft({ card_type: event.target.value as KanbanCardInput['card_type'] })
+                        }
+                      >
+                        <option value="existing">기존 장비 작업</option>
+                        <option value="new">신규 장비 작업</option>
+                      </select>
+                    </label>
 
-                <label className="kanban-field wide">
-                  <span>작업 설명</span>
-                  <AutoGrowTextarea
-                    value={detailDraft.description}
-                    rows={10}
-                    onChange={(event) => updateDetailDraft({ description: event.target.value })}
-                  />
-                </label>
-
-                <section className="kanban-checklist-panel">
-                  <div className="kanban-checklist-head">
-                    <div>
-                      <p className="kanban-kicker">Checklist</p>
-                      <h4>작업 체크리스트</h4>
-                    </div>
-                    <button className="kanban-ghost-button" type="button" onClick={addChecklistItem}>
-                      <Plus size={16} />
-                      <span>항목 추가</span>
-                    </button>
+                    <label className="kanban-field">
+                      <span>우선순위</span>
+                      <select
+                        value={detailDraft.priority}
+                        onChange={(event) => updateDetailDraft({ priority: event.target.value as KanbanCardInput['priority'] })}
+                      >
+                        <option value="high">높음</option>
+                        <option value="medium">중간</option>
+                        <option value="low">낮음</option>
+                      </select>
+                    </label>
                   </div>
 
-                  {detailDraft.checklist_items && detailDraft.checklist_items.length > 0 ? (
-                    <div className="kanban-checklist-list">
-                      {detailDraft.checklist_items.map((item, index) => (
-                        <div key={item.id ?? `draft-${index}`} className="kanban-checklist-item">
-                          <label className="kanban-checklist-toggle">
-                            <input
-                              type="checkbox"
-                              checked={item.is_completed}
-                              onChange={(event) => updateChecklistItem(index, { is_completed: event.target.checked })}
-                            />
-                          </label>
-                          <input
-                            className={`kanban-checklist-input ${item.is_completed ? 'completed' : ''}`}
-                            value={item.title}
-                            onChange={(event) => updateChecklistItem(index, { title: event.target.value })}
-                            placeholder="예: 변경 전 snapshot 확인"
-                          />
-                          <button
-                            className="kanban-link-button danger"
-                            type="button"
-                            onClick={() => removeChecklistItem(index)}
-                            aria-label="체크리스트 항목 삭제"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="kanban-checklist-empty">
-                      <strong>체크리스트가 아직 없습니다.</strong>
-                      <p>항목을 추가하면 진행률이 자동 계산됩니다.</p>
-                    </div>
-                  )}
-                </section>
+                  <label className="kanban-field wide">
+                    <span>작업 설명</span>
+                    <AutoGrowTextarea
+                      value={detailDraft.description}
+                      rows={10}
+                      onChange={(event) => updateDetailDraft({ description: event.target.value })}
+                    />
+                  </label>
 
-                <div className="kanban-detail-actions">
-                  <button
-                    className="kanban-danger-button"
-                    type="button"
-                    onClick={() => void handleDelete(selectedCard.id)}
-                    disabled={submitting}
-                  >
-                    <Trash2 size={16} />
-                    <span>카드 삭제</span>
-                  </button>
-                  <button className="kanban-primary-button" type="submit" disabled={submitting || !detailDraft.title.trim()}>
-                    {submitting ? '저장 중...' : '기본 정보 저장'}
-                  </button>
+                  <div className="kanban-detail-actions end">
+                    <button className="kanban-primary-button" type="submit" disabled={submitting || !detailDraft.title.trim()}>
+                      {submitting ? '저장 중...' : '기본 정보 저장'}
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
+              {activeDetailStep === 'checklist' ? (
+                <form className="kanban-form" onSubmit={handleDetailSubmit}>
+                  <section className="kanban-checklist-panel">
+                    <div className="kanban-checklist-head">
+                      <div>
+                        <p className="kanban-kicker">Checklist</p>
+                        <h4>작업 체크리스트</h4>
+                      </div>
+                      <button className="kanban-ghost-button" type="button" onClick={addChecklistItem}>
+                        <Plus size={16} />
+                        <span>항목 추가</span>
+                      </button>
+                    </div>
+
+                    {detailDraft.checklist_items && detailDraft.checklist_items.length > 0 ? (
+                      <div className="kanban-checklist-list">
+                        {detailDraft.checklist_items.map((item, index) => (
+                          <div key={item.id ?? `draft-${index}`} className="kanban-checklist-item">
+                            <label className="kanban-checklist-toggle">
+                              <input
+                                type="checkbox"
+                                checked={item.is_completed}
+                                onChange={(event) => updateChecklistItem(index, { is_completed: event.target.checked })}
+                              />
+                            </label>
+                            <input
+                              className={`kanban-checklist-input ${item.is_completed ? 'completed' : ''}`}
+                              value={item.title}
+                              onChange={(event) => updateChecklistItem(index, { title: event.target.value })}
+                              placeholder="예: 변경 전 snapshot 확인"
+                            />
+                            <button
+                              className="kanban-link-button danger"
+                              type="button"
+                              onClick={() => removeChecklistItem(index)}
+                              aria-label="체크리스트 항목 삭제"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="kanban-checklist-empty">
+                        <strong>체크리스트가 아직 없습니다.</strong>
+                        <p>항목을 추가하면 진행률이 자동 계산됩니다.</p>
+                      </div>
+                    )}
+                  </section>
+
+                  <div className="kanban-detail-actions end">
+                    <button className="kanban-primary-button" type="submit" disabled={submitting}>
+                      {submitting ? '저장 중...' : '체크리스트 저장'}
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
+              {!activeStepMeta.implemented ? (
+                <div className="kanban-stage-placeholder">
+                  <strong>{activeStepMeta.label} 단계 준비 중</strong>
+                  <p>{activeStepMeta.body}</p>
+                  <p>현재 버전에서는 구조만 먼저 열어 두었고, 실제 기능은 다음 단계에서 이어서 구현할 예정입니다.</p>
                 </div>
-              </form>
+              ) : null}
             </section>
           </div>
         </section>
