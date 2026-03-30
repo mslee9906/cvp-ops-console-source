@@ -181,12 +181,13 @@ function App() {
   const [vrfError, setVrfError] = useState('')
   const [vrfLimit, setVrfLimit] = useState(DEFAULT_PAGE_SIZE)
   const [vrfFilter, setVrfFilter] = useState('')
-  const [excludeDefaultVrf, setExcludeDefaultVrf] = useState(false)
+  const [excludeDefaultVrf, setExcludeDefaultVrf] = useState(true)
   const [selectedVrfName, setSelectedVrfName] = useState('')
 
   const [configSearchQuery, setConfigSearchQuery] = useState('')
   const [configSearchLimit, setConfigSearchLimit] = useState(DEFAULT_PAGE_SIZE)
   const [configSearchState, setConfigSearchState] = useState(initialConfigSearchState)
+  const [showConfigGuide, setShowConfigGuide] = useState(false)
 
   const [ipQuery, setIpQuery] = useState('')
   const [ipVrf, setIpVrf] = useState('')
@@ -876,15 +877,15 @@ function App() {
         ) : null}
 
         {activeView === 'config' ? (
-          <section className="content-grid">
-            <div className="main-card config-search-surface">
+          <section className="stack-layout">
+            <div className="main-card">
               <div className="card-head">
                 <div>
-                  <p className="section-kicker config-kicker">Global Config Search</p>
+                  <p className="section-kicker">Global Config Search</p>
                   <h3>전체 Config 본문 검색</h3>
                 </div>
                 <div className="toolbar-row">
-                  <button className="secondary-action warm" onClick={() => void reloadCurrentViewList()} disabled={!configSearchQuery.trim()}>
+                  <button className="secondary-action" onClick={() => void reloadCurrentViewList()} disabled={!configSearchQuery.trim()}>
                     <RefreshCcw />
                     <span>현재 검색 다시 불러오기</span>
                   </button>
@@ -895,6 +896,13 @@ function App() {
                 </div>
               </div>
 
+              <div className="section-headline">
+                <h4>검색 입력</h4>
+                <button className="secondary-action" onClick={() => setShowConfigGuide(true)} type="button">
+                  검색 기준 보기
+                </button>
+              </div>
+
               <form className="lookup-form single-line" onSubmit={handleConfigSearchSubmit}>
                 <Field
                   label="검색 문자열"
@@ -903,7 +911,7 @@ function App() {
                   placeholder="예: router bgp, ip route, vlan 200, description UPLINK"
                 />
                 <div className="lookup-actions inline-actions">
-                  <button className="primary-action warm" disabled={configSearchState.loading || !configSearchQuery.trim()}>
+                  <button className="primary-action" disabled={configSearchState.loading || !configSearchQuery.trim()}>
                     <Search />
                     <span>{configSearchState.loading ? '검색 중...' : 'Config 검색'}</span>
                   </button>
@@ -940,20 +948,6 @@ function App() {
                 <PanelState title="Config 검색 준비" body="문자열을 입력하면 현재 최신 Config 스냅샷 전체에서 매칭 장비와 줄 번호를 찾아드립니다." />
               )}
             </div>
-
-            <aside className="side-card">
-              <div className="card-head compact">
-                <div>
-                  <p className="section-kicker">Search Guide</p>
-                  <h3>검색 기준</h3>
-                </div>
-              </div>
-              <div className="legend-stack">
-                <GuideCard title="검색 범위" body="현재 최신 snapshot에 저장된 장비별 running-config 파일만 검색합니다." />
-                <GuideCard title="검색 방식" body="대소문자 구분 없이 문자열 포함 여부로 검색합니다. 정규식은 아직 사용하지 않습니다." />
-                <GuideCard title="결과 표시" body="장비별 총 매칭 수와, 앞쪽 3개 매칭 줄을 함께 표시합니다." />
-              </div>
-            </aside>
           </section>
         ) : null}
 
@@ -967,6 +961,28 @@ function App() {
               </div>
             </div>
           </section>
+        ) : null}
+
+        {showConfigGuide ? (
+          <div className="modal-backdrop" onClick={() => setShowConfigGuide(false)}>
+            <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+              <div className="card-head compact">
+                <div>
+                  <p className="section-kicker">Search Guide</p>
+                  <h3>Config 검색 기준</h3>
+                </div>
+                <button className="secondary-action" onClick={() => setShowConfigGuide(false)} type="button">
+                  닫기
+                </button>
+              </div>
+              <div className="guide-grid">
+                <GuideCard title="검색 범위" body="현재 최신 snapshot에 저장된 장비별 running-config 파일만 검색합니다." />
+                <GuideCard title="검색 방식" body="대소문자 구분 없이 문자열 포함 여부로 검색합니다. 정규식 검색은 아직 사용하지 않습니다." />
+                <GuideCard title="결과 표시" body="장비별 총 매칭 수와, 앞쪽 3개 매칭 줄을 함께 표시합니다." />
+                <GuideCard title="검색 예시" body="router bgp, interface Vlan200, ip route, description UPLINK 같은 문자열을 그대로 넣어 확인할 수 있습니다." />
+              </div>
+            </div>
+          </div>
         ) : null}
       </main>
     </div>

@@ -810,8 +810,8 @@
   gap: 0.72rem;
   padding: 0.9rem;
   border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(124, 79, 41, 0.12);
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(9, 47, 52, 0.08);
 }
 
 .config-hit-head {
@@ -837,8 +837,8 @@
   flex: none;
   padding: 0.42rem 0.68rem;
   border-radius: 999px;
-  background: rgba(197, 124, 75, 0.14);
-  color: #8b5128;
+  background: rgba(29, 177, 255, 0.12);
+  color: #005487;
   font-size: 0.76rem;
   font-weight: 700;
 }
@@ -857,8 +857,8 @@
   gap: 0.28rem;
   padding: 0.72rem 0.8rem;
   border-radius: 0.88rem;
-  background: rgba(123, 87, 54, 0.06);
-  border: 1px solid rgba(123, 87, 54, 0.08);
+  background: rgba(245, 249, 248, 0.92);
+  border: 1px solid rgba(9, 47, 52, 0.08);
 }
 
 .config-line-item code {
@@ -866,7 +866,27 @@
   word-break: break-word;
   font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
   font-size: 0.78rem;
-  color: #5a371c;
+  color: var(--ink-800);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(7, 24, 29, 0.42);
+  backdrop-filter: blur(8px);
+}
+
+.modal-card {
+  width: min(860px, 100%);
+  padding: 1rem;
+  border-radius: 1.15rem;
+  border: 1px solid rgba(8, 42, 48, 0.08);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 24px 56px rgba(17, 39, 43, 0.16);
 }
 
 @media (max-width: 960px) {
