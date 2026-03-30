@@ -366,17 +366,18 @@ class SnapshotRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def list_bgp_entries(self, limit: int = 200) -> list[dict[str, Any]]:
+    def list_bgp_entries(self, limit: int | None = 200) -> list[dict[str, Any]]:
+        query = """
+            SELECT device_id, hostname, vrf, asn, router_id, shutdown, source_path
+            FROM bgp_entries
+            ORDER BY hostname, vrf
+        """
+        params: tuple[Any, ...] = ()
+        if limit is not None:
+            query += " LIMIT ?"
+            params = (limit,)
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT device_id, hostname, vrf, asn, router_id, shutdown, source_path
-                FROM bgp_entries
-                ORDER BY hostname, vrf
-                LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
+            rows = connection.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
     def get_vrf_entries(self, vrf_name: str) -> list[dict[str, Any]]:
@@ -392,16 +393,29 @@ class SnapshotRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def list_vrf_entries(self, limit: int = 200) -> list[dict[str, Any]]:
+    def list_vrf_entries(self, limit: int | None = 200) -> list[dict[str, Any]]:
+        query = """
+            SELECT device_id, hostname, vrf_name, vrf_id
+            FROM vrfs
+            ORDER BY hostname, vrf_name
+        """
+        params: tuple[Any, ...] = ()
+        if limit is not None:
+            query += " LIMIT ?"
+            params = (limit,)
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_config_snapshots(self) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT device_id, hostname, vrf_name, vrf_id
-                FROM vrfs
-                ORDER BY hostname, vrf_name
-                LIMIT ?
+                SELECT c.device_id, c.hostname, c.config_hash, c.file_path, c.collected_at, c.line_count, d.mgmt_ip
+                FROM config_snapshots AS c
+                LEFT JOIN devices AS d ON d.device_id = c.device_id
+                ORDER BY c.hostname
                 """,
-                (limit,),
             ).fetchall()
         return [dict(row) for row in rows]
 

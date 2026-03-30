@@ -1,5 +1,13 @@
 ﻿export type LookupStatus = 'available' | 'in_use' | 'review' | 'not_available' | 'error'
-export type RecordScope = 'ip' | 'bgp' | 'vlan' | 'vrf'
+export type RecordScope = 'ip' | 'bgp' | 'vlan'
+export type DetailValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | DetailValue[]
+  | { [key: string]: DetailValue }
 
 export interface CollectionJobSummary {
   job_name: string
@@ -53,7 +61,7 @@ export interface LookupMatch {
   vrf?: string | null
   match_type?: string | null
   label?: string | null
-  details: Record<string, string | number | boolean | null | undefined>
+  details: Record<string, DetailValue>
 }
 
 export interface LookupResponse {
@@ -82,3 +90,41 @@ export interface ConfigPreviewResponse {
   content: string
 }
 
+export interface VrfGroupDevice {
+  device_id: string
+  hostname: string
+  mgmt_ip: string
+}
+
+export interface VrfGroupItem {
+  vrf_name: string
+  device_count: number
+  devices: VrfGroupDevice[]
+}
+
+export interface VrfGroupListResponse {
+  scope: 'vrf'
+  total_count: number
+  items: VrfGroupItem[]
+}
+
+export interface ConfigSearchLine {
+  line_number: number
+  text: string
+}
+
+export interface ConfigSearchMatch {
+  device_id: string
+  hostname: string
+  mgmt_ip: string
+  collected_at: string
+  match_count: number
+  matched_lines: ConfigSearchLine[]
+}
+
+export interface ConfigSearchResponse {
+  query: string
+  total_count: number
+  total_line_matches: number
+  items: ConfigSearchMatch[]
+}

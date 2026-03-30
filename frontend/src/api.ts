@@ -1,11 +1,13 @@
 ﻿import type {
   CollectionProgressResponse,
   ConfigPreviewResponse,
+  ConfigSearchResponse,
   DeviceSummary,
   LookupResponse,
   OverviewResponse,
   RecordListResponse,
   RecordScope,
+  VrfGroupListResponse,
 } from './types'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
@@ -35,6 +37,12 @@ export const api = {
   startRefresh: () => request<CollectionProgressResponse>('/api/collections/refresh', { method: 'POST' }),
   getRecords: (scope: RecordScope, limit = 200, extraQuery = '') =>
     request<RecordListResponse>(`/api/records/${scope}?limit=${limit}${extraQuery}`),
+  getVrfGroups: (limit = 200, excludeDefault = false, name = '') =>
+    request<VrfGroupListResponse>(
+      `/api/records/vrf?limit=${limit}&exclude_default=${excludeDefault}${name ? `&name=${encodeURIComponent(name)}` : ''}`,
+    ),
+  searchConfig: (query: string, limit = 200) =>
+    request<ConfigSearchResponse>(`/api/search/config?q=${encodeURIComponent(query)}&limit=${limit}`),
   lookupIp: (query: string, vrf?: string) =>
     request<LookupResponse>(
       `/api/lookup/ip?q=${encodeURIComponent(query)}${vrf ? `&vrf=${encodeURIComponent(vrf)}` : ''}`,
@@ -48,4 +56,3 @@ export const api = {
     ),
   lookupVrf: (name: string) => request<LookupResponse>(`/api/lookup/vrf?name=${encodeURIComponent(name)}`),
 }
-

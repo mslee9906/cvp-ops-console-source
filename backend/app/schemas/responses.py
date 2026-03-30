@@ -99,3 +99,42 @@ class RecordListResponse(BaseModel):
     scope: str
     total_count: int
     items: list[LookupMatch] = Field(default_factory=list)
+
+
+class VrfGroupDevice(BaseModel):
+    device_id: str
+    hostname: str
+    mgmt_ip: str = ""
+
+
+class VrfGroupItem(BaseModel):
+    vrf_name: str
+    device_count: int
+    devices: list[VrfGroupDevice] = Field(default_factory=list)
+
+
+class VrfGroupListResponse(BaseModel):
+    scope: str = "vrf"
+    total_count: int
+    items: list[VrfGroupItem] = Field(default_factory=list)
+
+
+class ConfigSearchLine(BaseModel):
+    line_number: int
+    text: str
+
+
+class ConfigSearchMatch(BaseModel):
+    device_id: str
+    hostname: str
+    mgmt_ip: str = ""
+    collected_at: str
+    match_count: int
+    matched_lines: list[ConfigSearchLine] = Field(default_factory=list)
+
+
+class ConfigSearchResponse(BaseModel):
+    query: str
+    total_count: int
+    total_line_matches: int
+    items: list[ConfigSearchMatch] = Field(default_factory=list)

@@ -30,10 +30,11 @@ class QueryService:
         return metadata
 
     def list_bgp(self, limit: int = 200) -> dict[str, Any]:
-        rows = self.repository.list_bgp_entries(limit=limit)
+        all_rows = self.repository.list_bgp_entries(limit=None)
+        rows = all_rows[:limit]
         return {
             'scope': 'bgp',
-            'total_count': len(rows),
+            'total_count': len(all_rows),
             'items': [
                 {
                     'device_id': item['device_id'],
@@ -66,11 +67,60 @@ class QueryService:
             ],
         }
 
+    def list_vrf_groups(
+        self,
+        limit: int = 200,
+        exclude_default: bool = False,
+        name: str | None = None,
+    ) -> dict[str, Any]:
+        rows = self.repository.list_vrf_entries(limit=None)
+        devices = {item['device_id']: item for item in self.repository.list_devices()}
+        token = (name or '').strip().lower()
+        grouped: dict[str, list[dict[str, str]]] = {}
+
+        for row in rows:
+            vrf_name = str(row['vrf_name'])
+            if exclude_default and vrf_name.lower() == 'default':
+                continue
+            if token and token not in vrf_name.lower():
+                continue
+
+            device = devices.get(row['device_id'], {})
+            grouped.setdefault(vrf_name, []).append(
+                {
+                    'device_id': row['device_id'],
+                    'hostname': row['hostname'],
+                    'mgmt_ip': str(device.get('mgmt_ip', '') or ''),
+                }
+            )
+
+        items = [
+            {
+                'vrf_name': vrf_name,
+                'device_count': len(sorted_devices),
+                'devices': sorted_devices,
+            }
+            for vrf_name, sorted_devices in sorted(
+                (
+                    vrf_name,
+                    sorted(device_rows, key=lambda item: item['hostname'].lower()),
+                )
+                for vrf_name, device_rows in grouped.items()
+            )
+        ]
+
+        return {
+            'scope': 'vrf',
+            'total_count': len(items),
+            'items': items[:limit],
+        }
+
     def list_vlan(self, limit: int = 200) -> dict[str, Any]:
-        rows = self.repository.get_vlan_entries()[:limit]
+        all_rows = self.repository.get_vlan_entries()
+        rows = all_rows[:limit]
         return {
             'scope': 'vlan',
-            'total_count': len(rows),
+            'total_count': len(all_rows),
             'items': [
                 {
                     'device_id': item['device_id'],
@@ -89,10 +139,11 @@ class QueryService:
         }
 
     def list_ip(self, limit: int = 200, vrf: str | None = None) -> dict[str, Any]:
-        rows = self.repository.get_ip_records(vrf)[:limit]
+        all_rows = self.repository.get_ip_records(vrf)
+        rows = all_rows[:limit]
         return {
             'scope': 'ip',
-            'total_count': len(rows),
+            'total_count': len(all_rows),
             'items': [
                 {
                     'device_id': item['device_id'],
@@ -109,6 +160,46 @@ class QueryService:
                 }
                 for item in rows
             ],
+        }
+
+    def search_configs(self, query: str, limit: int = 200) -> dict[str, Any]:
+        token = query.strip()
+        lowered = token.lower()
+        matches: list[dict[str, Any]] = []
+        total_line_matches = 0
+
+        for item in self.repository.list_config_snapshots():
+            file_path = Path(item['file_path'])
+            if not file_path.exists():
+                continue
+
+            lines = file_path.read_text(encoding='utf-8').splitlines()
+            matched_lines = [
+                {'line_number': index, 'text': line.strip()}
+                for index, line in enumerate(lines, start=1)
+                if lowered in line.lower()
+            ]
+            if not matched_lines:
+                continue
+
+            total_line_matches += len(matched_lines)
+            matches.append(
+                {
+                    'device_id': item['device_id'],
+                    'hostname': item['hostname'],
+                    'mgmt_ip': str(item.get('mgmt_ip', '') or ''),
+                    'collected_at': item['collected_at'],
+                    'match_count': len(matched_lines),
+                    'matched_lines': matched_lines[:3],
+                }
+            )
+
+        matches.sort(key=lambda item: (item['hostname'].lower(), item['device_id']))
+        return {
+            'query': token,
+            'total_count': len(matches),
+            'total_line_matches': total_line_matches,
+            'items': matches[:limit],
         }
 
     def lookup_bgp(self, asn: str) -> LookupResponse:
@@ -367,4 +458,3 @@ class QueryService:
                 for item in matches
             ],
         )
-

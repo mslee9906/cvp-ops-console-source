@@ -4,11 +4,13 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.schemas.responses import (
     CollectionProgressResponse,
+    ConfigSearchResponse,
     ConfigPreviewResponse,
     DeviceSummary,
     LookupResponse,
     OverviewResponse,
     RecordListResponse,
+    VrfGroupListResponse,
 )
 
 
@@ -28,7 +30,7 @@ def list_devices(request: Request) -> list[DeviceSummary]:
 @router.get('/records/ip', response_model=RecordListResponse)
 def list_ip_records(
     request: Request,
-    limit: int = Query(default=200, ge=1, le=1000),
+    limit: int = Query(default=200, ge=1, le=10000),
     vrf: str | None = Query(default=None),
 ) -> RecordListResponse:
     return request.app.state.query_service.list_ip(limit=limit, vrf=vrf)
@@ -37,7 +39,7 @@ def list_ip_records(
 @router.get('/records/bgp', response_model=RecordListResponse)
 def list_bgp_records(
     request: Request,
-    limit: int = Query(default=200, ge=1, le=1000),
+    limit: int = Query(default=200, ge=1, le=10000),
 ) -> RecordListResponse:
     return request.app.state.query_service.list_bgp(limit=limit)
 
@@ -45,17 +47,32 @@ def list_bgp_records(
 @router.get('/records/vlan', response_model=RecordListResponse)
 def list_vlan_records(
     request: Request,
-    limit: int = Query(default=200, ge=1, le=1000),
+    limit: int = Query(default=200, ge=1, le=10000),
 ) -> RecordListResponse:
     return request.app.state.query_service.list_vlan(limit=limit)
 
 
-@router.get('/records/vrf', response_model=RecordListResponse)
+@router.get('/records/vrf', response_model=VrfGroupListResponse)
 def list_vrf_records(
     request: Request,
-    limit: int = Query(default=200, ge=1, le=1000),
-) -> RecordListResponse:
-    return request.app.state.query_service.list_vrf(limit=limit)
+    limit: int = Query(default=200, ge=1, le=10000),
+    exclude_default: bool = Query(default=False),
+    name: str | None = Query(default=None),
+) -> VrfGroupListResponse:
+    return request.app.state.query_service.list_vrf_groups(
+        limit=limit,
+        exclude_default=exclude_default,
+        name=name,
+    )
+
+
+@router.get('/search/config', response_model=ConfigSearchResponse)
+def search_config_records(
+    request: Request,
+    q: str = Query(..., min_length=1),
+    limit: int = Query(default=200, ge=1, le=10000),
+) -> ConfigSearchResponse:
+    return request.app.state.query_service.search_configs(q, limit=limit)
 
 
 @router.get('/lookup/ip', response_model=LookupResponse)
