@@ -3,6 +3,9 @@
   ConfigPreviewResponse,
   ConfigSearchResponse,
   DeviceSummary,
+  KanbanCard,
+  KanbanCardInput,
+  KanbanCardPosition,
   LookupResponse,
   OverviewResponse,
   RecordListResponse,
@@ -43,6 +46,25 @@ export const api = {
     ),
   searchConfig: (query: string, limit = 200) =>
     request<ConfigSearchResponse>(`/api/search/config?q=${encodeURIComponent(query)}&limit=${limit}`),
+  getKanbanCards: () => request<KanbanCard[]>('/api/kanban/cards'),
+  createKanbanCard: (payload: KanbanCardInput) =>
+    request<KanbanCard>('/api/kanban/cards', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateKanbanCard: (cardId: number, payload: Partial<KanbanCardInput>) =>
+    request<KanbanCard>(`/api/kanban/cards/${cardId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteKanbanCard: async (cardId: number) => {
+    await request<{ ok: boolean }>(`/api/kanban/cards/${cardId}`, { method: 'DELETE' })
+  },
+  reorderKanbanCards: (items: KanbanCardPosition[]) =>
+    request<KanbanCard[]>('/api/kanban/cards/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    }),
   lookupIp: (query: string, vrf?: string) =>
     request<LookupResponse>(
       `/api/lookup/ip?q=${encodeURIComponent(query)}${vrf ? `&vrf=${encodeURIComponent(vrf)}` : ''}`,

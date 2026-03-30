@@ -128,3 +128,34 @@ export interface ConfigSearchResponse {
   total_line_matches: number
   items: ConfigSearchMatch[]
 }
+
+export type KanbanColumnKey = 'blocked' | 'planned' | 'ready' | 'in_progress' | 'verifying' | 'done'
+export type KanbanCardType = 'existing' | 'new'
+export type KanbanPriority = 'high' | 'medium' | 'low'
+
+export interface KanbanCard {
+  id: number
+  card_code: string
+  title: string
+  description: string
+  column_key: KanbanColumnKey
+  card_type: KanbanCardType
+  priority: KanbanPriority
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface KanbanCardInput {
+  title: string
+  description: string
+  column_key: KanbanColumnKey
+  card_type: KanbanCardType
+  priority: KanbanPriority
+}
+
+export interface KanbanCardPosition {
+  id: number
+  column_key: KanbanColumnKey
+  sort_order: number
+}

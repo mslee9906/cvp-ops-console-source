@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import './App.css'
 import { api } from './api'
+import { KanbanBoard } from './features/kanban/KanbanBoard'
 import type {
   CollectionProgressResponse,
   ConfigPreviewResponse,
@@ -36,7 +37,7 @@ import type {
   VrfGroupListResponse,
 } from './types'
 
-type ViewId = 'home' | 'ip' | 'bgp' | 'vlan' | 'vrf' | 'devices' | 'config' | 'automation'
+type ViewId = 'home' | 'ip' | 'bgp' | 'vlan' | 'vrf' | 'devices' | 'config' | 'automation' | 'kanban'
 type ViewMeta = {
   label: string
   eyebrow: string
@@ -106,10 +107,18 @@ const viewMeta: Record<ViewId, ViewMeta> = {
     description: '추후 자동화 기능이 추가될 영역입니다. 현재는 구조와 위치만 준비해 둔 상태입니다.',
     icon: Wrench,
   },
+  kanban: {
+    label: '작업 보드',
+    eyebrow: 'Kanban Workflow',
+    title: '칸반 기반 작업 카드 관리',
+    description: '작업 카드를 생성하고, 수정하고, 삭제하고, 드래그로 상태를 이동하는 보드입니다.',
+    icon: Layers3,
+  },
 }
 
 const managementViews: ViewId[] = ['ip', 'bgp', 'vlan', 'vrf', 'devices', 'config']
 const automationViews: ViewId[] = ['automation']
+const kanbanViews: ViewId[] = ['kanban']
 
 const initialLookupState = {
   loading: false,
@@ -155,6 +164,7 @@ function App() {
   const [activeView, setActiveView] = useState<ViewId>('home')
   const [managementOpen, setManagementOpen] = useState(true)
   const [automationOpen, setAutomationOpen] = useState(true)
+  const [kanbanOpen, setKanbanOpen] = useState(true)
   const [overview, setOverview] = useState<OverviewResponse | null>(null)
   const [overviewError, setOverviewError] = useState('')
   const [collectionProgress, setCollectionProgress] = useState<CollectionProgressResponse | null>(null)
@@ -513,6 +523,15 @@ function App() {
           </button>
 
           <SidebarSection
+            title="칸반 보드"
+            open={kanbanOpen}
+            onToggle={() => setKanbanOpen((value) => !value)}
+            items={kanbanViews}
+            activeView={activeView}
+            onSelect={changeView}
+          />
+
+          <SidebarSection
             title="현황 관리"
             open={managementOpen}
             onToggle={() => setManagementOpen((value) => !value)}
@@ -529,6 +548,7 @@ function App() {
             activeView={activeView}
             onSelect={changeView}
           />
+
         </nav>
 
         <div className="rail-footer">
@@ -539,24 +559,26 @@ function App() {
         </div>
       </aside>
       <main className="workspace">
-        <section className="hero-panel compact">
-          <div className="hero-copy">
-            <p className="eyebrow">{currentView.eyebrow}</p>
-            <h2>{currentView.title}</h2>
-            <p>{currentView.description}</p>
-          </div>
+        {activeView !== 'kanban' ? (
+          <section className="hero-panel compact">
+            <div className="hero-copy">
+              <p className="eyebrow">{currentView.eyebrow}</p>
+              <h2>{currentView.title}</h2>
+              <p>{currentView.description}</p>
+            </div>
 
-          <div className="hero-meta">
-            <div className="hero-chip">
-              <Clock3 />
-              <span>{overview?.latest_collection_at ? formatDateTime(overview.latest_collection_at) : '수집 기록 없음'}</span>
+            <div className="hero-meta">
+              <div className="hero-chip">
+                <Clock3 />
+                <span>{overview?.latest_collection_at ? formatDateTime(overview.latest_collection_at) : '수집 기록 없음'}</span>
+              </div>
+              <div className={`hero-chip ${collectionProgress?.status === 'running' ? 'accent' : ''}`}>
+                <Activity />
+                <span>{translateCollectionStatus(collectionProgress, overview?.latest_job?.status)}</span>
+              </div>
             </div>
-            <div className={`hero-chip ${collectionProgress?.status === 'running' ? 'accent' : ''}`}>
-              <Activity />
-              <span>{translateCollectionStatus(collectionProgress, overview?.latest_job?.status)}</span>
-            </div>
-          </div>
-        </section>
+          </section>
+        ) : null}
 
         {collectionProgress ? <CollectionProgressCard progress={collectionProgress} /> : null}
         {overviewError ? <div className="message-banner error">{overviewError}</div> : null}
@@ -960,6 +982,12 @@ function App() {
                 <GuideCard title="현재 상태" body="UI에는 준비 중 항목만 두고, 실제 자동화 버튼과 API는 이후 예제코드가 들어오면 그때 연결하는 편이 안전합니다." />
               </div>
             </div>
+          </section>
+        ) : null}
+
+        {activeView === 'kanban' ? (
+          <section className="stack-layout">
+            <KanbanBoard />
           </section>
         ) : null}
 
