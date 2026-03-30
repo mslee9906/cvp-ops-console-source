@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from collections.abc import Callable
 import json
+import logging
 import re
 from typing import Any
 
@@ -13,6 +14,7 @@ from app.services.config_parser import extract_ip_records, reconstruct_config_li
 
 
 VALUE_RE = re.compile(r'"value"\s*:\s*"?([^"}]+)"?')
+logger = logging.getLogger(__name__)
 
 
 class CVPCollectorSuite:
@@ -44,6 +46,12 @@ class CVPCollectorSuite:
             devices = self._collect_devices(connector, timestamp)
             target_ids = self.settings.cvp_device_ids or list(devices)
             total_devices = max(len(target_ids), 1)
+            logger.info(
+                "Device inventory loaded. discovered_devices=%s target_devices=%s filtered=%s",
+                len(devices),
+                len(target_ids),
+                bool(self.settings.cvp_device_ids),
+            )
 
             snapshot_devices: list[dict[str, Any]] = []
             vrfs: list[dict[str, Any]] = []
@@ -76,7 +84,22 @@ class CVPCollectorSuite:
                             'detail': f"Collecting data for {device['hostname']} ({index}/{total_devices}).",
                         }
                     )
+                logger.info(
+                    "Collecting device %s/%s: hostname=%s device_id=%s",
+                    index,
+                    total_devices,
+                    device['hostname'],
+                    device_id,
+                )
 
+                if progress_callback:
+                    progress_callback(
+                        {
+                            'progress_percent': percent,
+                            'step': 'vrf',
+                            'detail': f"Loading VRFs for {device['hostname']} ({index}/{total_devices}).",
+                        }
+                    )
                 device_vrfs = self._collect_vrfs(connector, device_id, device)
                 if not device_vrfs:
                     device_vrfs = [
@@ -89,9 +112,33 @@ class CVPCollectorSuite:
                     ]
                 vrfs.extend(device_vrfs)
 
+                if progress_callback:
+                    progress_callback(
+                        {
+                            'progress_percent': percent,
+                            'step': 'bgp',
+                            'detail': f"Loading BGP data for {device['hostname']} ({index}/{total_devices}).",
+                        }
+                    )
                 bgp.extend(self._collect_bgp(connector, device_id, device, device_vrfs))
+                if progress_callback:
+                    progress_callback(
+                        {
+                            'progress_percent': percent,
+                            'step': 'vlan',
+                            'detail': f"Loading VLAN data for {device['hostname']} ({index}/{total_devices}).",
+                        }
+                    )
                 vlans.extend(self._collect_vlans(connector, device_id, device))
 
+                if progress_callback:
+                    progress_callback(
+                        {
+                            'progress_percent': percent,
+                            'step': 'config',
+                            'detail': f"Loading running-config for {device['hostname']} ({index}/{total_devices}).",
+                        }
+                    )
                 config_text = self._collect_config(connector, device_id)
                 if config_text:
                     configs.append(
@@ -103,6 +150,16 @@ class CVPCollectorSuite:
                         }
                     )
                     ip_records.extend(extract_ip_records(device_id, device['hostname'], config_text))
+                logger.info(
+                    "Completed device %s/%s: hostname=%s vrfs=%s bgp=%s vlans=%s config=%s",
+                    index,
+                    total_devices,
+                    device['hostname'],
+                    len(device_vrfs),
+                    len([entry for entry in bgp if entry['device_id'] == device_id]),
+                    len([entry for entry in vlans if entry['device_id'] == device_id]),
+                    'yes' if config_text else 'no',
+                )
 
         if progress_callback:
             progress_callback({'progress_percent': 78, 'step': 'snapshot_ready', 'detail': 'Normalizing the collected data.'})

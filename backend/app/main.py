@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -13,6 +14,12 @@ from app.repositories.snapshot_repository import SnapshotRepository
 from app.services.collection_service import CollectionService
 from app.services.query_service import QueryService
 from app.storage.config_files import ConfigFileManager
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
 
 
 settings = get_settings()

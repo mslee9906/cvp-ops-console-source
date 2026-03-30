@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from threading import Lock, Thread
 from typing import Any
 
@@ -9,6 +10,9 @@ from app.collectors.mock_suite import MockCollectorSuite
 from app.core.settings import Settings
 from app.repositories.snapshot_repository import SnapshotRepository
 from app.storage.config_files import ConfigFileManager
+
+
+logger = logging.getLogger(__name__)
 
 
 class CollectionService:
@@ -37,15 +41,25 @@ class CollectionService:
     def ensure_seed_data(self) -> dict[str, str]:
         self.repository.initialize()
         desired_source = self._source_mode()
+        logger.info("Startup bootstrap started. desired_source=%s", desired_source)
         if self.repository.is_empty():
+            logger.info("Snapshot database is empty. Running initial refresh during startup.")
             return self.refresh()
 
         overview = self.repository.get_overview()
         latest_job = overview.get('latest_job')
         if not latest_job:
+            logger.info("No previous collection job found. Running refresh during startup.")
             return self.refresh()
         if latest_job.get('source') != desired_source or latest_job.get('status') != 'success':
+            logger.info(
+                "Snapshot refresh required during startup. previous_source=%s previous_status=%s desired_source=%s",
+                latest_job.get('source'),
+                latest_job.get('status'),
+                desired_source,
+            )
             return self.refresh()
+        logger.info("Existing successful snapshot found. Startup bootstrap finished without refresh.")
         return latest_job or {
             'job_name': 'unknown',
             'source': desired_source,
@@ -58,6 +72,7 @@ class CollectionService:
     def refresh(self) -> dict[str, str]:
         started_at = datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds')
         source = self._source_mode()
+        logger.info("Snapshot refresh started. source=%s started_at=%s", source, started_at)
         self._set_progress(
             source_mode=source,
             status='running',
@@ -92,6 +107,16 @@ class CollectionService:
                 'error_message': '',
             }
             self.repository.replace_snapshot(snapshot, config_metadata, latest_job)
+            logger.info(
+                "Snapshot refresh completed successfully. source=%s devices=%s bgp=%s vrfs=%s vlans=%s ip_records=%s configs=%s",
+                source,
+                len(snapshot.get('devices', [])),
+                len(snapshot.get('bgp', [])),
+                len(snapshot.get('vrfs', [])),
+                len(snapshot.get('vlans', [])),
+                len(snapshot.get('ip_records', [])),
+                len(snapshot.get('configs', [])),
+            )
             self._set_progress(
                 source_mode=source,
                 status='success',
@@ -104,6 +129,7 @@ class CollectionService:
             return latest_job
         except Exception as exc:
             finished_at = datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds')
+            logger.exception("Snapshot refresh failed. source=%s error=%s", source, exc)
             latest_job = {
                 'job_name': 'refresh_snapshot',
                 'source': source,
@@ -142,6 +168,7 @@ class CollectionService:
             }
             self._refresh_thread = Thread(target=self.refresh, daemon=True)
             self._refresh_thread.start()
+            logger.info("Background snapshot refresh thread started.")
             return dict(self._progress)
 
     def get_progress(self) -> dict[str, Any]:
@@ -168,9 +195,24 @@ class CollectionService:
             changes.update(args[0])
         with self._progress_lock:
             current = dict(self._progress)
+            previous_status = current.get('status')
+            previous_step = current.get('step')
+            previous_percent = current.get('progress_percent')
             current.update({key: value for key, value in changes.items() if value is not None})
             current['updated_at'] = datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds')
             if current.get('status') == 'running' and not current.get('started_at'):
                 current['started_at'] = current['updated_at']
             self._progress = current
+        if (
+            current.get('status') != previous_status
+            or current.get('step') != previous_step
+            or current.get('progress_percent') != previous_percent
+        ):
+            logger.info(
+                "Collection progress: status=%s step=%s percent=%s detail=%s",
+                current.get('status'),
+                current.get('step'),
+                current.get('progress_percent'),
+                current.get('detail', ''),
+            )
 
