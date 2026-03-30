@@ -128,3 +128,52 @@ export interface ConfigSearchResponse {
   total_line_matches: number
   items: ConfigSearchMatch[]
 }
+
+export type KanbanWorkType = 'existing_device' | 'new_device'
+export type KanbanColumnKey = 'draft' | 'planned' | 'ready' | 'in_progress' | 'verifying' | 'done' | 'blocked'
+
+export interface KanbanLinkedDevice {
+  device_id: string
+  hostname: string
+  mgmt_ip: string
+  model: string
+  serial: string
+}
+
+export interface KanbanDraftDevice {
+  hostname: string
+  mgmt_ip: string
+  model: string
+  serial: string
+}
+
+export interface KanbanCard {
+  id: number
+  title: string
+  description: string
+  work_type: KanbanWorkType
+  column_key: KanbanColumnKey
+  order_index: number
+  existing_device_id?: string | null
+  linked_device?: KanbanLinkedDevice | null
+  draft_device?: KanbanDraftDevice | null
+  created_at: string
+  updated_at: string
+}
+
+export interface KanbanBoardResponse {
+  columns: KanbanColumnKey[]
+  cards: KanbanCard[]
+}
+
+export interface KanbanCardPayload {
+  title: string
+  description: string
+  work_type: KanbanWorkType
+  column_key: KanbanColumnKey
+  existing_device_id?: string | null
+  new_device_hostname?: string
+  new_device_mgmt_ip?: string
+  new_device_model?: string
+  new_device_serial?: string
+}

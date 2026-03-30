@@ -9,20 +9,29 @@ import {
   FileSearch,
   FileText,
   GitBranchPlus,
+  GripVertical,
   House,
+  LayoutGrid,
   Layers3,
   Network,
+  Plus,
   Radar,
   RefreshCcw,
   Search,
   Server,
   ShieldAlert,
   Wrench,
+  X,
 } from 'lucide-react'
 import './App.css'
 import { api } from './api'
 import type {
   CollectionProgressResponse,
+  KanbanBoardResponse,
+  KanbanCard,
+  KanbanCardPayload,
+  KanbanColumnKey,
+  KanbanWorkType,
   ConfigPreviewResponse,
   ConfigSearchMatch,
   ConfigSearchResponse,
@@ -36,7 +45,7 @@ import type {
   VrfGroupListResponse,
 } from './types'
 
-type ViewId = 'home' | 'ip' | 'bgp' | 'vlan' | 'vrf' | 'devices' | 'config' | 'automation'
+type ViewId = 'home' | 'ip' | 'bgp' | 'vlan' | 'vrf' | 'devices' | 'config' | 'kanban' | 'automation'
 type ViewMeta = {
   label: string
   eyebrow: string
@@ -48,6 +57,16 @@ type ViewMeta = {
 const DEFAULT_PAGE_SIZE = 200
 const LOAD_MORE_STEP = 200
 const recordViews: RecordScope[] = ['ip', 'bgp', 'vlan']
+const KANBAN_COLUMN_ORDER: KanbanColumnKey[] = ['draft', 'planned', 'ready', 'in_progress', 'verifying', 'done', 'blocked']
+const KANBAN_COLUMN_LABELS: Record<KanbanColumnKey, string> = {
+  draft: '초안',
+  planned: '작업 예정',
+  ready: '준비 완료',
+  in_progress: '작업 중',
+  verifying: '검증 중',
+  done: '완료',
+  blocked: '보류',
+}
 
 const viewMeta: Record<ViewId, ViewMeta> = {
   home: {
@@ -99,6 +118,13 @@ const viewMeta: Record<ViewId, ViewMeta> = {
     description: '현재 최신 스냅샷 Config 전체를 대상으로 문자열을 검색하고, 어떤 장비에서 매칭되는지 확인합니다.',
     icon: FileSearch,
   },
+  kanban: {
+    label: '칸반 보드',
+    eyebrow: 'Work Coordination',
+    title: '작업 칸반 보드',
+    description: '작업 카드를 생성하고, 기존 장비 또는 신규 장비 정보를 연결해 진행 상태를 관리합니다.',
+    icon: LayoutGrid,
+  },
   automation: {
     label: '준비 중',
     eyebrow: 'Automation Tools',
@@ -109,6 +135,7 @@ const viewMeta: Record<ViewId, ViewMeta> = {
 }
 
 const managementViews: ViewId[] = ['ip', 'bgp', 'vlan', 'vrf', 'devices', 'config']
+const kanbanViews: ViewId[] = ['kanban']
 const automationViews: ViewId[] = ['automation']
 
 const initialLookupState = {
@@ -121,6 +148,18 @@ const initialConfigSearchState = {
   loading: false,
   error: '',
   result: null as ConfigSearchResponse | null,
+}
+
+const emptyKanbanForm: KanbanCardPayload = {
+  title: '',
+  description: '',
+  work_type: 'existing_device',
+  column_key: 'draft',
+  existing_device_id: '',
+  new_device_hostname: '',
+  new_device_mgmt_ip: '',
+  new_device_model: '',
+  new_device_serial: '',
 }
 
 const emptyRecordLists: Record<RecordScope, RecordListResponse> = {
@@ -154,6 +193,7 @@ function isRecordScope(view: ViewId): view is RecordScope {
 function App() {
   const [activeView, setActiveView] = useState<ViewId>('home')
   const [managementOpen, setManagementOpen] = useState(true)
+  const [kanbanOpen, setKanbanOpen] = useState(true)
   const [automationOpen, setAutomationOpen] = useState(true)
   const [overview, setOverview] = useState<OverviewResponse | null>(null)
   const [overviewError, setOverviewError] = useState('')
@@ -189,6 +229,18 @@ function App() {
   const [configSearchState, setConfigSearchState] = useState(initialConfigSearchState)
   const [showConfigGuide, setShowConfigGuide] = useState(false)
 
+  const [kanbanBoard, setKanbanBoard] = useState<KanbanBoardResponse>({ columns: KANBAN_COLUMN_ORDER, cards: [] })
+  const [kanbanLoading, setKanbanLoading] = useState(false)
+  const [kanbanError, setKanbanError] = useState('')
+  const [showKanbanModal, setShowKanbanModal] = useState(false)
+  const [kanbanForm, setKanbanForm] = useState<KanbanCardPayload>(emptyKanbanForm)
+  const [editingCardId, setEditingCardId] = useState<number | null>(null)
+  const [kanbanSubmitLoading, setKanbanSubmitLoading] = useState(false)
+  const [kanbanDeviceFilter, setKanbanDeviceFilter] = useState('')
+  const [draggedCardId, setDraggedCardId] = useState<number | null>(null)
+  const [dragOverColumn, setDragOverColumn] = useState<KanbanColumnKey | null>(null)
+  const [dragOverCardId, setDragOverCardId] = useState<number | null>(null)
+
   const [ipQuery, setIpQuery] = useState('')
   const [ipVrf, setIpVrf] = useState('')
   const [bgpAsn, setBgpAsn] = useState('')
@@ -220,6 +272,16 @@ function App() {
     () => vrfGroups.items.find((item) => item.vrf_name === selectedVrfName) ?? null,
     [selectedVrfName, vrfGroups.items],
   )
+  const filteredKanbanDevices = useMemo(() => {
+    const token = kanbanDeviceFilter.trim().toLowerCase()
+    if (!token) {
+      return devices
+    }
+
+    return devices.filter((device) =>
+      [device.hostname, device.mgmt_ip, device.model, device.serial].join(' ').toLowerCase().includes(token),
+    )
+  }, [kanbanDeviceFilter, devices])
 
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
@@ -258,6 +320,7 @@ function App() {
       loadOverview(),
       loadCollectionStatus(),
       loadDevices(),
+      loadKanbanBoard(),
       loadRecord('ip', DEFAULT_PAGE_SIZE),
       loadRecord('bgp', DEFAULT_PAGE_SIZE),
       loadRecord('vlan', DEFAULT_PAGE_SIZE),
@@ -273,6 +336,7 @@ function App() {
         await Promise.all([
           loadOverview(),
           loadDevices(),
+          loadKanbanBoard(),
           loadRecord('ip', recordLimits.ip),
           loadRecord('bgp', recordLimits.bgp),
           loadRecord('vlan', recordLimits.vlan),
@@ -368,6 +432,22 @@ function App() {
     }
   }
 
+  async function loadKanbanBoard() {
+    try {
+      setKanbanLoading(true)
+      setKanbanError('')
+      const response = await api.getKanbanBoard()
+      setKanbanBoard({
+        columns: response.columns.length ? response.columns : KANBAN_COLUMN_ORDER,
+        cards: response.cards,
+      })
+    } catch (error) {
+      setKanbanError(error instanceof Error ? error.message : '칸반 보드를 불러오지 못했습니다.')
+    } finally {
+      setKanbanLoading(false)
+    }
+  }
+
   async function performConfigSearch(query: string, limit = DEFAULT_PAGE_SIZE) {
     const token = query.trim()
     if (!token) {
@@ -438,6 +518,80 @@ function App() {
     await loadConfigPreview(deviceId)
   }
 
+  function openNewKanbanCard(columnKey: KanbanColumnKey = 'draft') {
+    setEditingCardId(null)
+    setKanbanDeviceFilter('')
+    setKanbanForm({ ...emptyKanbanForm, column_key: columnKey })
+    setShowKanbanModal(true)
+  }
+
+  function openEditKanbanCard(card: KanbanCard) {
+    setEditingCardId(card.id)
+    setKanbanDeviceFilter('')
+    setKanbanForm({
+      title: card.title,
+      description: card.description,
+      work_type: card.work_type,
+      column_key: card.column_key,
+      existing_device_id: card.existing_device_id ?? '',
+      new_device_hostname: card.draft_device?.hostname ?? '',
+      new_device_mgmt_ip: card.draft_device?.mgmt_ip ?? '',
+      new_device_model: card.draft_device?.model ?? '',
+      new_device_serial: card.draft_device?.serial ?? '',
+    })
+    setShowKanbanModal(true)
+  }
+
+  function closeKanbanModal() {
+    setShowKanbanModal(false)
+    setEditingCardId(null)
+    setKanbanForm(emptyKanbanForm)
+    setKanbanDeviceFilter('')
+  }
+
+  async function handleKanbanSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    try {
+      setKanbanSubmitLoading(true)
+      const payload: KanbanCardPayload = {
+        ...kanbanForm,
+        existing_device_id: kanbanForm.work_type === 'existing_device' ? kanbanForm.existing_device_id || null : null,
+      }
+
+      if (editingCardId) {
+        await api.updateKanbanCard(editingCardId, payload)
+      } else {
+        await api.createKanbanCard(payload)
+      }
+      await loadKanbanBoard()
+      closeKanbanModal()
+    } catch (error) {
+      setKanbanError(error instanceof Error ? error.message : '칸반 카드를 저장하지 못했습니다.')
+    } finally {
+      setKanbanSubmitLoading(false)
+    }
+  }
+
+  function getCardsForColumn(columnKey: KanbanColumnKey) {
+    return [...kanbanBoard.cards]
+      .filter((card) => card.column_key === columnKey)
+      .sort((left, right) => left.order_index - right.order_index)
+  }
+
+  async function moveKanbanCard(cardId: number, columnKey: KanbanColumnKey, position: number) {
+    try {
+      await api.moveKanbanCard(cardId, columnKey, position)
+      await loadKanbanBoard()
+    } catch (error) {
+      setKanbanError(error instanceof Error ? error.message : '카드를 이동하지 못했습니다.')
+    } finally {
+      setDraggedCardId(null)
+      setDragOverColumn(null)
+      setDragOverCardId(null)
+    }
+  }
+
   async function handleConfigSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     await performConfigSearch(configSearchQuery, DEFAULT_PAGE_SIZE)
@@ -481,6 +635,11 @@ function App() {
       return
     }
 
+    if (activeView === 'kanban') {
+      await loadKanbanBoard()
+      return
+    }
+
     if (currentScope) {
       await loadRecord(currentScope, recordLimits[currentScope])
     }
@@ -517,6 +676,15 @@ function App() {
             open={managementOpen}
             onToggle={() => setManagementOpen((value) => !value)}
             items={managementViews}
+            activeView={activeView}
+            onSelect={changeView}
+          />
+
+          <SidebarSection
+            title="칸반 보드"
+            open={kanbanOpen}
+            onToggle={() => setKanbanOpen((value) => !value)}
+            items={kanbanViews}
             activeView={activeView}
             onSelect={changeView}
           />
@@ -951,6 +1119,124 @@ function App() {
           </section>
         ) : null}
 
+        {activeView === 'kanban' ? (
+          <section className="stack-layout">
+            <div className="main-card">
+              <div className="card-head">
+                <div>
+                  <p className="section-kicker">Kanban Workspace</p>
+                  <h3>작업 칸반 보드</h3>
+                </div>
+                <div className="toolbar-row">
+                  <button className="secondary-action" onClick={() => void loadKanbanBoard()}>
+                    <RefreshCcw />
+                    <span>보드 새로고침</span>
+                  </button>
+                  <button className="primary-action" onClick={() => openNewKanbanCard('draft')}>
+                    <Plus />
+                    <span>카드 생성</span>
+                  </button>
+                </div>
+              </div>
+
+              {kanbanError ? <div className="message-banner error">{kanbanError}</div> : null}
+              {kanbanLoading ? (
+                <PanelState title="칸반 보드를 불러오는 중입니다." body="작업 카드와 열 상태를 정리하고 있습니다." />
+              ) : (
+                <div className="kanban-board">
+                  {KANBAN_COLUMN_ORDER.map((columnKey) => {
+                    const cards = getCardsForColumn(columnKey)
+                    return (
+                      <section
+                        key={columnKey}
+                        className={`kanban-column ${dragOverColumn === columnKey ? 'drag-over' : ''}`}
+                        onDragOver={(event) => {
+                          event.preventDefault()
+                          setDragOverColumn(columnKey)
+                          setDragOverCardId(null)
+                        }}
+                        onDragLeave={() => {
+                          setDragOverColumn((current) => (current === columnKey ? null : current))
+                          setDragOverCardId(null)
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault()
+                          if (draggedCardId !== null) {
+                            void moveKanbanCard(draggedCardId, columnKey, cards.length)
+                          }
+                        }}
+                      >
+                        <div className="kanban-column-head">
+                          <div>
+                            <strong>{KANBAN_COLUMN_LABELS[columnKey]}</strong>
+                            <span>{cards.length}건</span>
+                          </div>
+                          <button className="ghost-action" onClick={() => openNewKanbanCard(columnKey)}>
+                            <Plus />
+                          </button>
+                        </div>
+
+                        <div className="kanban-column-body">
+                          {cards.map((card, index) => (
+                            <article
+                              key={card.id}
+                              className={`kanban-card ${draggedCardId === card.id ? 'dragging' : ''} ${dragOverCardId === card.id ? 'drag-target' : ''}`}
+                              draggable
+                              onDragStart={() => {
+                                setDraggedCardId(card.id)
+                                setDragOverColumn(card.column_key)
+                              }}
+                              onDragEnd={() => {
+                                setDraggedCardId(null)
+                                setDragOverColumn(null)
+                                setDragOverCardId(null)
+                              }}
+                              onDragOver={(event) => {
+                                event.preventDefault()
+                                setDragOverColumn(columnKey)
+                                setDragOverCardId(card.id)
+                              }}
+                              onDrop={(event) => {
+                                event.preventDefault()
+                                if (draggedCardId !== null) {
+                                  void moveKanbanCard(draggedCardId, columnKey, index)
+                                }
+                              }}
+                              onDoubleClick={() => openEditKanbanCard(card)}
+                            >
+                              <div className="kanban-card-head">
+                                <div className="kanban-card-title">
+                                  <GripVertical size={16} />
+                                  <strong>{card.title}</strong>
+                                </div>
+                                <span className={`work-type-pill ${card.work_type}`}>{card.work_type === 'existing_device' ? '기존 장비' : '신규 장비'}</span>
+                              </div>
+                              <p className="kanban-card-body">{card.description || '작업 설명이 아직 없습니다.'}</p>
+                              <div className="kanban-card-meta">
+                                {card.linked_device ? (
+                                  <span>{card.linked_device.hostname} · {card.linked_device.mgmt_ip || 'Mgmt IP 없음'}</span>
+                                ) : (
+                                  <span>{card.draft_device?.hostname || '신규 장비 정보 미입력'} · {card.draft_device?.mgmt_ip || 'Mgmt IP 미입력'}</span>
+                                )}
+                              </div>
+                              <div className="kanban-card-foot">
+                                <small>{formatDateTime(card.updated_at)}</small>
+                                <button className="secondary-action" onClick={() => openEditKanbanCard(card)}>
+                                  자세히 보기
+                                </button>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      </section>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+        ) : null}
+
         {activeView === 'automation' ? (
           <section className="stack-layout">
             <div className="main-card">
@@ -961,6 +1247,145 @@ function App() {
               </div>
             </div>
           </section>
+        ) : null}
+
+        {showKanbanModal ? (
+          <div className="modal-backdrop" onClick={closeKanbanModal}>
+            <div className="modal-card kanban-modal" onClick={(event) => event.stopPropagation()}>
+              <div className="card-head compact">
+                <div>
+                  <p className="section-kicker">Kanban Card</p>
+                  <h3>{editingCardId ? '작업 카드 상세 / 수정' : '작업 카드 생성'}</h3>
+                </div>
+                <button className="secondary-action" onClick={closeKanbanModal} type="button">
+                  <X size={16} />
+                  닫기
+                </button>
+              </div>
+
+              <form className="kanban-form" onSubmit={handleKanbanSubmit}>
+                <div className="kanban-form-grid">
+                  <Field
+                    label="작업 제목"
+                    value={kanbanForm.title}
+                    onChange={(value) => setKanbanForm((current) => ({ ...current, title: value }))}
+                    placeholder="예: LEAF1 BGP 정책 검토"
+                  />
+                  <label className="field">
+                    <span>작업 상태</span>
+                    <select
+                      value={kanbanForm.column_key}
+                      onChange={(event) =>
+                        setKanbanForm((current) => ({ ...current, column_key: event.target.value as KanbanColumnKey }))
+                      }
+                    >
+                      {KANBAN_COLUMN_ORDER.map((columnKey) => (
+                        <option key={columnKey} value={columnKey}>
+                          {KANBAN_COLUMN_LABELS[columnKey]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>작업 유형</span>
+                    <select
+                      value={kanbanForm.work_type}
+                      onChange={(event) =>
+                        setKanbanForm((current) => ({
+                          ...current,
+                          work_type: event.target.value as KanbanWorkType,
+                          existing_device_id: event.target.value === 'existing_device' ? current.existing_device_id : '',
+                          new_device_hostname: event.target.value === 'new_device' ? current.new_device_hostname : '',
+                          new_device_mgmt_ip: event.target.value === 'new_device' ? current.new_device_mgmt_ip : '',
+                          new_device_model: event.target.value === 'new_device' ? current.new_device_model : '',
+                          new_device_serial: event.target.value === 'new_device' ? current.new_device_serial : '',
+                        }))
+                      }
+                    >
+                      <option value="existing_device">기존 장비 작업</option>
+                      <option value="new_device">신규 장비 작업</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label className="field">
+                  <span>작업 설명</span>
+                  <textarea
+                    value={kanbanForm.description}
+                    onChange={(event) => setKanbanForm((current) => ({ ...current, description: event.target.value }))}
+                    placeholder="작업 목적, 주의사항, 간단한 절차를 기록합니다."
+                  />
+                </label>
+
+                {kanbanForm.work_type === 'existing_device' ? (
+                  <div className="kanban-target-block">
+                    <SectionHeader title="기존 장비 선택" note="현재 snapshot 장비 목록에서 대상 장비를 연결합니다." />
+                    <div className="inline-filter">
+                      <Search />
+                      <input
+                        value={kanbanDeviceFilter}
+                        onChange={(event) => setKanbanDeviceFilter(event.target.value)}
+                        placeholder="Hostname, mgmt ip, model 검색"
+                      />
+                    </div>
+                    <label className="field">
+                      <span>대상 장비</span>
+                      <select
+                        value={kanbanForm.existing_device_id ?? ''}
+                        onChange={(event) => setKanbanForm((current) => ({ ...current, existing_device_id: event.target.value }))}
+                      >
+                        <option value="">장비를 선택하세요</option>
+                        {filteredKanbanDevices.slice(0, 200).map((device) => (
+                          <option key={device.device_id} value={device.device_id}>
+                            {device.hostname} / {device.mgmt_ip || 'Mgmt IP 없음'} / {device.model || 'Model 없음'}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                ) : (
+                  <div className="kanban-target-block">
+                    <SectionHeader title="신규 장비 입력" note="CVP에 아직 없는 장비라도 먼저 카드에 연결할 수 있습니다." />
+                    <div className="kanban-form-grid">
+                      <Field
+                        label="Hostname"
+                        value={kanbanForm.new_device_hostname ?? ''}
+                        onChange={(value) => setKanbanForm((current) => ({ ...current, new_device_hostname: value }))}
+                        placeholder="예: LEAF-N01"
+                      />
+                      <Field
+                        label="Mgmt IP"
+                        value={kanbanForm.new_device_mgmt_ip ?? ''}
+                        onChange={(value) => setKanbanForm((current) => ({ ...current, new_device_mgmt_ip: value }))}
+                        placeholder="예: 192.168.10.25"
+                      />
+                      <Field
+                        label="Model"
+                        value={kanbanForm.new_device_model ?? ''}
+                        onChange={(value) => setKanbanForm((current) => ({ ...current, new_device_model: value }))}
+                        placeholder="예: DCS-7280SR3"
+                      />
+                      <Field
+                        label="Serial"
+                        value={kanbanForm.new_device_serial ?? ''}
+                        onChange={(value) => setKanbanForm((current) => ({ ...current, new_device_serial: value }))}
+                        placeholder="예: SSJ12345678"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="modal-actions">
+                  <button className="secondary-action" onClick={closeKanbanModal} type="button">
+                    취소
+                  </button>
+                  <button className="primary-action" disabled={kanbanSubmitLoading}>
+                    {kanbanSubmitLoading ? '저장 중...' : editingCardId ? '수정 저장' : '카드 생성'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         ) : null}
 
         {showConfigGuide ? (
@@ -1227,8 +1652,7 @@ function SidebarSection({
         <span className="section-title">{title}</span>
         {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
       </button>
-      {open ? (
-        <div className="section-body">
+      <div className={`section-body ${open ? 'open' : 'closed'}`}>
           {items.map((item) => {
             const meta = viewMeta[item]
             const Icon = meta.icon
@@ -1246,8 +1670,7 @@ function SidebarSection({
               </button>
             )
           })}
-        </div>
-      ) : null}
+      </div>
     </section>
   )
 }

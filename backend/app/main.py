@@ -12,6 +12,7 @@ from app.api.routes import router
 from app.core.settings import get_settings
 from app.repositories.snapshot_repository import SnapshotRepository
 from app.services.collection_service import CollectionService
+from app.services.kanban_service import KanbanService
 from app.services.query_service import QueryService
 from app.storage.config_files import ConfigFileManager
 
@@ -27,6 +28,7 @@ repository = SnapshotRepository(settings.db_path)
 file_manager = ConfigFileManager(settings.config_dir)
 collection_service = CollectionService(repository, file_manager, settings)
 query_service = QueryService(repository)
+kanban_service = KanbanService(repository)
 
 app = FastAPI(
     title="CVP Ops Console API",
@@ -43,6 +45,7 @@ app.add_middleware(
 
 app.state.collection_service = collection_service
 app.state.query_service = query_service
+app.state.kanban_service = kanban_service
 app.state.source_mode = "demo"
 app.include_router(router, prefix="/api")
 

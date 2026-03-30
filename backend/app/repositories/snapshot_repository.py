@@ -85,6 +85,23 @@ CREATE TABLE IF NOT EXISTS collection_jobs (
     error_message TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS kanban_cards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    work_type TEXT NOT NULL,
+    column_key TEXT NOT NULL,
+    order_index INTEGER NOT NULL DEFAULT 0,
+    existing_device_id TEXT,
+    new_device_hostname TEXT NOT NULL DEFAULT '',
+    new_device_mgmt_ip TEXT NOT NULL DEFAULT '',
+    new_device_model TEXT NOT NULL DEFAULT '',
+    new_device_serial TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(existing_device_id) REFERENCES devices(device_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_devices_hostname ON devices(hostname);
 CREATE INDEX IF NOT EXISTS idx_bgp_entries_asn ON bgp_entries(asn);
 CREATE INDEX IF NOT EXISTS idx_bgp_entries_hostname ON bgp_entries(hostname);
@@ -94,6 +111,7 @@ CREATE INDEX IF NOT EXISTS idx_vlans_vlan_name ON vlans(vlan_name COLLATE NOCASE
 CREATE INDEX IF NOT EXISTS idx_ip_records_address ON ip_records(address);
 CREATE INDEX IF NOT EXISTS idx_ip_records_vrf ON ip_records(vrf COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_ip_records_hostname ON ip_records(hostname);
+CREATE INDEX IF NOT EXISTS idx_kanban_cards_column_order ON kanban_cards(column_key, order_index);
 """
 
 
@@ -465,3 +483,146 @@ class SnapshotRepository:
         with self._connect() as connection:
             rows = connection.execute(query, params).fetchall()
         return [dict(row) for row in rows]
+
+    def list_kanban_cards(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    k.id,
+                    k.title,
+                    k.description,
+                    k.work_type,
+                    k.column_key,
+                    k.order_index,
+                    k.existing_device_id,
+                    k.new_device_hostname,
+                    k.new_device_mgmt_ip,
+                    k.new_device_model,
+                    k.new_device_serial,
+                    k.created_at,
+                    k.updated_at,
+                    d.hostname AS existing_device_hostname,
+                    d.mgmt_ip AS existing_device_mgmt_ip,
+                    d.model AS existing_device_model,
+                    d.serial AS existing_device_serial
+                FROM kanban_cards AS k
+                LEFT JOIN devices AS d ON d.device_id = k.existing_device_id
+                ORDER BY k.column_key, k.order_index, k.id
+                """,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def create_kanban_card(self, payload: dict[str, Any]) -> int:
+        with self._connect() as connection:
+            next_order = connection.execute(
+                "SELECT COALESCE(MAX(order_index), -1) + 1 FROM kanban_cards WHERE column_key = ?",
+                (payload["column_key"],),
+            ).fetchone()[0]
+            cursor = connection.execute(
+                """
+                INSERT INTO kanban_cards (
+                    title,
+                    description,
+                    work_type,
+                    column_key,
+                    order_index,
+                    existing_device_id,
+                    new_device_hostname,
+                    new_device_mgmt_ip,
+                    new_device_model,
+                    new_device_serial,
+                    created_at,
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["title"],
+                    payload.get("description", ""),
+                    payload["work_type"],
+                    payload["column_key"],
+                    int(next_order),
+                    payload.get("existing_device_id"),
+                    payload.get("new_device_hostname", ""),
+                    payload.get("new_device_mgmt_ip", ""),
+                    payload.get("new_device_model", ""),
+                    payload.get("new_device_serial", ""),
+                    payload["created_at"],
+                    payload["updated_at"],
+                ),
+            )
+            connection.commit()
+            return int(cursor.lastrowid)
+
+    def update_kanban_card(self, card_id: int, payload: dict[str, Any]) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE kanban_cards
+                SET
+                    title = ?,
+                    description = ?,
+                    work_type = ?,
+                    existing_device_id = ?,
+                    new_device_hostname = ?,
+                    new_device_mgmt_ip = ?,
+                    new_device_model = ?,
+                    new_device_serial = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    payload["title"],
+                    payload.get("description", ""),
+                    payload["work_type"],
+                    payload.get("existing_device_id"),
+                    payload.get("new_device_hostname", ""),
+                    payload.get("new_device_mgmt_ip", ""),
+                    payload.get("new_device_model", ""),
+                    payload.get("new_device_serial", ""),
+                    payload["updated_at"],
+                    card_id,
+                ),
+            )
+            connection.commit()
+
+    def move_kanban_card(self, card_id: int, column_key: str, position: int, updated_at: str) -> None:
+        with self._connect() as connection:
+            current = connection.execute(
+                "SELECT id, column_key FROM kanban_cards WHERE id = ?",
+                (card_id,),
+            ).fetchone()
+            if not current:
+                return
+
+            current_column = str(current["column_key"])
+            target_rows = connection.execute(
+                "SELECT id FROM kanban_cards WHERE column_key = ? ORDER BY order_index, id",
+                (column_key,),
+            ).fetchall()
+            target_ids = [int(row["id"]) for row in target_rows if int(row["id"]) != card_id]
+            insert_at = max(0, min(position, len(target_ids)))
+            target_ids.insert(insert_at, card_id)
+
+            if current_column != column_key:
+                source_rows = connection.execute(
+                    "SELECT id FROM kanban_cards WHERE column_key = ? ORDER BY order_index, id",
+                    (current_column,),
+                ).fetchall()
+                source_ids = [int(row["id"]) for row in source_rows if int(row["id"]) != card_id]
+                for order_index, item_id in enumerate(source_ids):
+                    connection.execute(
+                        "UPDATE kanban_cards SET order_index = ? WHERE id = ?",
+                        (order_index, item_id),
+                    )
+
+            connection.execute(
+                "UPDATE kanban_cards SET column_key = ?, updated_at = ? WHERE id = ?",
+                (column_key, updated_at, card_id),
+            )
+            for order_index, item_id in enumerate(target_ids):
+                connection.execute(
+                    "UPDATE kanban_cards SET order_index = ? WHERE id = ?",
+                    (order_index, item_id),
+                )
+            connection.commit()

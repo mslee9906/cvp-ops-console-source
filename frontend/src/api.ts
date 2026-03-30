@@ -1,5 +1,8 @@
 ﻿import type {
   CollectionProgressResponse,
+  KanbanBoardResponse,
+  KanbanCard,
+  KanbanCardPayload,
   ConfigPreviewResponse,
   ConfigSearchResponse,
   DeviceSummary,
@@ -55,4 +58,20 @@ export const api = {
         .join('&')}`,
     ),
   lookupVrf: (name: string) => request<LookupResponse>(`/api/lookup/vrf?name=${encodeURIComponent(name)}`),
+  getKanbanBoard: () => request<KanbanBoardResponse>('/api/kanban/cards'),
+  createKanbanCard: (payload: KanbanCardPayload) =>
+    request<KanbanCard>('/api/kanban/cards', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateKanbanCard: (cardId: number, payload: KanbanCardPayload) =>
+    request<KanbanCard>(`/api/kanban/cards/${cardId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  moveKanbanCard: (cardId: number, columnKey: string, position: number) =>
+    request<KanbanCard>(`/api/kanban/cards/${cardId}/move`, {
+      method: 'POST',
+      body: JSON.stringify({ column_key: columnKey, position }),
+    }),
 }
