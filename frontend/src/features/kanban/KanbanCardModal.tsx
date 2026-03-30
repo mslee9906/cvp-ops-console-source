@@ -161,17 +161,22 @@ export function KanbanCardModal({ mode, initialValues, card, submitting, onClose
 }
 
 function normalizeCardInput(values: KanbanCardInput): KanbanCardInput {
+  const normalizedChecklistItems = (values.checklist_items ?? [])
+    .map((item) => ({
+      ...item,
+      title: item.title.trim(),
+    }))
+    .filter((item) => item.title)
+    .map((item, index) => ({
+      ...item,
+      sort_order: index + 1,
+    }))
+
   return {
     ...values,
     title: values.title.trim(),
     description: values.description.trim(),
     assignee: values.assignee.trim(),
-    checklist_items: (values.checklist_items ?? [])
-      .map((item, index) => ({
-        ...item,
-        title: item.title.trim(),
-        sort_order: index + 1,
-      }))
-      .filter((item) => item.title),
+    checklist_items: normalizedChecklistItems,
   }
 }

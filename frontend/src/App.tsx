@@ -209,6 +209,7 @@ function App() {
   const currentView = viewMeta[activeView]
   const currentScope = isRecordScope(activeView) ? activeView : null
   const activeConfigDevice = devices.find((item) => item.device_id === selectedDeviceId)
+  const showSnapshotRefreshUi = activeView !== 'kanban'
 
   const filteredDevices = useMemo(() => {
     const token = deferredDeviceSearch.trim().toLowerCase()
@@ -551,12 +552,14 @@ function App() {
 
         </nav>
 
-        <div className="rail-footer">
-          <button className="refresh-button" onClick={() => void handleStartRefresh()} disabled={collectionProgress?.status === 'running'}>
-            <RefreshCcw className={collectionProgress?.status === 'running' ? 'spin' : ''} />
-            <span>{collectionProgress?.status === 'running' ? '스냅샷 갱신 중' : '스냅샷 갱신'}</span>
-          </button>
-        </div>
+        {showSnapshotRefreshUi ? (
+          <div className="rail-footer">
+            <button className="refresh-button" onClick={() => void handleStartRefresh()} disabled={collectionProgress?.status === 'running'}>
+              <RefreshCcw className={collectionProgress?.status === 'running' ? 'spin' : ''} />
+              <span>{collectionProgress?.status === 'running' ? '스냅샷 갱신 중' : '스냅샷 갱신'}</span>
+            </button>
+          </div>
+        ) : null}
       </aside>
       <main className="workspace">
         {activeView !== 'kanban' ? (
@@ -580,9 +583,9 @@ function App() {
           </section>
         ) : null}
 
-        {collectionProgress ? <CollectionProgressCard progress={collectionProgress} /> : null}
+        {showSnapshotRefreshUi && collectionProgress ? <CollectionProgressCard progress={collectionProgress} /> : null}
         {overviewError ? <div className="message-banner error">{overviewError}</div> : null}
-        {refreshError ? <div className="message-banner error">{refreshError}</div> : null}
+        {showSnapshotRefreshUi && refreshError ? <div className="message-banner error">{refreshError}</div> : null}
 
         {activeView === 'home' ? renderHome(overview) : null}
 
