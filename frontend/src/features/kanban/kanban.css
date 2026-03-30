@@ -118,6 +118,11 @@
   font-weight: 700;
 }
 
+.kanban-link-button.danger {
+  background: rgba(228, 89, 105, 0.12);
+  color: #b33145;
+}
+
 .kanban-message {
   padding: 12px 14px;
   border-radius: 16px;
@@ -391,6 +396,59 @@
   font-size: 12px;
 }
 
+.kanban-progress-card {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(37, 157, 100, 0.12);
+  background: linear-gradient(180deg, rgba(240, 252, 247, 0.95), rgba(233, 248, 239, 0.92));
+  display: grid;
+  gap: 10px;
+}
+
+.kanban-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.kanban-progress-head span {
+  color: #5a6b7f;
+}
+
+.kanban-progress-head strong {
+  color: #18764b;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.kanban-progress-bar {
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(37, 157, 100, 0.12);
+  overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(23, 72, 50, 0.08);
+}
+
+.kanban-progress-bar span {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #20a35f, #39bf79);
+  box-shadow: 0 6px 14px rgba(37, 157, 100, 0.22);
+  transition: width 180ms ease;
+}
+
+.kanban-progress-copy {
+  margin: 0;
+  color: #5f7182;
+  font-size: 12px;
+}
+
 .kanban-step-panel {
   align-self: start;
   display: grid;
@@ -409,13 +467,18 @@
   font-weight: 700;
 }
 
+.kanban-step-link.active {
+  background: linear-gradient(135deg, rgba(46, 114, 255, 0.16), rgba(46, 114, 255, 0.1));
+  box-shadow: inset 0 0 0 1px rgba(46, 114, 255, 0.08);
+}
+
 .kanban-step-copy {
   margin: 10px 0 0;
 }
 
 .kanban-field-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -476,6 +539,87 @@
   min-width: 0;
 }
 
+.kanban-checklist-panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(20, 36, 52, 0.08);
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0.95), rgba(242, 247, 252, 0.9));
+}
+
+.kanban-checklist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kanban-checklist-head h4 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.kanban-checklist-list {
+  display: grid;
+  gap: 10px;
+}
+
+.kanban-checklist-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(20, 36, 52, 0.08);
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.kanban-checklist-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kanban-checklist-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: #20a35f;
+  cursor: pointer;
+}
+
+.kanban-checklist-input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #152234;
+  font: inherit;
+  outline: none;
+}
+
+.kanban-checklist-input.completed {
+  color: #75859a;
+  text-decoration: line-through;
+}
+
+.kanban-checklist-empty {
+  padding: 18px 16px;
+  border-radius: 16px;
+  border: 1px dashed rgba(20, 36, 52, 0.12);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.kanban-checklist-empty strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.kanban-checklist-empty p {
+  margin: 0;
+  color: #67768c;
+}
+
 .kanban-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -506,5 +650,10 @@
 
   .kanban-field-grid {
     grid-template-columns: 1fr;
+  }
+
+  .kanban-checklist-head {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

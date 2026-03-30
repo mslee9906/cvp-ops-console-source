@@ -133,15 +133,27 @@ export type KanbanColumnKey = 'blocked' | 'planned' | 'ready' | 'in_progress' | 
 export type KanbanCardType = 'existing' | 'new'
 export type KanbanPriority = 'high' | 'medium' | 'low'
 
+export interface KanbanChecklistItem {
+  id?: number | null
+  title: string
+  is_completed: boolean
+  sort_order?: number | null
+}
+
 export interface KanbanCard {
   id: number
   card_code: string
   title: string
   description: string
+  assignee: string
   column_key: KanbanColumnKey
   card_type: KanbanCardType
   priority: KanbanPriority
   sort_order: number
+  checklist_total: number
+  checklist_completed: number
+  progress_percent: number
+  checklist_items: KanbanChecklistItem[]
   created_at: string
   updated_at: string
 }
@@ -149,9 +161,11 @@ export interface KanbanCard {
 export interface KanbanCardInput {
   title: string
   description: string
+  assignee: string
   column_key: KanbanColumnKey
   card_type: KanbanCardType
   priority: KanbanPriority
+  checklist_items?: KanbanChecklistItem[]
 }
 
 export interface KanbanCardPosition {

@@ -20,9 +20,11 @@ const COLUMN_META: Array<{ key: KanbanColumnKey; label: string; tone: string }> 
 const EMPTY_CARD_INPUT: KanbanCardInput = {
   title: '',
   description: '',
+  assignee: '',
   column_key: 'planned',
   card_type: 'existing',
   priority: 'medium',
+  checklist_items: [],
 }
 
 export function KanbanBoard() {
@@ -39,6 +41,10 @@ export function KanbanBoard() {
   const selectedCard = useMemo(
     () => cards.find((item) => item.id === selectedCardId) ?? null,
     [cards, selectedCardId],
+  )
+  const detailProgress = useMemo(
+    () => calculateProgress(detailDraft?.checklist_items ?? selectedCard?.checklist_items ?? []),
+    [detailDraft?.checklist_items, selectedCard?.checklist_items],
   )
 
   const groupedCards = useMemo(() => {
@@ -99,7 +105,7 @@ export function KanbanBoard() {
     try {
       setSubmitting(true)
       setError('')
-      const created = await api.createKanbanCard(values)
+      const created = await api.createKanbanCard(normalizeCardInput(values))
       setCards((current) => sortCards([...current, created]))
       closeModal()
     } catch (submitError) {
@@ -113,7 +119,7 @@ export function KanbanBoard() {
     try {
       setSubmitting(true)
       setError('')
-      const updated = await api.updateKanbanCard(cardId, values)
+      const updated = await api.updateKanbanCard(cardId, normalizeCardInput(values))
       setCards((current) => sortCards(current.map((card) => (card.id === cardId ? updated : card))))
       if (selectedCardId === cardId) {
         setDetailDraft(toCardInput(updated))
@@ -156,7 +162,7 @@ export function KanbanBoard() {
     try {
       setSubmitting(true)
       setError('')
-      const updated = await api.updateKanbanCard(selectedCard.id, detailDraft)
+      const updated = await api.updateKanbanCard(selectedCard.id, normalizeCardInput(detailDraft))
       setCards((current) => sortCards(current.map((card) => (card.id === selectedCard.id ? updated : card))))
       setDetailDraft(toCardInput(updated))
     } catch (submitError) {
@@ -190,6 +196,53 @@ export function KanbanBoard() {
       setCards(previousCards)
       setError(reorderError instanceof Error ? reorderError.message : '카드 순서를 저장하지 못했습니다.')
     }
+  }
+
+  function updateDetailDraft(changes: Partial<KanbanCardInput>) {
+    setDetailDraft((current) => (current ? { ...current, ...changes } : current))
+  }
+
+  function addChecklistItem() {
+    setDetailDraft((current) =>
+      current
+        ? {
+            ...current,
+            checklist_items: [
+              ...(current.checklist_items ?? []),
+              {
+                title: '',
+                is_completed: false,
+              },
+            ],
+          }
+        : current,
+    )
+  }
+
+  function updateChecklistItem(index: number, changes: Partial<NonNullable<KanbanCardInput['checklist_items']>[number]>) {
+    setDetailDraft((current) => {
+      if (!current) {
+        return current
+      }
+
+      return {
+        ...current,
+        checklist_items: (current.checklist_items ?? []).map((item, itemIndex) =>
+          itemIndex === index ? { ...item, ...changes } : item,
+        ),
+      }
+    })
+  }
+
+  function removeChecklistItem(index: number) {
+    setDetailDraft((current) =>
+      current
+        ? {
+            ...current,
+            checklist_items: (current.checklist_items ?? []).filter((_, itemIndex) => itemIndex !== index),
+          }
+        : current,
+    )
   }
 
   const boardContent = (
@@ -321,26 +374,38 @@ export function KanbanBoard() {
             <aside className="kanban-detail-sidebar">
               <article className="kanban-detail-summary-card">
                 <p className="kanban-kicker">Task Summary</p>
-                <h3>{selectedCard.title}</h3>
+                <h3>{detailDraft.title}</h3>
                 <div className="kanban-summary-row">
-                  <span>카드 번호</span>
-                  <strong>{selectedCard.card_code}</strong>
+                  <span>담당자</span>
+                  <strong>{detailDraft.assignee.trim() || '미지정'}</strong>
                 </div>
                 <div className="kanban-summary-row">
                   <span>현재 상태</span>
-                  <strong>{columnLabel(selectedCard.column_key)}</strong>
+                  <strong>{columnLabel(detailDraft.column_key)}</strong>
                 </div>
                 <div className="kanban-summary-row">
                   <span>작업 유형</span>
-                  <strong>{selectedCard.card_type === 'new' ? '신규 장비 작업' : '기존 장비 작업'}</strong>
+                  <strong>{detailDraft.card_type === 'new' ? '신규 장비 작업' : '기존 장비 작업'}</strong>
                 </div>
                 <div className="kanban-summary-row">
                   <span>우선순위</span>
-                  <strong>{priorityLabel(selectedCard.priority)}</strong>
+                  <strong>{priorityLabel(detailDraft.priority)}</strong>
                 </div>
                 <div className="kanban-summary-row">
                   <span>수정 시각</span>
                   <strong>{formatDateTime(selectedCard.updated_at)}</strong>
+                </div>
+                <div className="kanban-progress-card">
+                  <div className="kanban-progress-head">
+                    <span>진행률</span>
+                    <strong>{detailProgress.percent}%</strong>
+                  </div>
+                  <div className="kanban-progress-bar" aria-hidden="true">
+                    <span style={{ width: `${detailProgress.percent}%` }} />
+                  </div>
+                  <p className="kanban-progress-copy">
+                    완료 {detailProgress.completed} / 전체 {detailProgress.total}
+                  </p>
                 </div>
               </article>
 
@@ -349,7 +414,10 @@ export function KanbanBoard() {
                 <button className="kanban-step-link active" type="button">
                   기본 정보
                 </button>
-                <p className="kanban-step-copy">이번 단계에서는 카드 기본 정보만 편집합니다. 장비 연결, 체크리스트, diff, 검증은 이후 단계에서 추가할 예정입니다.</p>
+                <button className="kanban-step-link active" type="button">
+                  체크리스트
+                </button>
+                <p className="kanban-step-copy">이번 시험 버전에서는 담당자, 체크리스트, 진행률까지 함께 저장합니다. 장비 연결, diff, 검증은 이후 단계에서 확장할 예정입니다.</p>
               </section>
             </aside>
 
@@ -366,21 +434,26 @@ export function KanbanBoard() {
                   <span>작업 제목</span>
                   <input
                     value={detailDraft.title}
-                    onChange={(event) => setDetailDraft((current) => (current ? { ...current, title: event.target.value } : current))}
+                    onChange={(event) => updateDetailDraft({ title: event.target.value })}
                     required
                   />
                 </label>
 
                 <div className="kanban-field-grid">
                   <label className="kanban-field">
+                    <span>담당자</span>
+                    <input
+                      value={detailDraft.assignee}
+                      onChange={(event) => updateDetailDraft({ assignee: event.target.value })}
+                      placeholder="예: 김철수"
+                    />
+                  </label>
+
+                  <label className="kanban-field">
                     <span>상태</span>
                     <select
                       value={detailDraft.column_key}
-                      onChange={(event) =>
-                        setDetailDraft((current) =>
-                          current ? { ...current, column_key: event.target.value as KanbanColumnKey } : current,
-                        )
-                      }
+                      onChange={(event) => updateDetailDraft({ column_key: event.target.value as KanbanColumnKey })}
                     >
                       {COLUMN_META.map((option) => (
                         <option key={option.key} value={option.key}>
@@ -394,11 +467,7 @@ export function KanbanBoard() {
                     <span>작업 유형</span>
                     <select
                       value={detailDraft.card_type}
-                      onChange={(event) =>
-                        setDetailDraft((current) =>
-                          current ? { ...current, card_type: event.target.value as KanbanCardInput['card_type'] } : current,
-                        )
-                      }
+                      onChange={(event) => updateDetailDraft({ card_type: event.target.value as KanbanCardInput['card_type'] })}
                     >
                       <option value="existing">기존 장비 작업</option>
                       <option value="new">신규 장비 작업</option>
@@ -409,11 +478,7 @@ export function KanbanBoard() {
                     <span>우선순위</span>
                     <select
                       value={detailDraft.priority}
-                      onChange={(event) =>
-                        setDetailDraft((current) =>
-                          current ? { ...current, priority: event.target.value as KanbanCardInput['priority'] } : current,
-                        )
-                      }
+                      onChange={(event) => updateDetailDraft({ priority: event.target.value as KanbanCardInput['priority'] })}
                     >
                       <option value="high">높음</option>
                       <option value="medium">중간</option>
@@ -427,9 +492,57 @@ export function KanbanBoard() {
                   <AutoGrowTextarea
                     value={detailDraft.description}
                     rows={10}
-                    onChange={(event) => setDetailDraft((current) => (current ? { ...current, description: event.target.value } : current))}
+                    onChange={(event) => updateDetailDraft({ description: event.target.value })}
                   />
                 </label>
+
+                <section className="kanban-checklist-panel">
+                  <div className="kanban-checklist-head">
+                    <div>
+                      <p className="kanban-kicker">Checklist</p>
+                      <h4>작업 체크리스트</h4>
+                    </div>
+                    <button className="kanban-ghost-button" type="button" onClick={addChecklistItem}>
+                      <Plus size={16} />
+                      <span>항목 추가</span>
+                    </button>
+                  </div>
+
+                  {detailDraft.checklist_items && detailDraft.checklist_items.length > 0 ? (
+                    <div className="kanban-checklist-list">
+                      {detailDraft.checklist_items.map((item, index) => (
+                        <div key={item.id ?? `draft-${index}`} className="kanban-checklist-item">
+                          <label className="kanban-checklist-toggle">
+                            <input
+                              type="checkbox"
+                              checked={item.is_completed}
+                              onChange={(event) => updateChecklistItem(index, { is_completed: event.target.checked })}
+                            />
+                          </label>
+                          <input
+                            className={`kanban-checklist-input ${item.is_completed ? 'completed' : ''}`}
+                            value={item.title}
+                            onChange={(event) => updateChecklistItem(index, { title: event.target.value })}
+                            placeholder="예: 변경 전 snapshot 확인"
+                          />
+                          <button
+                            className="kanban-link-button danger"
+                            type="button"
+                            onClick={() => removeChecklistItem(index)}
+                            aria-label="체크리스트 항목 삭제"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="kanban-checklist-empty">
+                      <strong>체크리스트가 아직 없습니다.</strong>
+                      <p>항목을 추가하면 진행률이 자동 계산됩니다.</p>
+                    </div>
+                  )}
+                </section>
 
                 <div className="kanban-detail-actions">
                   <button
@@ -520,9 +633,16 @@ function toCardInput(card: KanbanCard): KanbanCardInput {
   return {
     title: card.title,
     description: card.description,
+    assignee: card.assignee,
     column_key: card.column_key,
     card_type: card.card_type,
     priority: card.priority,
+    checklist_items: card.checklist_items.map((item, index) => ({
+      id: item.id ?? undefined,
+      title: item.title,
+      is_completed: item.is_completed,
+      sort_order: item.sort_order ?? index + 1,
+    })),
   }
 }
 
@@ -548,4 +668,31 @@ function formatDateTime(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function calculateProgress(items: KanbanCardInput['checklist_items']) {
+  const normalizedItems = (items ?? []).filter((item) => item.title.trim())
+  const completed = normalizedItems.filter((item) => item.is_completed).length
+  const total = normalizedItems.length
+  return {
+    completed,
+    total,
+    percent: total > 0 ? Math.round((completed / total) * 100) : 0,
+  }
+}
+
+function normalizeCardInput(values: KanbanCardInput): KanbanCardInput {
+  return {
+    ...values,
+    title: values.title.trim(),
+    description: values.description.trim(),
+    assignee: values.assignee.trim(),
+    checklist_items: (values.checklist_items ?? [])
+      .map((item, index) => ({
+        ...item,
+        title: item.title.trim(),
+        sort_order: index + 1,
+      }))
+      .filter((item) => item.title),
+  }
 }

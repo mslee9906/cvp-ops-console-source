@@ -43,11 +43,7 @@ export function KanbanCardModal({ mode, initialValues, card, submitting, onClose
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    void onSubmit({
-      ...values,
-      title: values.title.trim(),
-      description: values.description.trim(),
-    })
+    void onSubmit(normalizeCardInput(values))
   }
 
   return (
@@ -75,6 +71,15 @@ export function KanbanCardModal({ mode, initialValues, card, submitting, onClose
           </label>
 
           <div className="kanban-field-grid">
+            <label className="kanban-field">
+              <span>담당자</span>
+              <input
+                value={values.assignee}
+                onChange={(event) => setValues((current) => ({ ...current, assignee: event.target.value }))}
+                placeholder="예: 김철수"
+              />
+            </label>
+
             <label className="kanban-field">
               <span>상태</span>
               <select
@@ -153,4 +158,20 @@ export function KanbanCardModal({ mode, initialValues, card, submitting, onClose
       </div>
     </div>
   )
+}
+
+function normalizeCardInput(values: KanbanCardInput): KanbanCardInput {
+  return {
+    ...values,
+    title: values.title.trim(),
+    description: values.description.trim(),
+    assignee: values.assignee.trim(),
+    checklist_items: (values.checklist_items ?? [])
+      .map((item, index) => ({
+        ...item,
+        title: item.title.trim(),
+        sort_order: index + 1,
+      }))
+      .filter((item) => item.title),
+  }
 }

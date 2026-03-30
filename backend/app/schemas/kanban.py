@@ -25,15 +25,36 @@ class KanbanPriority(str, Enum):
     low = "low"
 
 
+class KanbanChecklistItem(BaseModel):
+    id: int | None = None
+    title: str = Field(..., min_length=1, max_length=300)
+    is_completed: bool = False
+    sort_order: int | None = Field(default=None, ge=1)
+
+
+class KanbanChecklistItemResponse(BaseModel):
+    id: int
+    title: str
+    is_completed: bool = False
+    sort_order: int
+    created_at: str
+    updated_at: str
+
+
 class KanbanCardResponse(BaseModel):
     id: int
     card_code: str
     title: str
     description: str = ""
+    assignee: str = ""
     column_key: KanbanColumnKey
     card_type: KanbanCardType
     priority: KanbanPriority
     sort_order: int
+    checklist_total: int = 0
+    checklist_completed: int = 0
+    progress_percent: int = 0
+    checklist_items: list[KanbanChecklistItemResponse] = Field(default_factory=list)
     created_at: str
     updated_at: str
 
@@ -41,6 +62,7 @@ class KanbanCardResponse(BaseModel):
 class KanbanCardCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: str = Field(default="", max_length=5000)
+    assignee: str = Field(default="", max_length=120)
     column_key: KanbanColumnKey = KanbanColumnKey.planned
     card_type: KanbanCardType = KanbanCardType.existing
     priority: KanbanPriority = KanbanPriority.medium
@@ -49,9 +71,11 @@ class KanbanCardCreate(BaseModel):
 class KanbanCardUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
+    assignee: str | None = Field(default=None, max_length=120)
     column_key: KanbanColumnKey | None = None
     card_type: KanbanCardType | None = None
     priority: KanbanPriority | None = None
+    checklist_items: list[KanbanChecklistItem] | None = None
 
 
 class KanbanCardPosition(BaseModel):
