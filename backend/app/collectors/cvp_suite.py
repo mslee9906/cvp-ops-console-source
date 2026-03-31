@@ -57,6 +57,7 @@ class CVPCollectorSuite:
             vrfs: list[dict[str, Any]] = []
             bgp: list[dict[str, Any]] = []
             vlans: list[dict[str, Any]] = []
+            vnis: list[dict[str, Any]] = []
             configs: list[dict[str, Any]] = []
             ip_records: list[dict[str, Any]] = []
 
@@ -130,6 +131,15 @@ class CVPCollectorSuite:
                         }
                     )
                 vlans.extend(self._collect_vlans(connector, device_id, device))
+                if progress_callback:
+                    progress_callback(
+                        {
+                            'progress_percent': percent,
+                            'step': 'vni',
+                            'detail': f"Loading VxLAN VNI data for {device['hostname']} ({index}/{total_devices}).",
+                        }
+                    )
+                vnis.extend(self._collect_vnis(connector, device_id, device))
 
                 if progress_callback:
                     progress_callback(
@@ -151,13 +161,14 @@ class CVPCollectorSuite:
                     )
                     ip_records.extend(extract_ip_records(device_id, device['hostname'], config_text))
                 logger.info(
-                    "Completed device %s/%s: hostname=%s vrfs=%s bgp=%s vlans=%s config=%s",
+                    "Completed device %s/%s: hostname=%s vrfs=%s bgp=%s vlans=%s vnis=%s config=%s",
                     index,
                     total_devices,
                     device['hostname'],
                     len(device_vrfs),
                     len([entry for entry in bgp if entry['device_id'] == device_id]),
                     len([entry for entry in vlans if entry['device_id'] == device_id]),
+                    len([entry for entry in vnis if entry['device_id'] == device_id]),
                     'yes' if config_text else 'no',
                 )
 
@@ -168,6 +179,7 @@ class CVPCollectorSuite:
             'bgp': bgp,
             'vrfs': vrfs,
             'vlans': vlans,
+            'vnis': vnis,
             'ip_records': ip_records,
             'configs': configs,
         }
@@ -305,6 +317,54 @@ class CVPCollectorSuite:
             )
         return vlans
 
+    def _collect_vnis(
+        self,
+        connector: CVPConnector,
+        device_id: str,
+        device: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        vni_updates = self._expand_child_map(
+            connector,
+            device_id,
+            self.paths['vxlan_vni']['path_elements'],
+        )
+
+        entries: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for raw_key, raw_value in vni_updates.items():
+            vlan_id = self._extract_scalar_from_key(raw_key).strip()
+            if not vlan_id:
+                continue
+
+            try:
+                if int(vlan_id) > 3800:
+                    continue
+            except ValueError:
+                continue
+
+            if not isinstance(raw_value, dict):
+                continue
+
+            vni = self._extract_nested_scalar(raw_value, 'vni').strip()
+            if not vni:
+                continue
+
+            dedupe_key = (vlan_id, vni)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+
+            entries.append(
+                {
+                    'device_id': device_id,
+                    'hostname': device['hostname'],
+                    'vlan_id': vlan_id,
+                    'vni': vni,
+                    'source_path': '/' + '/'.join(str(item) for item in self.paths['vxlan_vni']['path_elements']),
+                }
+            )
+        return entries
+
     def _collect_config(self, connector: CVPConnector, device_id: str) -> str:
         updates = connector.get_merged_updates(device_id, self.paths['config']['path_elements'])
         nodes = {key: value for key, value in updates.items() if isinstance(value, dict)}
@@ -358,4 +418,51 @@ class CVPCollectorSuite:
             except json.JSONDecodeError:
                 return raw_key
         return raw_key
+
+    def _extract_nested_scalar(self, raw_value: Any, field_name: str) -> str:
+        if isinstance(raw_value, dict):
+            direct = raw_value.get(field_name)
+            if direct is not None:
+                return self._coerce_scalar(direct)
+
+            for raw_key, value in raw_value.items():
+                normalized_key = str(raw_key).lower()
+                if normalized_key == field_name.lower() or normalized_key.endswith(field_name.lower()):
+                    extracted = self._coerce_scalar(value)
+                    if extracted:
+                        return extracted
+
+            for value in raw_value.values():
+                extracted = self._extract_nested_scalar(value, field_name)
+                if extracted:
+                    return extracted
+
+        if isinstance(raw_value, list):
+            for item in raw_value:
+                extracted = self._extract_nested_scalar(item, field_name)
+                if extracted:
+                    return extracted
+
+        return ''
+
+    def _coerce_scalar(self, raw_value: Any) -> str:
+        if isinstance(raw_value, dict):
+            if 'value' in raw_value and not isinstance(raw_value['value'], (dict, list)):
+                return str(raw_value['value'])
+            for value in raw_value.values():
+                extracted = self._coerce_scalar(value)
+                if extracted:
+                    return extracted
+            return ''
+
+        if isinstance(raw_value, list):
+            for item in raw_value:
+                extracted = self._coerce_scalar(item)
+                if extracted:
+                    return extracted
+            return ''
+
+        if raw_value in {None, ''}:
+            return ''
+        return str(raw_value)
 

@@ -108,12 +108,13 @@ class CollectionService:
             }
             self.repository.replace_snapshot(snapshot, config_metadata, latest_job)
             logger.info(
-                "Snapshot refresh completed successfully. source=%s devices=%s bgp=%s vrfs=%s vlans=%s ip_records=%s configs=%s",
+                "Snapshot refresh completed successfully. source=%s devices=%s bgp=%s vrfs=%s vlans=%s vnis=%s ip_records=%s configs=%s",
                 source,
                 len(snapshot.get('devices', [])),
                 len(snapshot.get('bgp', [])),
                 len(snapshot.get('vrfs', [])),
                 len(snapshot.get('vlans', [])),
+                len(snapshot.get('vnis', [])),
                 len(snapshot.get('ip_records', [])),
                 len(snapshot.get('configs', [])),
             )

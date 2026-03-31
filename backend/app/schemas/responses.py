@@ -28,6 +28,7 @@ class OverviewResponse(BaseModel):
     ip_count: int
     bgp_count: int
     vlan_count: int
+    vni_count: int
     vrf_count: int
     config_snapshot_count: int
     latest_collection_at: str | None = None
@@ -117,6 +118,27 @@ class VrfGroupListResponse(BaseModel):
     scope: str = "vrf"
     total_count: int
     items: list[VrfGroupItem] = Field(default_factory=list)
+
+
+class VniGroupDevice(BaseModel):
+    device_id: str
+    hostname: str
+    mgmt_ip: str = ""
+    vlan_id: str = ""
+    vlan_name: str = ""
+
+
+class VniGroupItem(BaseModel):
+    vni: str
+    device_count: int
+    vlan_ids: list[str] = Field(default_factory=list)
+    devices: list[VniGroupDevice] = Field(default_factory=list)
+
+
+class VniGroupListResponse(BaseModel):
+    scope: str = "vni"
+    total_count: int
+    items: list[VniGroupItem] = Field(default_factory=list)
 
 
 class ConfigSearchLine(BaseModel):

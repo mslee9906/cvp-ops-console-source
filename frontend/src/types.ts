@@ -34,6 +34,7 @@ export interface OverviewResponse {
   ip_count: number
   bgp_count: number
   vlan_count: number
+  vni_count: number
   vrf_count: number
   config_snapshot_count: number
   latest_collection_at: string | null
@@ -106,6 +107,27 @@ export interface VrfGroupListResponse {
   scope: 'vrf'
   total_count: number
   items: VrfGroupItem[]
+}
+
+export interface VniGroupDevice {
+  device_id: string
+  hostname: string
+  mgmt_ip: string
+  vlan_id: string
+  vlan_name: string
+}
+
+export interface VniGroupItem {
+  vni: string
+  device_count: number
+  vlan_ids: string[]
+  devices: VniGroupDevice[]
+}
+
+export interface VniGroupListResponse {
+  scope: 'vni'
+  total_count: number
+  items: VniGroupItem[]
 }
 
 export interface ConfigSearchLine {

@@ -117,6 +117,45 @@
       "svi_name": "Vlan310",
       "description": "External DMZ",
       "source_path": "/Sysdb/bridging/config/vlanConfig"
+    },
+    {
+      "device_id": "C325173ED3D9ABABBFCD20856759470F",
+      "hostname": "DC2-BORDER-01",
+      "vlan_id": "210",
+      "vlan_name": "WEB_EXT",
+      "svi_name": "Vlan210",
+      "description": "Web L2 Extension",
+      "source_path": "/Sysdb/bridging/config/vlanConfig"
+    }
+  ],
+  "vnis": [
+    {
+      "device_id": "E325173ED3D9ABABBFCD20856759470C",
+      "hostname": "DC1-LEAF-01A",
+      "vlan_id": "100",
+      "vni": "10100",
+      "source_path": "/Sysdb/interface/status/eth/vxlan/vtiStatus/Vxlan1/vlanToVniMap"
+    },
+    {
+      "device_id": "A125173ED3D9ABABBFCD20856759470D",
+      "hostname": "DC1-LEAF-01B",
+      "vlan_id": "100",
+      "vni": "10100",
+      "source_path": "/Sysdb/interface/status/eth/vxlan/vtiStatus/Vxlan1/vlanToVniMap"
+    },
+    {
+      "device_id": "C325173ED3D9ABABBFCD20856759470F",
+      "hostname": "DC2-BORDER-01",
+      "vlan_id": "210",
+      "vni": "10100",
+      "source_path": "/Sysdb/interface/status/eth/vxlan/vtiStatus/Vxlan1/vlanToVniMap"
+    },
+    {
+      "device_id": "C325173ED3D9ABABBFCD20856759470F",
+      "hostname": "DC2-BORDER-01",
+      "vlan_id": "310",
+      "vni": "10310",
+      "source_path": "/Sysdb/interface/status/eth/vxlan/vtiStatus/Vxlan1/vlanToVniMap"
     }
   ],
   "ip_records": [

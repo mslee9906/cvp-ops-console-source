@@ -10,6 +10,7 @@ from app.schemas.responses import (
     LookupResponse,
     OverviewResponse,
     RecordListResponse,
+    VniGroupListResponse,
     VrfGroupListResponse,
 )
 
@@ -63,6 +64,18 @@ def list_vrf_records(
         limit=limit,
         exclude_default=exclude_default,
         name=name,
+    )
+
+
+@router.get('/records/vni', response_model=VniGroupListResponse)
+def list_vni_records(
+    request: Request,
+    limit: int = Query(default=200, ge=1, le=10000),
+    vni: str | None = Query(default=None),
+) -> VniGroupListResponse:
+    return request.app.state.query_service.list_vni_groups(
+        limit=limit,
+        vni=vni,
     )
 
 

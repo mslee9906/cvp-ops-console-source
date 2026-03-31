@@ -115,8 +115,63 @@ class QueryService:
             'items': items[:limit],
         }
 
+    def list_vni_groups(
+        self,
+        limit: int = 200,
+        vni: str | None = None,
+    ) -> dict[str, Any]:
+        rows = self.repository.get_vni_entries()
+        devices = {item['device_id']: item for item in self.repository.list_devices()}
+        vlan_details = {
+            (item['device_id'], str(item['vlan_id'])): item
+            for item in self.repository.get_vlan_entries()
+        }
+        token = (vni or '').strip().lower()
+        grouped: dict[str, list[dict[str, str]]] = {}
+
+        for row in rows:
+            vni_value = str(row['vni'])
+            if token and token not in vni_value.lower():
+                continue
+
+            device = devices.get(row['device_id'], {})
+            vlan_detail = vlan_details.get((row['device_id'], str(row['vlan_id'])), {})
+            grouped.setdefault(vni_value, []).append(
+                {
+                    'device_id': row['device_id'],
+                    'hostname': row['hostname'],
+                    'mgmt_ip': str(device.get('mgmt_ip', '') or ''),
+                    'vlan_id': str(row['vlan_id']),
+                    'vlan_name': str(vlan_detail.get('vlan_name', '') or ''),
+                }
+            )
+
+        items = []
+        for vni_value, device_rows in grouped.items():
+            sorted_devices = sorted(
+                device_rows,
+                key=lambda item: (self._numeric_sort_key(item['vlan_id']), item['hostname'].lower()),
+            )
+            vlan_ids = sorted({item['vlan_id'] for item in sorted_devices}, key=self._numeric_sort_key)
+            items.append(
+                {
+                    'vni': vni_value,
+                    'device_count': len({item['device_id'] for item in sorted_devices}),
+                    'vlan_ids': vlan_ids,
+                    'devices': sorted_devices,
+                }
+            )
+
+        items.sort(key=lambda item: self._numeric_sort_key(item['vni']))
+        return {
+            'scope': 'vni',
+            'total_count': len(items),
+            'items': items[:limit],
+        }
+
     def list_vlan(self, limit: int = 200) -> dict[str, Any]:
         all_rows = self.repository.get_vlan_entries()
+        vni_context = self._build_vlan_vni_context()
         rows = all_rows[:limit]
         return {
             'scope': 'vlan',
@@ -132,6 +187,7 @@ class QueryService:
                         'vlan_name': item['vlan_name'],
                         'svi_name': item['svi_name'],
                         'description': item['description'],
+                        **self._build_vlan_vni_details(item, vni_context),
                     },
                 }
                 for item in rows
@@ -265,6 +321,7 @@ class QueryService:
         normalized_id = vlan_id.strip() if vlan_id else ''
         normalized_name = vlan_name.strip() if vlan_name else ''
         matches = self.repository.get_vlan_entries(normalized_id or None, normalized_name or None)
+        vni_context = self._build_vlan_vni_context()
 
         if normalized_id and normalized_name:
             id_matches = self.repository.get_vlan_entries(normalized_id, None)
@@ -312,6 +369,7 @@ class QueryService:
                         'vlan_name': item['vlan_name'],
                         'svi_name': item['svi_name'],
                         'description': item['description'],
+                        **self._build_vlan_vni_details(item, vni_context),
                     },
                 }
                 for item in matches
@@ -458,3 +516,55 @@ class QueryService:
                 for item in matches
             ],
         )
+
+    def _build_vlan_vni_context(self) -> dict[str, Any]:
+        vni_entries = self.repository.get_vni_entries()
+        vni_by_vlan: dict[tuple[str, str], str] = {}
+        vlan_ids_by_vni: dict[str, set[str]] = {}
+        hostnames_by_vni: dict[str, set[str]] = {}
+        device_ids_by_vni: dict[str, set[str]] = {}
+
+        for item in vni_entries:
+            vlan_key = (item['device_id'], str(item['vlan_id']))
+            vni_value = str(item['vni'])
+            vni_by_vlan[vlan_key] = vni_value
+            vlan_ids_by_vni.setdefault(vni_value, set()).add(str(item['vlan_id']))
+            hostnames_by_vni.setdefault(vni_value, set()).add(item['hostname'])
+            device_ids_by_vni.setdefault(vni_value, set()).add(item['device_id'])
+
+        return {
+            'vni_by_vlan': vni_by_vlan,
+            'vlan_ids_by_vni': vlan_ids_by_vni,
+            'hostnames_by_vni': hostnames_by_vni,
+            'device_ids_by_vni': device_ids_by_vni,
+        }
+
+    def _build_vlan_vni_details(
+        self,
+        vlan_item: dict[str, Any],
+        context: dict[str, Any],
+    ) -> dict[str, Any]:
+        vlan_key = (vlan_item['device_id'], str(vlan_item['vlan_id']))
+        vni_value = context['vni_by_vlan'].get(vlan_key, '')
+        shared_vlan_ids = sorted(context['vlan_ids_by_vni'].get(vni_value, set()), key=self._numeric_sort_key)
+        shared_hostnames = sorted(context['hostnames_by_vni'].get(vni_value, set()))
+        shared_device_ids = context['device_ids_by_vni'].get(vni_value, set())
+
+        extension_summary = '-'
+        if vni_value:
+            if len(shared_vlan_ids) > 1:
+                extension_summary = ', '.join(shared_vlan_ids)
+            else:
+                extension_summary = f'동일 VLAN {shared_vlan_ids[0]}' if shared_vlan_ids else '-'
+
+        return {
+            'vni': vni_value,
+            'shared_vlan_ids': shared_vlan_ids,
+            'shared_hostnames': shared_hostnames,
+            'shared_device_count': len(shared_device_ids),
+            'l2_extension_summary': extension_summary,
+        }
+
+    def _numeric_sort_key(self, value: Any) -> tuple[int, str]:
+        token = str(value)
+        return (0, f"{int(token):010d}") if token.isdigit() else (1, token.lower())

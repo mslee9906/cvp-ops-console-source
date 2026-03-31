@@ -34,10 +34,11 @@ import type {
   OverviewResponse,
   RecordListResponse,
   RecordScope,
+  VniGroupListResponse,
   VrfGroupListResponse,
 } from './types'
 
-type ViewId = 'home' | 'ip' | 'bgp' | 'vlan' | 'vrf' | 'devices' | 'config' | 'automation' | 'kanban'
+type ViewId = 'home' | 'ip' | 'bgp' | 'vlan' | 'vni' | 'vrf' | 'devices' | 'config' | 'automation' | 'kanban'
 type ViewMeta = {
   label: string
   eyebrow: string
@@ -55,7 +56,7 @@ const viewMeta: Record<ViewId, ViewMeta> = {
     label: '홈',
     eyebrow: 'Snapshot Overview',
     title: 'CVP 현황 대시보드',
-    description: '현재 스냅샷의 장비, IP, BGP, VLAN, VRF, Config 상태를 한 화면에서 확인합니다.',
+    description: '현재 스냅샷의 장비, IP, BGP, VLAN, VNI, VRF, Config 상태를 한 화면에서 확인합니다.',
     icon: House,
   },
   ip: {
@@ -77,6 +78,13 @@ const viewMeta: Record<ViewId, ViewMeta> = {
     eyebrow: 'Layer 2 Inventory',
     title: 'VLAN 현황 조회',
     description: 'VLAN ID 또는 이름 기준으로 조회하고, 현재 스냅샷 기준 VLAN 목록을 확인합니다.',
+    icon: Layers3,
+  },
+  vni: {
+    label: 'VxLAN VNI',
+    eyebrow: 'Overlay Extension',
+    title: 'VxLAN VNI 현황 조회',
+    description: 'VNI별 장비 설정 여부와, 같은 VNI에 연결된 VLAN 확장 관계를 함께 확인합니다.',
     icon: Layers3,
   },
   vrf: {
@@ -116,7 +124,7 @@ const viewMeta: Record<ViewId, ViewMeta> = {
   },
 }
 
-const managementViews: ViewId[] = ['ip', 'bgp', 'vlan', 'vrf', 'devices', 'config']
+const managementViews: ViewId[] = ['ip', 'bgp', 'vlan', 'vni', 'vrf', 'devices', 'config']
 const automationViews: ViewId[] = ['automation']
 const kanbanViews: ViewId[] = ['kanban']
 
@@ -193,6 +201,15 @@ function App() {
   const [vrfFilter, setVrfFilter] = useState('')
   const [excludeDefaultVrf, setExcludeDefaultVrf] = useState(true)
   const [selectedVrfName, setSelectedVrfName] = useState('')
+  const [vrfMemberFilter, setVrfMemberFilter] = useState('')
+
+  const [vniGroups, setVniGroups] = useState<VniGroupListResponse>({ scope: 'vni', total_count: 0, items: [] })
+  const [vniLoading, setVniLoading] = useState(false)
+  const [vniError, setVniError] = useState('')
+  const [vniLimit, setVniLimit] = useState(DEFAULT_PAGE_SIZE)
+  const [vniFilter, setVniFilter] = useState('')
+  const [selectedVni, setSelectedVni] = useState('')
+  const [vniMemberFilter, setVniMemberFilter] = useState('')
 
   const [configSearchQuery, setConfigSearchQuery] = useState('')
   const [configSearchLimit, setConfigSearchLimit] = useState(DEFAULT_PAGE_SIZE)
@@ -231,6 +248,30 @@ function App() {
     () => vrfGroups.items.find((item) => item.vrf_name === selectedVrfName) ?? null,
     [selectedVrfName, vrfGroups.items],
   )
+  const filteredVrfDevices = useMemo(() => {
+    if (!selectedVrfGroup) {
+      return []
+    }
+    const token = vrfMemberFilter.trim().toLowerCase()
+    if (!token) {
+      return selectedVrfGroup.devices
+    }
+    return selectedVrfGroup.devices.filter((device) => device.hostname.toLowerCase().includes(token))
+  }, [selectedVrfGroup, vrfMemberFilter])
+  const selectedVniGroup = useMemo(
+    () => vniGroups.items.find((item) => item.vni === selectedVni) ?? null,
+    [selectedVni, vniGroups.items],
+  )
+  const filteredVniDevices = useMemo(() => {
+    if (!selectedVniGroup) {
+      return []
+    }
+    const token = vniMemberFilter.trim().toLowerCase()
+    if (!token) {
+      return selectedVniGroup.devices
+    }
+    return selectedVniGroup.devices.filter((device) => device.hostname.toLowerCase().includes(token))
+  }, [selectedVniGroup, vniMemberFilter])
 
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
@@ -264,6 +305,26 @@ function App() {
       setSelectedVrfName(vrfGroups.items[0].vrf_name)
     }
   }, [selectedVrfName, vrfGroups.items])
+
+  useEffect(() => {
+    setVrfMemberFilter('')
+  }, [selectedVrfName])
+
+  useEffect(() => {
+    if (!vniGroups.items.length) {
+      setSelectedVni('')
+      return
+    }
+
+    if (!selectedVni || !vniGroups.items.some((item) => item.vni === selectedVni)) {
+      setSelectedVni(vniGroups.items[0].vni)
+    }
+  }, [selectedVni, vniGroups.items])
+
+  useEffect(() => {
+    setVniMemberFilter('')
+  }, [selectedVni])
+
   async function bootstrap() {
     await Promise.all([
       loadOverview(),
@@ -272,6 +333,7 @@ function App() {
       loadRecord('ip', DEFAULT_PAGE_SIZE),
       loadRecord('bgp', DEFAULT_PAGE_SIZE),
       loadRecord('vlan', DEFAULT_PAGE_SIZE),
+      loadVniGroups(DEFAULT_PAGE_SIZE),
       loadVrfGroups(DEFAULT_PAGE_SIZE),
     ])
   }
@@ -287,6 +349,7 @@ function App() {
           loadRecord('ip', recordLimits.ip),
           loadRecord('bgp', recordLimits.bgp),
           loadRecord('vlan', recordLimits.vlan),
+          loadVniGroups(vniLimit),
           loadVrfGroups(vrfLimit),
         ])
         if (selectedDeviceId) {
@@ -362,6 +425,20 @@ function App() {
       setVrfError(error instanceof Error ? error.message : 'VRF 목록을 불러오지 못했습니다.')
     } finally {
       setVrfLoading(false)
+    }
+  }
+
+  async function loadVniGroups(limit = DEFAULT_PAGE_SIZE) {
+    try {
+      setVniLimit(limit)
+      setVniLoading(true)
+      setVniError('')
+      const response = await api.getVniGroups(limit, vniFilter.trim())
+      setVniGroups(response)
+    } catch (error) {
+      setVniError(error instanceof Error ? error.message : 'VNI 목록을 불러오지 못했습니다.')
+    } finally {
+      setVniLoading(false)
     }
   }
 
@@ -482,6 +559,11 @@ function App() {
 
     if (activeView === 'vrf') {
       await loadVrfGroups(vrfLimit)
+      return
+    }
+
+    if (activeView === 'vni') {
+      await loadVniGroups(vniLimit)
       return
     }
 
@@ -793,6 +875,128 @@ function App() {
             </div>
           </section>
         ) : null}
+
+        {activeView === 'vni' ? (
+          <section className="content-grid">
+            <div className="main-card">
+              <div className="card-head">
+                <div>
+                  <p className="section-kicker">VNI Summary</p>
+                  <h3>VNI 기준 확장 현황</h3>
+                </div>
+                <div className="toolbar-row">
+                  <div className="inline-filter">
+                    <Search />
+                    <input
+                      value={vniFilter}
+                      onChange={(event) => setVniFilter(event.target.value)}
+                      placeholder="VNI 검색"
+                    />
+                  </div>
+                  <button className="secondary-action" onClick={() => void loadVniGroups(DEFAULT_PAGE_SIZE)}>
+                    <RefreshCcw />
+                    <span>목록 다시 불러오기</span>
+                  </button>
+                </div>
+              </div>
+
+              <DisplayCount visible={vniGroups.items.length} total={vniGroups.total_count} />
+              {vniError ? <div className="message-banner error">{vniError}</div> : null}
+              {vniLoading ? (
+                <PanelState title="VNI 목록을 불러오는 중입니다." body="장비별 VNI와 VLAN 확장 관계를 정리하고 있습니다." />
+              ) : vniGroups.items.length > 0 ? (
+                <>
+                  <div className="table-shell compact-table-shell">
+                    <table className="data-table narrow">
+                      <thead>
+                        <tr>
+                          <th>VNI</th>
+                          <th>장비 수</th>
+                          <th>VLAN</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {vniGroups.items.map((item) => (
+                          <tr
+                            key={item.vni}
+                            className={item.vni === selectedVni ? 'selected' : ''}
+                            onClick={() => setSelectedVni(item.vni)}
+                          >
+                            <td className="mono-cell">{item.vni}</td>
+                            <td>{item.device_count}</td>
+                            <td>{item.vlan_ids.join(', ') || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <LoadMoreBar
+                    visible={vniGroups.items.length}
+                    total={vniGroups.total_count}
+                    onMore={() => void loadVniGroups(vniLimit + LOAD_MORE_STEP)}
+                  />
+                </>
+              ) : (
+                <PanelState title="표시할 VNI가 없습니다." body="필터 조건에 맞는 VNI가 없거나 아직 수집되지 않았습니다." />
+              )}
+            </div>
+
+            <aside className="side-card">
+              <div className="card-head compact">
+                <div>
+                  <p className="section-kicker">VNI Device Members</p>
+                  <h3>{selectedVniGroup?.vni ?? 'VNI를 선택하세요'}</h3>
+                </div>
+              </div>
+
+              {!selectedVniGroup ? (
+                <PanelState title="장비 목록 대기 중" body="왼쪽 표에서 VNI를 선택하면 연결된 장비와 VLAN을 확인할 수 있습니다." />
+              ) : (
+                <>
+                  <div className="inline-filter member-filter">
+                    <Search />
+                    <input
+                      value={vniMemberFilter}
+                      onChange={(event) => setVniMemberFilter(event.target.value)}
+                      placeholder="Hostname 검색"
+                    />
+                  </div>
+                  <div className="result-summary compact-summary">
+                    <div>
+                      <strong>동일 L2 확장 VLAN</strong>
+                      <p>{selectedVniGroup.vlan_ids.join(', ') || '-'}</p>
+                    </div>
+                    <StatusPill status={selectedVniGroup.device_count > 1 ? 'in_use' : 'available'} />
+                  </div>
+                  <DisplayCount visible={filteredVniDevices.length} total={selectedVniGroup.device_count} />
+                  <div className="table-shell compact-table-shell">
+                    <table className="data-table narrow">
+                      <thead>
+                        <tr>
+                          <th>Hostname</th>
+                          <th>Mgmt IP</th>
+                          <th>VLAN ID</th>
+                          <th>VLAN Name</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredVniDevices.map((device) => (
+                          <tr key={`${selectedVniGroup.vni}-${device.device_id}-${device.vlan_id}`}>
+                            <td>{device.hostname}</td>
+                            <td className="mono-cell">{device.mgmt_ip || '-'}</td>
+                            <td className="mono-cell">{device.vlan_id || '-'}</td>
+                            <td>{device.vlan_name || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </aside>
+          </section>
+        ) : null}
+
         {activeView === 'vrf' ? (
           <section className="content-grid">
             <div className="main-card">
@@ -876,7 +1080,15 @@ function App() {
                 <PanelState title="장비 목록 대기 중" body="왼쪽 표에서 VRF를 선택하면 포함 장비를 확인할 수 있습니다." />
               ) : (
                 <>
-                  <DisplayCount visible={selectedVrfGroup.devices.length} total={selectedVrfGroup.device_count} />
+                  <div className="inline-filter member-filter">
+                    <Search />
+                    <input
+                      value={vrfMemberFilter}
+                      onChange={(event) => setVrfMemberFilter(event.target.value)}
+                      placeholder="Hostname 검색"
+                    />
+                  </div>
+                  <DisplayCount visible={filteredVrfDevices.length} total={selectedVrfGroup.device_count} />
                   <div className="table-shell compact-table-shell">
                     <table className="data-table narrow">
                       <thead>
@@ -886,7 +1098,7 @@ function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedVrfGroup.devices.map((device) => (
+                        {filteredVrfDevices.map((device) => (
                           <tr key={`${selectedVrfGroup.vrf_name}-${device.device_id}`}>
                             <td>{device.hostname}</td>
                             <td className="mono-cell">{device.mgmt_ip || '-'}</td>
@@ -1028,6 +1240,7 @@ function renderHome(overview: OverviewResponse | null) {
         <MetricCard icon={Network} label="IP" value={overview?.ip_count ?? 0} tone="amber" />
         <MetricCard icon={GitBranchPlus} label="BGP" value={overview?.bgp_count ?? 0} tone="sky" />
         <MetricCard icon={Layers3} label="VLAN" value={overview?.vlan_count ?? 0} tone="plum" />
+        <MetricCard icon={Layers3} label="VNI" value={overview?.vni_count ?? 0} tone="aqua" />
         <MetricCard icon={Radar} label="VRF" value={overview?.vrf_count ?? 0} tone="forest" />
         <MetricCard icon={FileText} label="Config" value={overview?.config_snapshot_count ?? 0} tone="sunset" />
       </section>
@@ -1038,7 +1251,7 @@ function renderHome(overview: OverviewResponse | null) {
           <div className="guide-grid">
             <GuideCard title="장비" body="현재 스냅샷에 등록된 장비 수입니다. 장비 탭에서 목록과 Config를 확인할 수 있습니다." />
             <GuideCard title="IP" body="Config에서 추출한 주소 현황입니다. Loopback과 관리망 중복은 강하게 차단 대상으로 표시합니다." />
-            <GuideCard title="BGP / VLAN / VRF" body="신규 할당 전 조회용 기준 데이터입니다. 운영 오류 확정보다 사용 현황 확인에 초점을 둡니다." />
+            <GuideCard title="BGP / VLAN / VNI / VRF" body="신규 할당 전 조회용 기준 데이터입니다. 특히 VLAN과 VNI는 같은 L2 확장 관계까지 함께 확인할 수 있습니다." />
             <GuideCard title="Config 검색" body="최신 snapshot의 running-config 본문 전체에서 문자열을 검색해 어떤 장비에서 보이는지 빠르게 찾을 수 있습니다." />
           </div>
         </article>
@@ -1102,6 +1315,8 @@ function renderTableHeader(scope: RecordScope, isLookupResult: boolean) {
       <th>VLAN ID</th>
       <th>VLAN Name</th>
       <th>SVI</th>
+      <th>VNI</th>
+      <th>L2 확장 VLAN</th>
       <th>Description</th>
     </tr>
   )
@@ -1148,6 +1363,8 @@ function renderTableRow(scope: RecordScope, match: LookupMatch, isLookupResult: 
       <td className="mono-cell">{stringifyValue(match.details.vlan_id) || '-'}</td>
       <td>{stringifyValue(match.details.vlan_name) || '-'}</td>
       <td>{stringifyValue(match.details.svi_name) || '-'}</td>
+      <td className="mono-cell">{stringifyValue(match.details.vni) || '-'}</td>
+      <td>{stringifyValue(match.details.l2_extension_summary) || '-'}</td>
       <td>{stringifyValue(match.details.description) || '-'}</td>
     </tr>
   )
@@ -1205,6 +1422,7 @@ function translateProgressStep(step: string) {
     vrf: 'VRF 수집',
     bgp: 'BGP 수집',
     vlan: 'VLAN 수집',
+    vni: 'VNI 수집',
     config: 'Config 수집',
     device_details: '장비 세부 수집',
     snapshot_ready: '수집 결과 정리',

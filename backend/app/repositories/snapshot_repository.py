@@ -51,6 +51,16 @@ CREATE TABLE IF NOT EXISTS vlans (
     FOREIGN KEY(device_id) REFERENCES devices(device_id)
 );
 
+CREATE TABLE IF NOT EXISTS vni_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL,
+    hostname TEXT NOT NULL,
+    vlan_id TEXT NOT NULL,
+    vni TEXT NOT NULL,
+    source_path TEXT,
+    FOREIGN KEY(device_id) REFERENCES devices(device_id)
+);
+
 CREATE TABLE IF NOT EXISTS ip_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     device_id TEXT NOT NULL,
@@ -91,6 +101,8 @@ CREATE INDEX IF NOT EXISTS idx_bgp_entries_hostname ON bgp_entries(hostname);
 CREATE INDEX IF NOT EXISTS idx_vrfs_name ON vrfs(vrf_name COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_vlans_vlan_id ON vlans(vlan_id);
 CREATE INDEX IF NOT EXISTS idx_vlans_vlan_name ON vlans(vlan_name COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_vni_entries_vni ON vni_entries(vni);
+CREATE INDEX IF NOT EXISTS idx_vni_entries_vlan_id ON vni_entries(vlan_id);
 CREATE INDEX IF NOT EXISTS idx_ip_records_address ON ip_records(address);
 CREATE INDEX IF NOT EXISTS idx_ip_records_vrf ON ip_records(vrf COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_ip_records_hostname ON ip_records(hostname);
@@ -129,6 +141,7 @@ class SnapshotRepository:
                 DELETE FROM bgp_entries;
                 DELETE FROM vrfs;
                 DELETE FROM vlans;
+                DELETE FROM vni_entries;
                 DELETE FROM ip_records;
                 DELETE FROM devices;
                 DELETE FROM config_snapshots;
@@ -209,6 +222,24 @@ class SnapshotRepository:
                         item.get("source_path", ""),
                     )
                     for item in snapshot.get("vlans", [])
+                ],
+            )
+
+            cursor.executemany(
+                """
+                INSERT INTO vni_entries (
+                    device_id, hostname, vlan_id, vni, source_path
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        item["device_id"],
+                        item["hostname"],
+                        str(item["vlan_id"]),
+                        str(item["vni"]),
+                        item.get("source_path", ""),
+                    )
+                    for item in snapshot.get("vnis", [])
                 ],
             )
 
@@ -295,6 +326,7 @@ class SnapshotRepository:
                 "ip_count": connection.execute("SELECT COUNT(*) FROM ip_records").fetchone()[0],
                 "bgp_count": connection.execute("SELECT COUNT(*) FROM bgp_entries").fetchone()[0],
                 "vlan_count": connection.execute("SELECT COUNT(*) FROM vlans").fetchone()[0],
+                "vni_count": connection.execute("SELECT COUNT(*) FROM vni_entries").fetchone()[0],
                 "vrf_count": connection.execute("SELECT COUNT(*) FROM vrfs").fetchone()[0],
                 "config_snapshot_count": connection.execute(
                     "SELECT COUNT(*) FROM config_snapshots",
@@ -437,6 +469,32 @@ class SnapshotRepository:
             query += " AND vlan_name = ? COLLATE NOCASE"
             params.append(vlan_name)
         query += " ORDER BY hostname, vlan_id"
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_vni_entries(
+        self,
+        vni: str | None = None,
+        vlan_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        query = """
+            SELECT device_id, hostname, vlan_id, vni, source_path
+            FROM vni_entries
+            WHERE 1 = 1
+        """
+        params: list[Any] = []
+        if vni:
+            query += " AND vni = ?"
+            params.append(vni)
+        if vlan_id:
+            query += " AND vlan_id = ?"
+            params.append(vlan_id)
+        query += " ORDER BY vni, hostname, vlan_id"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
         with self._connect() as connection:
             rows = connection.execute(query, params).fetchall()
         return [dict(row) for row in rows]

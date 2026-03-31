@@ -40,3 +40,14 @@ vlan:
     - eth
     - vlan
     - intfConfig
+
+vxlan_vni:
+  path_elements:
+    - Sysdb
+    - interface
+    - status
+    - eth
+    - vxlan
+    - vtiStatus
+    - Vxlan1
+    - vlanToVniMap

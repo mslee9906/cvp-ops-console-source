@@ -10,6 +10,7 @@
   OverviewResponse,
   RecordListResponse,
   RecordScope,
+  VniGroupListResponse,
   VrfGroupListResponse,
 } from './types'
 
@@ -44,6 +45,8 @@ export const api = {
     request<VrfGroupListResponse>(
       `/api/records/vrf?limit=${limit}&exclude_default=${excludeDefault}${name ? `&name=${encodeURIComponent(name)}` : ''}`,
     ),
+  getVniGroups: (limit = 200, vni = '') =>
+    request<VniGroupListResponse>(`/api/records/vni?limit=${limit}${vni ? `&vni=${encodeURIComponent(vni)}` : ''}`),
   searchConfig: (query: string, limit = 200) =>
     request<ConfigSearchResponse>(`/api/search/config?q=${encodeURIComponent(query)}&limit=${limit}`),
   getKanbanCards: () => request<KanbanCard[]>('/api/kanban/cards'),

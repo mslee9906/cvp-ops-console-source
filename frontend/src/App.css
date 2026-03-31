@@ -270,7 +270,7 @@
 
 .overview-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0.75rem;
 }
 
@@ -308,6 +308,7 @@
 .metric-card.amber .metric-icon { background: rgba(242, 179, 99, 0.2); color: #925716; }
 .metric-card.sky .metric-icon { background: rgba(29, 177, 255, 0.16); color: #005487; }
 .metric-card.plum .metric-icon { background: rgba(180, 123, 255, 0.14); color: #6231a2; }
+.metric-card.aqua .metric-icon { background: rgba(93, 224, 196, 0.18); color: #0b645a; }
 .metric-card.forest .metric-icon { background: rgba(92, 185, 114, 0.16); color: #2a6c39; }
 .metric-card.sunset .metric-icon { background: rgba(255, 126, 95, 0.16); color: #a2462f; }
 
@@ -409,6 +410,10 @@
   background: transparent;
 }
 
+.member-filter {
+  margin-bottom: 0.72rem;
+}
+
 .lookup-actions {
   grid-column: 1 / -1;
   display: flex;
@@ -462,6 +467,10 @@
   display: flex;
   align-items: start;
   gap: 0.8rem;
+}
+
+.compact-summary {
+  margin-bottom: 0.72rem;
 }
 
 .result-summary p {
