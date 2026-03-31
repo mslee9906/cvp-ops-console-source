@@ -25,6 +25,18 @@ class KanbanPriority(str, Enum):
     low = "low"
 
 
+class KanbanTargetKind(str, Enum):
+    existing = "existing"
+    new = "new"
+
+
+class KanbanTargetMatchStatus(str, Enum):
+    manual_only = "manual_only"
+    candidate_found = "candidate_found"
+    linked_to_cvp = "linked_to_cvp"
+    ignored = "ignored"
+
+
 class KanbanChecklistItem(BaseModel):
     id: int | None = None
     title: str = Field(..., min_length=1, max_length=300)
@@ -37,6 +49,47 @@ class KanbanChecklistItemResponse(BaseModel):
     title: str
     is_completed: bool = False
     sort_order: int
+    created_at: str
+    updated_at: str
+
+
+class KanbanTargetItem(BaseModel):
+    id: int | None = None
+    target_kind: KanbanTargetKind = KanbanTargetKind.existing
+    display_name: str = Field(..., min_length=1, max_length=120)
+    mgmt_ip: str = Field(default="", max_length=120)
+    model: str = Field(default="", max_length=120)
+    role_hint: str = Field(default="", max_length=120)
+    cvp_device_id: str = Field(default="", max_length=120)
+    match_status: KanbanTargetMatchStatus = KanbanTargetMatchStatus.manual_only
+    sort_order: int | None = Field(default=None, ge=1)
+
+
+class KanbanTargetItemResponse(BaseModel):
+    id: int
+    target_kind: KanbanTargetKind
+    display_name: str
+    mgmt_ip: str = ""
+    model: str = ""
+    role_hint: str = ""
+    cvp_device_id: str = ""
+    match_status: KanbanTargetMatchStatus = KanbanTargetMatchStatus.manual_only
+    service_status: str = "planned"
+    sort_order: int
+    created_at: str
+    updated_at: str
+
+
+class KanbanPlannedConfigItem(BaseModel):
+    id: int | None = None
+    target_id: int = Field(..., ge=1)
+    config_text: str = Field(default="", max_length=50000)
+
+
+class KanbanPlannedConfigItemResponse(BaseModel):
+    id: int
+    target_id: int
+    config_text: str = ""
     created_at: str
     updated_at: str
 
@@ -55,6 +108,8 @@ class KanbanCardResponse(BaseModel):
     checklist_completed: int = 0
     progress_percent: int = 0
     checklist_items: list[KanbanChecklistItemResponse] = Field(default_factory=list)
+    targets: list[KanbanTargetItemResponse] = Field(default_factory=list)
+    planned_configs: list[KanbanPlannedConfigItemResponse] = Field(default_factory=list)
     created_at: str
     updated_at: str
 
@@ -66,6 +121,8 @@ class KanbanCardCreate(BaseModel):
     column_key: KanbanColumnKey = KanbanColumnKey.planned
     card_type: KanbanCardType = KanbanCardType.existing
     priority: KanbanPriority = KanbanPriority.medium
+    targets: list[KanbanTargetItem] = Field(default_factory=list)
+    planned_configs: list[KanbanPlannedConfigItem] = Field(default_factory=list)
 
 
 class KanbanCardUpdate(BaseModel):
@@ -76,6 +133,8 @@ class KanbanCardUpdate(BaseModel):
     card_type: KanbanCardType | None = None
     priority: KanbanPriority | None = None
     checklist_items: list[KanbanChecklistItem] | None = None
+    targets: list[KanbanTargetItem] | None = None
+    planned_configs: list[KanbanPlannedConfigItem] | None = None
 
 
 class KanbanCardPosition(BaseModel):
@@ -86,3 +145,57 @@ class KanbanCardPosition(BaseModel):
 
 class KanbanReorderRequest(BaseModel):
     items: list[KanbanCardPosition] = Field(default_factory=list)
+
+
+class KanbanTargetSnapshotResponse(BaseModel):
+    target: KanbanTargetItemResponse
+    linked_device: dict = Field(default_factory=dict)
+    config: dict = Field(default_factory=dict)
+    bgp_entries: list[dict] = Field(default_factory=list)
+    vrfs: list[dict] = Field(default_factory=list)
+    vlans: list[dict] = Field(default_factory=list)
+    vnis: list[dict] = Field(default_factory=list)
+    ip_records: list[dict] = Field(default_factory=list)
+
+
+class KanbanValidationMatch(BaseModel):
+    title: str
+    body: str
+    severity: str = "info"
+    details: dict = Field(default_factory=dict)
+
+
+class KanbanValidationSection(BaseModel):
+    key: str
+    title: str
+    items: list[KanbanValidationMatch] = Field(default_factory=list)
+
+
+class KanbanValidationResponse(BaseModel):
+    target_id: int
+    has_conflict: bool
+    sections: list[KanbanValidationSection] = Field(default_factory=list)
+
+
+class KanbanValidationRequest(BaseModel):
+    target_id: int = Field(..., ge=1)
+    config_text: str = Field(default="", max_length=50000)
+
+
+class KanbanDiffLine(BaseModel):
+    left_line_number: int | None = None
+    right_line_number: int | None = None
+    left_text: str = ""
+    right_text: str = ""
+    kind: str
+
+
+class KanbanDiffResponse(BaseModel):
+    target_id: int
+    snapshot_available: bool
+    lines: list[KanbanDiffLine] = Field(default_factory=list)
+
+
+class KanbanDiffRequest(BaseModel):
+    target_id: int = Field(..., ge=1)
+    config_text: str = Field(default="", max_length=50000)
