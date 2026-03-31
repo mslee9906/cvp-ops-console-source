@@ -42,6 +42,7 @@ export function WorkPlanBoard() {
   const [validationData, setValidationData] = useState<KanbanValidationResponse | null>(null)
   const [diffData, setDiffData] = useState<KanbanDiffResponse | null>(null)
   const [copyFeedback, setCopyFeedback] = useState('')
+  const [actionOverlayMessage, setActionOverlayMessage] = useState('')
 
   const filteredCards = useMemo(() => {
     const token = cardFilter.trim().toLowerCase()
@@ -138,6 +139,14 @@ export function WorkPlanBoard() {
     return () => window.clearTimeout(timer)
   }, [copyFeedback])
 
+  useEffect(() => {
+    if (!actionOverlayMessage) {
+      return
+    }
+    const timer = window.setTimeout(() => setActionOverlayMessage(''), 1100)
+    return () => window.clearTimeout(timer)
+  }, [actionOverlayMessage])
+
   async function bootstrap() {
     try {
       setLoading(true)
@@ -172,7 +181,10 @@ export function WorkPlanBoard() {
     }
   }
 
-  async function persistCardChanges(payload: Partial<Pick<KanbanCard, 'targets' | 'planned_configs'>>) {
+  async function persistCardChanges(
+    payload: Partial<Pick<KanbanCard, 'targets' | 'planned_configs'>>,
+    successMessage?: string,
+  ) {
     if (!selectedCard) {
       return
     }
@@ -181,6 +193,9 @@ export function WorkPlanBoard() {
       setError('')
       const updated = await api.updateKanbanCard(selectedCard.id, payload)
       setCards((current) => sortCards(current.map((card) => (card.id === updated.id ? updated : card))))
+      if (successMessage) {
+        setActionOverlayMessage(successMessage)
+      }
       return updated
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '작업 계획을 저장하지 못했습니다.')
@@ -205,7 +220,7 @@ export function WorkPlanBoard() {
           }
         : target,
     )
-    const updated = await persistCardChanges({ targets: updatedTargets })
+    const updated = await persistCardChanges({ targets: updatedTargets }, 'CVP 장비가 연결되었습니다.')
     if (updated && selectedTarget.id) {
       await loadSnapshot(selectedTarget.id)
     }
@@ -224,7 +239,7 @@ export function WorkPlanBoard() {
           }
         : target,
     )
-    const updated = await persistCardChanges({ targets: updatedTargets })
+    const updated = await persistCardChanges({ targets: updatedTargets }, 'CVP 연결이 해제되었습니다.')
     if (updated && selectedTarget.id) {
       await loadSnapshot(selectedTarget.id)
     }
@@ -235,7 +250,7 @@ export function WorkPlanBoard() {
       return
     }
     const nextConfigs = upsertPlannedConfig(selectedCard, selectedTarget.id, plannedConfigDraft)
-    await persistCardChanges({ planned_configs: nextConfigs })
+    await persistCardChanges({ planned_configs: nextConfigs }, '예정 Config가 저장되었습니다.')
   }
 
   async function handleValidate() {
@@ -682,6 +697,15 @@ export function WorkPlanBoard() {
             <p>왼쪽 카드 선택창에서 카드를 고르면, 그 순간부터 작업 계획 화면이 카드 기준으로 전환됩니다.</p>
           </div>
         )
+      ) : null}
+
+      {actionOverlayMessage ? (
+        <div className="workplan-action-overlay" aria-live="polite" aria-atomic="true">
+          <div className="workplan-action-overlay-card">
+            <CheckCircle2 size={22} />
+            <strong>{actionOverlayMessage}</strong>
+          </div>
+        </div>
       ) : null}
     </section>
   )

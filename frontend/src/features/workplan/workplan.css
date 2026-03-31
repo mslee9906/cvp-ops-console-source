@@ -631,6 +631,33 @@
   font-weight: 700;
 }
 
+.workplan-action-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 38, 0.14);
+  pointer-events: none;
+  backdrop-filter: blur(3px);
+}
+
+.workplan-action-overlay-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 22px;
+  border-radius: 18px;
+  border: 1px solid rgba(32, 163, 95, 0.16);
+  background: rgba(255, 255, 255, 0.94);
+  color: #116a43;
+  box-shadow: 0 18px 40px rgba(16, 28, 44, 0.16);
+}
+
+.workplan-action-overlay-card strong {
+  font-size: 15px;
+}
+
 @media (max-width: 1200px) {
   .workplan-layout,
   .workplan-two-column,

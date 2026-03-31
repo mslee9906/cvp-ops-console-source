@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent, FormEvent } from 'react'
-import { ArrowLeft, GripVertical, Plus, RefreshCcw, Search, Trash2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, GripVertical, Plus, RefreshCcw, Search, Trash2 } from 'lucide-react'
 
 import { api } from '../../api'
 import type {
@@ -64,6 +64,7 @@ export function KanbanBoard() {
   const [newTargetBulkDraft, setNewTargetBulkDraft] = useState('')
   const [editingNewTargetIndex, setEditingNewTargetIndex] = useState<number | null>(null)
   const [newTargetDraft, setNewTargetDraft] = useState<KanbanTargetItem>(() => createEmptyTarget('new'))
+  const [actionOverlayMessage, setActionOverlayMessage] = useState('')
   const checklistDraftIdRef = useRef(-1)
   const targetDraftIdRef = useRef(-1)
 
@@ -132,6 +133,14 @@ export function KanbanBoard() {
       setNewTargetDraft(createEmptyTarget('new'))
     }
   }, [detailDraft?.card_type])
+
+  useEffect(() => {
+    if (!actionOverlayMessage) {
+      return
+    }
+    const timer = window.setTimeout(() => setActionOverlayMessage(''), 1100)
+    return () => window.clearTimeout(timer)
+  }, [actionOverlayMessage])
 
   async function bootstrap() {
     try {
@@ -218,6 +227,7 @@ export function KanbanBoard() {
       setError('')
       const created = await api.createKanbanCard(normalizeCardInput(values))
       setCards((current) => sortCards([...current, created]))
+      setActionOverlayMessage('카드가 생성되었습니다.')
       closeModal()
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : '카드를 생성하지 못했습니다.')
@@ -235,6 +245,7 @@ export function KanbanBoard() {
       if (selectedCardId === cardId) {
         setDetailDraft(toCardInput(updated))
       }
+      setActionOverlayMessage('카드가 저장되었습니다.')
       closeModal()
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : '카드를 수정하지 못했습니다.')
@@ -256,6 +267,7 @@ export function KanbanBoard() {
       if (selectedCardId === cardId) {
         closeDetail()
       }
+      setActionOverlayMessage('카드가 삭제되었습니다.')
       closeModal()
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : '카드를 삭제하지 못했습니다.')
@@ -276,6 +288,7 @@ export function KanbanBoard() {
       const updated = await api.updateKanbanCard(selectedCard.id, normalizeCardInput(detailDraft))
       setCards((current) => sortCards(current.map((card) => (card.id === selectedCard.id ? updated : card))))
       setDetailDraft(toCardInput(updated))
+      setActionOverlayMessage(detailStepSuccessMessage(activeDetailStep))
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : '카드 상세를 저장하지 못했습니다.')
     } finally {
@@ -1205,6 +1218,15 @@ export function KanbanBoard() {
           onDelete={editorCard ? () => handleDelete(editorCard.id) : undefined}
         />
       ) : null}
+
+      {actionOverlayMessage ? (
+        <div className="kanban-action-overlay" aria-live="polite" aria-atomic="true">
+          <div className="kanban-action-overlay-card">
+            <CheckCircle2 size={22} />
+            <strong>{actionOverlayMessage}</strong>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -1299,6 +1321,12 @@ function formatDateTime(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function detailStepSuccessMessage(step: DetailStepKey) {
+  if (step === 'basic') return '기본 정보가 저장되었습니다.'
+  if (step === 'target') return '작업 대상이 저장되었습니다.'
+  return '체크리스트가 저장되었습니다.'
 }
 
 function calculateProgress(items: KanbanCardInput['checklist_items']) {

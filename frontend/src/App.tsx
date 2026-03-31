@@ -203,6 +203,7 @@ function App() {
   const [managementOpen, setManagementOpen] = useState(true)
   const [automationOpen, setAutomationOpen] = useState(true)
   const [kanbanOpen, setKanbanOpen] = useState(true)
+  const [railNavScrollable, setRailNavScrollable] = useState(false)
   const [overview, setOverview] = useState<OverviewResponse | null>(null)
   const [overviewError, setOverviewError] = useState('')
   const [collectionProgress, setCollectionProgress] = useState<CollectionProgressResponse | null>(null)
@@ -256,7 +257,7 @@ function App() {
   const currentView = viewMeta[activeView]
   const currentScope = isRecordScope(activeView) ? activeView : null
   const activeConfigDevice = devices.find((item) => item.device_id === selectedDeviceId)
-  const showSnapshotRefreshUi = !['kanban', 'work_plan', 'edm_link'].includes(activeView)
+  const showSnapshotRefreshPanels = !['kanban', 'work_plan', 'edm_link'].includes(activeView)
 
   const filteredDevices = useMemo(() => {
     const token = deferredDeviceSearch.trim().toLowerCase()
@@ -354,6 +355,30 @@ function App() {
   useEffect(() => {
     setVniMemberFilter('')
   }, [selectedVni])
+
+  useEffect(() => {
+    const nav = document.querySelector<HTMLElement>('.rail-nav.grouped')
+    if (!nav) {
+      return
+    }
+
+    const measureOverflow = () => {
+      const nextScrollable = nav.scrollHeight > nav.clientHeight + 2
+      setRailNavScrollable((current) => (current === nextScrollable ? current : nextScrollable))
+    }
+
+    measureOverflow()
+    const frameId = window.requestAnimationFrame(measureOverflow)
+    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measureOverflow) : null
+    resizeObserver?.observe(nav)
+    window.addEventListener('resize', measureOverflow)
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', measureOverflow)
+    }
+  }, [managementOpen, automationOpen, kanbanOpen, showSnapshotRefreshPanels])
 
   async function bootstrap() {
     await Promise.all([
@@ -626,7 +651,7 @@ function App() {
           <p>CVP 등록 장비의 현황과 사용 여부를 조회하는 읽기 전용 운영 포털입니다.</p>
         </div>
 
-        <nav className="rail-nav grouped">
+        <nav className={`rail-nav grouped ${railNavScrollable ? 'scrollable' : 'static'}`}>
           <button className={`rail-home-link ${activeView === 'home' ? 'active' : ''}`} onClick={() => changeView('home')}>
             <House />
             <div>
@@ -664,14 +689,12 @@ function App() {
 
         </nav>
 
-        {showSnapshotRefreshUi ? (
-          <div className="rail-footer">
-            <button className="refresh-button" onClick={() => void handleStartRefresh()} disabled={collectionProgress?.status === 'running'}>
-              <RefreshCcw className={collectionProgress?.status === 'running' ? 'spin' : ''} />
-              <span>{collectionProgress?.status === 'running' ? '스냅샷 갱신 중' : '스냅샷 갱신'}</span>
-            </button>
-          </div>
-        ) : null}
+        <div className="rail-footer">
+          <button className="refresh-button" onClick={() => void handleStartRefresh()} disabled={collectionProgress?.status === 'running'}>
+            <RefreshCcw className={collectionProgress?.status === 'running' ? 'spin' : ''} />
+            <span>{collectionProgress?.status === 'running' ? '스냅샷 갱신 중' : '스냅샷 갱신'}</span>
+          </button>
+        </div>
       </aside>
       <main className="workspace">
         {!kanbanViews.includes(activeView) ? (
@@ -695,9 +718,9 @@ function App() {
           </section>
         ) : null}
 
-        {showSnapshotRefreshUi && collectionProgress ? <CollectionProgressCard progress={collectionProgress} /> : null}
+        {showSnapshotRefreshPanels && collectionProgress ? <CollectionProgressCard progress={collectionProgress} /> : null}
         {overviewError ? <div className="message-banner error">{overviewError}</div> : null}
-        {showSnapshotRefreshUi && refreshError ? <div className="message-banner error">{refreshError}</div> : null}
+        {showSnapshotRefreshPanels && refreshError ? <div className="message-banner error">{refreshError}</div> : null}
 
         {activeView === 'home' ? renderHome(overview) : null}
 
