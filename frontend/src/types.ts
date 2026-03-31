@@ -151,6 +151,28 @@ export interface ConfigSearchResponse {
   items: ConfigSearchMatch[]
 }
 
+export type EdmLinkColorKey = 'ocean' | 'forest' | 'sunset' | 'plum' | 'cobalt' | 'slate'
+
+export interface EdmLink {
+  id: number
+  title: string
+  subtitle: string
+  link_type: string
+  url: string
+  color_key: EdmLinkColorKey
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface EdmLinkInput {
+  title: string
+  subtitle: string
+  link_type: string
+  url: string
+  color_key: EdmLinkColorKey
+}
+
 export type KanbanColumnKey = 'blocked' | 'planned' | 'ready' | 'in_progress' | 'verifying' | 'done'
 export type KanbanCardType = 'existing' | 'new'
 export type KanbanPriority = 'high' | 'medium' | 'low'

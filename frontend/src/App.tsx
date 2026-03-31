@@ -2,6 +2,7 @@
 import type { FormEvent } from 'react'
 import {
   Activity,
+  ClipboardList,
   ChevronDown,
   ChevronRight,
   Clock3,
@@ -11,6 +12,7 @@ import {
   GitBranchPlus,
   House,
   Layers3,
+  Link2,
   Network,
   Radar,
   RefreshCcw,
@@ -21,7 +23,9 @@ import {
 } from 'lucide-react'
 import './App.css'
 import { api } from './api'
+import { EdmLinkManager } from './features/edm-links/EdmLinkManager'
 import { KanbanBoard } from './features/kanban/KanbanBoard'
+import { WorkPlanBoard } from './features/workplan/WorkPlanBoard'
 import type {
   CollectionProgressResponse,
   ConfigPreviewResponse,
@@ -38,7 +42,19 @@ import type {
   VrfGroupListResponse,
 } from './types'
 
-type ViewId = 'home' | 'ip' | 'bgp' | 'vlan' | 'vni' | 'vrf' | 'devices' | 'config' | 'automation' | 'kanban'
+type ViewId =
+  | 'home'
+  | 'ip'
+  | 'bgp'
+  | 'vlan'
+  | 'vni'
+  | 'vrf'
+  | 'devices'
+  | 'config'
+  | 'edm_link'
+  | 'automation'
+  | 'kanban'
+  | 'work_plan'
 type ViewMeta = {
   label: string
   eyebrow: string
@@ -108,6 +124,13 @@ const viewMeta: Record<ViewId, ViewMeta> = {
     description: '현재 최신 스냅샷 Config 전체를 대상으로 문자열을 검색하고, 어떤 장비에서 매칭되는지 확인합니다.',
     icon: FileSearch,
   },
+  edm_link: {
+    label: 'EDM LINK',
+    eyebrow: 'Link Directory',
+    title: '사내 링크 바로가기 관리',
+    description: '업무 문서함, NAS, 제출 포털 링크를 버튼 형태로 등록하고 색상별로 정리합니다.',
+    icon: Link2,
+  },
   automation: {
     label: '준비 중',
     eyebrow: 'Automation Tools',
@@ -122,11 +145,18 @@ const viewMeta: Record<ViewId, ViewMeta> = {
     description: '작업 카드를 생성하고, 수정하고, 삭제하고, 드래그로 상태를 이동하는 보드입니다.',
     icon: Layers3,
   },
+  work_plan: {
+    label: '작업 계획',
+    eyebrow: 'Planning Workspace',
+    title: '작업 카드 연계 계획 캔버스',
+    description: '기존 작업 카드와 연결된 작업 계획 틀을 구성하고, 향후 현황 및 자동화 연계를 준비합니다.',
+    icon: ClipboardList,
+  },
 }
 
-const managementViews: ViewId[] = ['ip', 'bgp', 'vlan', 'vni', 'vrf', 'devices', 'config']
+const managementViews: ViewId[] = ['ip', 'bgp', 'vlan', 'vni', 'vrf', 'devices', 'config', 'edm_link']
 const automationViews: ViewId[] = ['automation']
-const kanbanViews: ViewId[] = ['kanban']
+const kanbanViews: ViewId[] = ['kanban', 'work_plan']
 
 const initialLookupState = {
   loading: false,
@@ -226,7 +256,7 @@ function App() {
   const currentView = viewMeta[activeView]
   const currentScope = isRecordScope(activeView) ? activeView : null
   const activeConfigDevice = devices.find((item) => item.device_id === selectedDeviceId)
-  const showSnapshotRefreshUi = activeView !== 'kanban'
+  const showSnapshotRefreshUi = !['kanban', 'work_plan', 'edm_link'].includes(activeView)
 
   const filteredDevices = useMemo(() => {
     const token = deferredDeviceSearch.trim().toLowerCase()
@@ -644,7 +674,7 @@ function App() {
         ) : null}
       </aside>
       <main className="workspace">
-        {activeView !== 'kanban' ? (
+        {!kanbanViews.includes(activeView) ? (
           <section className="hero-panel compact">
             <div className="hero-copy">
               <p className="eyebrow">{currentView.eyebrow}</p>
@@ -1200,9 +1230,21 @@ function App() {
           </section>
         ) : null}
 
+        {activeView === 'edm_link' ? (
+          <section className="stack-layout">
+            <EdmLinkManager />
+          </section>
+        ) : null}
+
         {activeView === 'kanban' ? (
           <section className="stack-layout">
             <KanbanBoard />
+          </section>
+        ) : null}
+
+        {activeView === 'work_plan' ? (
+          <section className="stack-layout">
+            <WorkPlanBoard />
           </section>
         ) : null}
 

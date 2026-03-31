@@ -1,0 +1,295 @@
+.workplan-shell {
+  display: grid;
+  gap: 16px;
+}
+
+.workplan-toolbar,
+.workplan-card-picker,
+.workplan-summary-card,
+.workplan-step-panel,
+.workplan-main {
+  border: 1px solid rgba(20, 36, 52, 0.08);
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 24px;
+  box-shadow: 0 18px 42px rgba(16, 28, 44, 0.08);
+}
+
+.workplan-toolbar,
+.workplan-card-picker,
+.workplan-summary-card,
+.workplan-step-panel,
+.workplan-main {
+  padding: 18px;
+}
+
+.workplan-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.workplan-kicker {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #78869b;
+}
+
+.workplan-toolbar h3,
+.workplan-main h3,
+.workplan-panel-head h4 {
+  margin: 0;
+}
+
+.workplan-copy,
+.workplan-loading,
+.workplan-message,
+.workplan-step-link p,
+.workplan-main-head p,
+.workplan-stage-card p,
+.workplan-card-link p,
+.workplan-empty-state p {
+  color: #67768c;
+  line-height: 1.55;
+}
+
+.workplan-ghost-button,
+.workplan-step-link,
+.workplan-card-link {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.workplan-ghost-button:hover,
+.workplan-step-link:hover,
+.workplan-card-link:hover {
+  transform: translateY(-1px);
+}
+
+.workplan-ghost-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(19, 31, 46, 0.06);
+  color: #152234;
+  font-weight: 700;
+}
+
+.workplan-loading,
+.workplan-empty-state,
+.workplan-message {
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px dashed rgba(20, 36, 52, 0.12);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.workplan-message.error {
+  border-style: solid;
+  border-color: rgba(228, 89, 105, 0.22);
+  background: rgba(255, 240, 242, 0.92);
+  color: #962c3d;
+}
+
+.workplan-empty-state strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.workplan-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: 14px;
+  min-height: calc(100vh - 250px);
+}
+
+.workplan-sidebar {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+}
+
+.workplan-panel-head,
+.workplan-card-link-head,
+.workplan-card-link-meta,
+.workplan-summary-row,
+.workplan-stage-card-head,
+.workplan-main-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.workplan-filter {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(244, 248, 247, 0.9);
+  border: 1px solid rgba(9, 47, 52, 0.08);
+}
+
+.workplan-filter input {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: #152234;
+  font: inherit;
+  outline: none;
+}
+
+.workplan-card-list {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.workplan-card-link {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(246, 249, 255, 0.96);
+  text-align: left;
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(20, 36, 52, 0.08);
+}
+
+.workplan-card-link.active {
+  background: linear-gradient(135deg, rgba(46, 114, 255, 0.14), rgba(46, 114, 255, 0.08));
+  box-shadow: inset 0 0 0 1px rgba(46, 114, 255, 0.18);
+}
+
+.workplan-card-link-head strong {
+  font-size: 14px;
+}
+
+.workplan-card-link-head span,
+.workplan-card-link-meta small {
+  color: #6b7a8f;
+}
+
+.workplan-card-link p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.workplan-summary-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.workplan-summary-row {
+  padding-top: 8px;
+  border-top: 1px solid rgba(20, 36, 52, 0.06);
+  font-size: 13px;
+}
+
+.workplan-summary-row span {
+  color: #69798d;
+}
+
+.workplan-step-panel {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+}
+
+.workplan-step-link {
+  width: 100%;
+  text-align: left;
+  padding: 11px 12px;
+  border-radius: 14px;
+  background: rgba(245, 249, 255, 0.72);
+  color: #152234;
+}
+
+.workplan-step-link.active {
+  background: linear-gradient(135deg, rgba(46, 114, 255, 0.16), rgba(46, 114, 255, 0.1));
+  box-shadow: inset 0 0 0 1px rgba(46, 114, 255, 0.1);
+  color: #1550ce;
+}
+
+.workplan-step-link strong {
+  display: block;
+  font-size: 14px;
+}
+
+.workplan-step-link p {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+.workplan-main {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 14px;
+  min-height: 0;
+}
+
+.workplan-stage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-content: start;
+}
+
+.workplan-stage-card {
+  min-height: 168px;
+  padding: 18px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0.98), rgba(241, 247, 252, 0.94));
+  border: 1px solid rgba(20, 36, 52, 0.08);
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.workplan-stage-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(46, 114, 255, 0.12);
+  color: #1550ce;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.workplan-stage-card p {
+  margin: 0;
+  font-size: 14px;
+}
+
+@media (max-width: 1100px) {
+  .workplan-layout {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .workplan-stage-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .workplan-toolbar,
+  .workplan-panel-head,
+  .workplan-main-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

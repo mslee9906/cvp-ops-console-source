@@ -1,0 +1,329 @@
+.edm-shell {
+  display: grid;
+  gap: 16px;
+}
+
+.edm-toolbar,
+.edm-card,
+.edm-modal {
+  border: 1px solid rgba(20, 36, 52, 0.08);
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 24px;
+  box-shadow: 0 18px 42px rgba(16, 28, 44, 0.08);
+}
+
+.edm-toolbar,
+.edm-modal {
+  padding: 18px 20px;
+}
+
+.edm-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.edm-kicker {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #78869b;
+}
+
+.edm-toolbar h3,
+.edm-modal-head h3,
+.edm-card h4 {
+  margin: 0;
+}
+
+.edm-copy,
+.edm-loading,
+.edm-message,
+.edm-card p,
+.edm-card code,
+.edm-field span,
+.edm-empty-state p {
+  color: #67768c;
+  line-height: 1.55;
+}
+
+.edm-primary-button,
+.edm-secondary-button,
+.edm-open-button,
+.edm-icon-button,
+.edm-color-option {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.edm-primary-button:hover,
+.edm-secondary-button:hover,
+.edm-open-button:hover,
+.edm-icon-button:hover,
+.edm-color-option:hover {
+  transform: translateY(-1px);
+}
+
+.edm-primary-button,
+.edm-secondary-button,
+.edm-open-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.edm-primary-button {
+  background: linear-gradient(135deg, #1953dd, #2e72ff);
+  color: white;
+  box-shadow: 0 14px 26px rgba(46, 114, 255, 0.2);
+}
+
+.edm-secondary-button {
+  background: rgba(19, 31, 46, 0.08);
+  color: #152234;
+}
+
+.edm-secondary-button.ghost {
+  background: rgba(19, 31, 46, 0.06);
+}
+
+.edm-secondary-button.danger {
+  background: rgba(228, 89, 105, 0.12);
+  color: #b33145;
+}
+
+.edm-loading,
+.edm-empty-state,
+.edm-message {
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px dashed rgba(20, 36, 52, 0.12);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.edm-message.error {
+  border-style: solid;
+  border-color: rgba(228, 89, 105, 0.22);
+  background: rgba(255, 240, 242, 0.92);
+  color: #962c3d;
+}
+
+.edm-empty-state strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.edm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.edm-card {
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+  overflow: hidden;
+  position: relative;
+}
+
+.edm-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 7px;
+  background: var(--edm-accent, #2e72ff);
+}
+
+.edm-card.ocean { --edm-accent: #2e72ff; }
+.edm-card.forest { --edm-accent: #1e9d67; }
+.edm-card.sunset { --edm-accent: #ef7a45; }
+.edm-card.plum { --edm-accent: #8f5de8; }
+.edm-card.cobalt { --edm-accent: #1660d8; }
+.edm-card.slate { --edm-accent: #5f6f85; }
+
+.edm-card-top,
+.edm-card-foot,
+.edm-modal-head,
+.edm-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.edm-type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--edm-accent) 14%, white);
+  color: color-mix(in srgb, var(--edm-accent) 78%, black);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.edm-icon-button {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: rgba(19, 31, 46, 0.06);
+  color: #152234;
+}
+
+.edm-card-body {
+  display: grid;
+  gap: 4px;
+}
+
+.edm-card h4 {
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.edm-card p,
+.edm-card code {
+  margin: 0;
+}
+
+.edm-card code {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(19, 31, 46, 0.05);
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.edm-open-button {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--edm-accent) 92%, white), color-mix(in srgb, var(--edm-accent) 72%, black 4%));
+  color: white;
+}
+
+.edm-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(15, 23, 38, 0.52);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.edm-modal {
+  width: min(820px, 100%);
+}
+
+.edm-form,
+.edm-field,
+.edm-color-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.edm-form {
+  margin-top: 16px;
+}
+
+.edm-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.edm-field span {
+  font-size: 14px;
+  font-weight: 700;
+  color: #405166;
+}
+
+.edm-field input {
+  width: 100%;
+  min-height: 54px;
+  border-radius: 18px;
+  border: 1px solid rgba(20, 36, 52, 0.1);
+  background: rgba(247, 250, 255, 0.98);
+  padding: 14px 16px;
+  color: #152234;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.edm-field input:focus {
+  border-color: rgba(46, 114, 255, 0.36);
+  box-shadow: 0 0 0 4px rgba(46, 114, 255, 0.08);
+}
+
+.edm-field.wide {
+  grid-column: 1 / -1;
+}
+
+.edm-color-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.edm-color-option {
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(20, 36, 52, 0.08);
+  background: rgba(247, 250, 255, 0.96);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.edm-color-option.active {
+  box-shadow: inset 0 0 0 2px rgba(46, 114, 255, 0.28);
+}
+
+.edm-color-option .edm-color-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--edm-swatch, #2e72ff);
+}
+
+.edm-color-option.ocean { --edm-swatch: #2e72ff; }
+.edm-color-option.forest { --edm-swatch: #1e9d67; }
+.edm-color-option.sunset { --edm-swatch: #ef7a45; }
+.edm-color-option.plum { --edm-swatch: #8f5de8; }
+.edm-color-option.cobalt { --edm-swatch: #1660d8; }
+.edm-color-option.slate { --edm-swatch: #5f6f85; }
+
+.edm-inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .edm-toolbar,
+  .edm-modal-head,
+  .edm-modal-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .edm-field-grid,
+  .edm-color-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .edm-inline-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

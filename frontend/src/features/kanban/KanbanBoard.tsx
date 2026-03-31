@@ -8,16 +8,7 @@ import { AutoGrowTextarea } from './AutoGrowTextarea'
 import { KanbanCardModal } from './KanbanCardModal'
 import './kanban.css'
 
-type DetailStepKey =
-  | 'basic'
-  | 'target'
-  | 'checklist'
-  | 'planned_config'
-  | 'snapshot'
-  | 'diff'
-  | 'validation'
-  | 'history'
-  | 'cvp_match'
+type DetailStepKey = 'basic' | 'target' | 'checklist'
 
 const COLUMN_META: Array<{ key: KanbanColumnKey; label: string; tone: string }> = [
   { key: 'blocked', label: '보류', tone: 'rose' },
@@ -32,12 +23,6 @@ const DETAIL_STEP_META: Array<{ key: DetailStepKey; label: string; body: string;
   { key: 'basic', label: '기본 정보', body: '제목, 담당자, 상태를 정리합니다.', implemented: true },
   { key: 'target', label: '작업 대상', body: '기존 또는 신규 장비를 지정합니다.', implemented: false },
   { key: 'checklist', label: '체크리스트', body: '체크 항목과 진행률을 관리합니다.', implemented: true },
-  { key: 'planned_config', label: '예정 Config', body: '적용 예정 config를 정리합니다.', implemented: false },
-  { key: 'snapshot', label: 'Snapshot', body: '현재 snapshot을 확인합니다.', implemented: false },
-  { key: 'diff', label: 'Diff', body: '변경 차이를 비교합니다.', implemented: false },
-  { key: 'validation', label: '자동 검증', body: '중복과 충돌을 검토합니다.', implemented: false },
-  { key: 'history', label: '이력', body: '작업 변경 이력을 확인합니다.', implemented: false },
-  { key: 'cvp_match', label: 'CVP 자동 매칭', body: 'CVP 장비와 연결합니다.', implemented: false },
 ]
 
 const EMPTY_CARD_INPUT: KanbanCardInput = {
@@ -429,7 +414,7 @@ export function KanbanBoard() {
         <div>
           <p className="kanban-kicker">Kanban Board</p>
           <h3>작업 칸반 보드</h3>
-          <p className="kanban-copy">보드에서는 카드 요약만 빠르게 보고, 자세히 보기로 들어가면 단계별 작업 화면으로 전환됩니다. 카드에는 작은 진행률 바만 표시합니다.</p>
+          <p className="kanban-copy">보드에서는 카드 요약만 빠르게 보고, 자세히 보기에서는 기본 정보와 작업 대상, 체크리스트만 관리합니다. 작업 계획 성격의 단계는 별도 작업 계획 화면으로 이동합니다.</p>
         </div>
         <div className="kanban-inline-actions">
           <button className="kanban-ghost-button" type="button" onClick={() => void loadCards()} disabled={loading || submitting}>

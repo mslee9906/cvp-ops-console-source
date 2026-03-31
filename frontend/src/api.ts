@@ -3,6 +3,8 @@
   ConfigPreviewResponse,
   ConfigSearchResponse,
   DeviceSummary,
+  EdmLink,
+  EdmLinkInput,
   KanbanCard,
   KanbanCardInput,
   KanbanCardPosition,
@@ -49,6 +51,20 @@ export const api = {
     request<VniGroupListResponse>(`/api/records/vni?limit=${limit}${vni ? `&vni=${encodeURIComponent(vni)}` : ''}`),
   searchConfig: (query: string, limit = 200) =>
     request<ConfigSearchResponse>(`/api/search/config?q=${encodeURIComponent(query)}&limit=${limit}`),
+  getEdmLinks: () => request<EdmLink[]>('/api/edm-links'),
+  createEdmLink: (payload: EdmLinkInput) =>
+    request<EdmLink>('/api/edm-links', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateEdmLink: (linkId: number, payload: Partial<EdmLinkInput>) =>
+    request<EdmLink>(`/api/edm-links/${linkId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteEdmLink: async (linkId: number) => {
+    await request<{ ok: boolean }>(`/api/edm-links/${linkId}`, { method: 'DELETE' })
+  },
   getKanbanCards: () => request<KanbanCard[]>('/api/kanban/cards'),
   createKanbanCard: (payload: KanbanCardInput) =>
     request<KanbanCard>('/api/kanban/cards', {
