@@ -60,6 +60,10 @@ export function KanbanBoard() {
   const [dragCardId, setDragCardId] = useState<number | null>(null)
   const [dragChecklistIndex, setDragChecklistIndex] = useState<number | null>(null)
   const [targetSearch, setTargetSearch] = useState('')
+  const [existingBulkDraft, setExistingBulkDraft] = useState('')
+  const [newTargetBulkDraft, setNewTargetBulkDraft] = useState('')
+  const [editingNewTargetIndex, setEditingNewTargetIndex] = useState<number | null>(null)
+  const [newTargetDraft, setNewTargetDraft] = useState<KanbanTargetItem>(() => createEmptyTarget('new'))
   const checklistDraftIdRef = useRef(-1)
   const targetDraftIdRef = useRef(-1)
 
@@ -115,8 +119,19 @@ export function KanbanBoard() {
   useEffect(() => {
     if (selectedCard) {
       setDetailDraft(toCardInput(selectedCard))
+      setEditingNewTargetIndex(null)
+      setNewTargetDraft(createEmptyTarget(selectedCard.card_type === 'new' ? 'new' : 'existing'))
+      setExistingBulkDraft('')
+      setNewTargetBulkDraft('')
     }
   }, [selectedCard])
+
+  useEffect(() => {
+    if (detailDraft?.card_type !== 'new') {
+      setEditingNewTargetIndex(null)
+      setNewTargetDraft(createEmptyTarget('new'))
+    }
+  }, [detailDraft?.card_type])
 
   async function bootstrap() {
     try {
@@ -179,6 +194,10 @@ export function KanbanBoard() {
     setActiveDetailStep('basic')
     setDragChecklistIndex(null)
     setTargetSearch('')
+    setExistingBulkDraft('')
+    setNewTargetBulkDraft('')
+    setEditingNewTargetIndex(null)
+    setNewTargetDraft(createEmptyTarget(card.card_type))
   }
 
   function closeDetail() {
@@ -187,6 +206,10 @@ export function KanbanBoard() {
     setActiveDetailStep('basic')
     setDragChecklistIndex(null)
     setTargetSearch('')
+    setExistingBulkDraft('')
+    setNewTargetBulkDraft('')
+    setEditingNewTargetIndex(null)
+    setNewTargetDraft(createEmptyTarget('new'))
   }
 
   async function handleCreate(values: KanbanCardInput) {
@@ -412,29 +435,6 @@ export function KanbanBoard() {
     })
   }
 
-  function addNewTarget() {
-    setDetailDraft((current) =>
-      current
-        ? {
-            ...current,
-            targets: [
-              ...(current.targets ?? []),
-              {
-                id: targetDraftIdRef.current--,
-                target_kind: 'new',
-                display_name: '',
-                mgmt_ip: '',
-                model: '',
-                role_hint: '',
-                cvp_device_id: '',
-                match_status: 'manual_only',
-              },
-            ],
-          }
-        : current,
-    )
-  }
-
   function updateTargetItem(index: number, changes: Partial<KanbanTargetItem>) {
     setDetailDraft((current) => {
       if (!current) {
@@ -452,6 +452,121 @@ export function KanbanBoard() {
     })
   }
 
+  function resetNewTargetEditor() {
+    setEditingNewTargetIndex(null)
+    setNewTargetDraft(createEmptyTarget('new'))
+  }
+
+  function startEditNewTarget(index: number) {
+    const target = targetRows[index]
+    if (!target) {
+      return
+    }
+    setEditingNewTargetIndex(index)
+    setNewTargetDraft({
+      ...createEmptyTarget('new'),
+      ...target,
+      target_kind: 'new',
+      match_status: target.match_status || 'manual_only',
+    })
+  }
+
+  function saveNewTargetDraft() {
+    const normalized = normalizeTargetItem(
+      {
+        ...newTargetDraft,
+        id: editingNewTargetIndex === null ? targetDraftIdRef.current-- : newTargetDraft.id,
+        target_kind: 'new',
+        match_status: 'manual_only',
+        cvp_device_id: '',
+      },
+      'new',
+    )
+    if (!normalized.display_name) {
+      setError('신규 장비는 Hostname 또는 장비 이름을 입력해야 합니다.')
+      return
+    }
+
+    setError('')
+    if (editingNewTargetIndex === null) {
+      setDetailDraft((current) =>
+        current
+          ? {
+              ...current,
+              targets: [...(current.targets ?? []), normalized],
+            }
+          : current,
+      )
+    } else {
+      updateTargetItem(editingNewTargetIndex, normalized)
+    }
+    resetNewTargetEditor()
+  }
+
+  function addExistingTargetsFromBulk() {
+    const tokens = parseBulkLines(existingBulkDraft)
+    if (!tokens.length) {
+      return
+    }
+
+    const selectedIds = new Set(targetRows.map((item) => item.cvp_device_id).filter(Boolean))
+    const matchedDevices: DeviceSummary[] = []
+    const missedTokens: string[] = []
+
+    tokens.forEach((token) => {
+      const lookup = token.toLowerCase()
+      const device = devices.find((candidate) => {
+        const hostname = candidate.hostname.trim().toLowerCase()
+        const mgmtIp = candidate.mgmt_ip.trim().toLowerCase()
+        const deviceId = candidate.device_id.trim().toLowerCase()
+        return hostname === lookup || mgmtIp === lookup || deviceId === lookup
+      })
+      if (!device) {
+        missedTokens.push(token)
+        return
+      }
+      if (!selectedIds.has(device.device_id)) {
+        selectedIds.add(device.device_id)
+        matchedDevices.push(device)
+      }
+    })
+
+    if (matchedDevices.length) {
+      matchedDevices.forEach((device) => addExistingTarget(device))
+      setExistingBulkDraft('')
+    }
+
+    if (missedTokens.length) {
+      setError(`인벤토리에서 찾지 못한 장비: ${missedTokens.join(', ')}`)
+    } else {
+      setError('')
+    }
+  }
+
+  function addNewTargetsFromBulk() {
+    const parsedTargets = parseNewTargetBulk(newTargetBulkDraft)
+    if (!parsedTargets.length) {
+      return
+    }
+
+    setDetailDraft((current) =>
+      current
+        ? {
+            ...current,
+            targets: [
+              ...(current.targets ?? []),
+              ...parsedTargets.map((target) => ({
+                ...target,
+                id: targetDraftIdRef.current--,
+              })),
+            ],
+          }
+        : current,
+    )
+    setNewTargetBulkDraft('')
+    setError('')
+  }
+
   function removeTargetItem(index: number) {
     setDetailDraft((current) => {
       if (!current) {
@@ -467,6 +582,11 @@ export function KanbanBoard() {
         planned_configs: nextConfigs,
       }
     })
+    if (editingNewTargetIndex === index) {
+      resetNewTargetEditor()
+    } else if (editingNewTargetIndex !== null && editingNewTargetIndex > index) {
+      setEditingNewTargetIndex((current) => (current === null ? null : current - 1))
+    }
   }
 
   const boardContent = (
@@ -771,9 +891,8 @@ export function KanbanBoard() {
                               <span>{deviceLoading ? '불러오는 중...' : '인벤토리 갱신'}</span>
                             </button>
                           ) : (
-                            <button className="kanban-primary-button" type="button" onClick={addNewTarget}>
-                              <Plus size={16} />
-                              <span>신규 대상 추가</span>
+                            <button className="kanban-ghost-button" type="button" onClick={resetNewTargetEditor}>
+                              입력 초기화
                             </button>
                           )}
                         </div>
@@ -812,63 +931,114 @@ export function KanbanBoard() {
                               </div>
                             )}
                           </div>
+                          <div className="kanban-target-form-card">
+                            <div className="kanban-target-editor-head">
+                              <div>
+                                <strong>여러 대 한 번에 추가</strong>
+                                <p>한 줄에 `hostname` 또는 `mgmt ip` 하나씩 입력하면 선택 대상에 일괄 반영됩니다.</p>
+                              </div>
+                              <button className="kanban-ghost-button" type="button" onClick={addExistingTargetsFromBulk}>
+                                <Plus size={16} />
+                                <span>일괄 추가</span>
+                              </button>
+                            </div>
+                            <label className="kanban-field wide">
+                              <span>일괄 등록</span>
+                              <AutoGrowTextarea
+                                value={existingBulkDraft}
+                                rows={4}
+                                onChange={(event) => setExistingBulkDraft(event.target.value)}
+                                placeholder={'leaf01\\nleaf02\\n10.10.10.11'}
+                              />
+                            </label>
+                          </div>
                         </div>
                       ) : null}
 
                       {detailDraft.card_type === 'new' ? (
-                        targetRows.length > 0 ? (
-                          <div className="kanban-target-form-list">
-                            {targetRows.map((target, index) => (
-                              <div key={target.id ?? `target-${index}`} className="kanban-target-form-card">
-                                <div className="kanban-target-form-grid">
-                                  <label className="kanban-field">
-                                    <span>장비 이름 / Hostname</span>
-                                    <input
-                                      value={target.display_name}
-                                      onChange={(event) => updateTargetItem(index, { display_name: event.target.value, target_kind: 'new' })}
-                                      placeholder="예: LEAF-NEW-01"
-                                    />
-                                  </label>
-                                  <label className="kanban-field">
-                                    <span>Mgmt IP</span>
-                                    <input
-                                      value={target.mgmt_ip}
-                                      onChange={(event) => updateTargetItem(index, { mgmt_ip: event.target.value, target_kind: 'new' })}
-                                      placeholder="예: 10.10.10.11"
-                                    />
-                                  </label>
-                                  <label className="kanban-field">
-                                    <span>Model</span>
-                                    <input
-                                      value={target.model}
-                                      onChange={(event) => updateTargetItem(index, { model: event.target.value, target_kind: 'new' })}
-                                      placeholder="예: DCS-7280"
-                                    />
-                                  </label>
-                                  <label className="kanban-field">
-                                    <span>역할 / 메모</span>
-                                    <input
-                                      value={target.role_hint}
-                                      onChange={(event) => updateTargetItem(index, { role_hint: event.target.value, target_kind: 'new' })}
-                                      placeholder="예: Spine uplink"
-                                    />
-                                  </label>
-                                </div>
-                                <div className="kanban-target-card-actions">
-                                  <button className="kanban-link-button danger" type="button" onClick={() => removeTargetItem(index)}>
-                                    <Trash2 size={14} />
-                                    <span>대상 삭제</span>
-                                  </button>
-                                </div>
+                        <div className="kanban-target-form-list">
+                          <div className="kanban-target-form-card">
+                            <div className="kanban-target-editor-head">
+                              <div>
+                                <strong>{editingNewTargetIndex === null ? '신규 장비 등록' : '신규 장비 수정'}</strong>
+                                <p>입력 영역은 하나만 유지하고, 아래 표에서 행을 눌러 수정합니다.</p>
                               </div>
-                            ))}
+                              <div className="kanban-inline-actions left">
+                                <button className="kanban-ghost-button" type="button" onClick={resetNewTargetEditor}>
+                                  입력 초기화
+                                </button>
+                                <button className="kanban-primary-button" type="button" onClick={saveNewTargetDraft}>
+                                  <Plus size={16} />
+                                  <span>{editingNewTargetIndex === null ? '대상 추가' : '수정 반영'}</span>
+                                </button>
+                              </div>
+                            </div>
+                            <div className="kanban-target-form-grid">
+                              <label className="kanban-field">
+                                <span>장비 이름 / Hostname</span>
+                                <input
+                                  value={newTargetDraft.display_name}
+                                  onChange={(event) =>
+                                    setNewTargetDraft((current) => ({ ...current, display_name: event.target.value, target_kind: 'new' }))
+                                  }
+                                  placeholder="예: LEAF-NEW-01"
+                                />
+                              </label>
+                              <label className="kanban-field">
+                                <span>Mgmt IP</span>
+                                <input
+                                  value={newTargetDraft.mgmt_ip}
+                                  onChange={(event) =>
+                                    setNewTargetDraft((current) => ({ ...current, mgmt_ip: event.target.value, target_kind: 'new' }))
+                                  }
+                                  placeholder="예: 10.10.10.11"
+                                />
+                              </label>
+                              <label className="kanban-field">
+                                <span>Model</span>
+                                <input
+                                  value={newTargetDraft.model}
+                                  onChange={(event) =>
+                                    setNewTargetDraft((current) => ({ ...current, model: event.target.value, target_kind: 'new' }))
+                                  }
+                                  placeholder="예: DCS-7280"
+                                />
+                              </label>
+                              <label className="kanban-field">
+                                <span>역할 / 메모</span>
+                                <input
+                                  value={newTargetDraft.role_hint}
+                                  onChange={(event) =>
+                                    setNewTargetDraft((current) => ({ ...current, role_hint: event.target.value, target_kind: 'new' }))
+                                  }
+                                  placeholder="예: Spine uplink"
+                                />
+                              </label>
+                            </div>
+                            <label className="kanban-field wide">
+                              <span>신규 장비 일괄 등록</span>
+                              <AutoGrowTextarea
+                                value={newTargetBulkDraft}
+                                rows={4}
+                                onChange={(event) => setNewTargetBulkDraft(event.target.value)}
+                                placeholder={'LEAF-NEW-01,10.10.10.11,DCS-7280,Spine uplink\\nLEAF-NEW-02,10.10.10.12'}
+                              />
+                            </label>
+                            <div className="kanban-target-card-actions">
+                              <p className="kanban-target-helper">한 줄에 `hostname, mgmt ip, model, 메모` 순서로 적으면 여러 대를 한 번에 등록할 수 있습니다.</p>
+                              <button className="kanban-ghost-button" type="button" onClick={addNewTargetsFromBulk}>
+                                <Plus size={16} />
+                                <span>여러 대 추가</span>
+                              </button>
+                            </div>
                           </div>
-                        ) : (
-                          <div className="kanban-target-empty">
-                            <strong>등록된 신규 대상 장비가 없습니다.</strong>
-                            <p>신규 대상 추가 버튼으로 작업 계획의 기준 장비를 먼저 등록해 주세요.</p>
-                          </div>
-                        )
+                          {targetRows.length === 0 ? (
+                            <div className="kanban-target-empty">
+                              <strong>등록된 신규 대상 장비가 없습니다.</strong>
+                              <p>위 편집기에서 한 대씩 추가하거나, 여러 줄 입력으로 한 번에 등록해 주세요.</p>
+                            </div>
+                          ) : null}
+                        </div>
                       ) : null}
 
                       {targetRows.length > 0 ? (
@@ -886,13 +1056,36 @@ export function KanbanBoard() {
                               <span>동작</span>
                             </div>
                             {targetRows.map((target, index) => (
-                              <div key={target.id ?? `${target.display_name}-${index}`} className="kanban-target-table-row">
+                              <div
+                                key={target.id ?? `${target.display_name}-${index}`}
+                                className={`kanban-target-table-row ${detailDraft.card_type === 'new' && editingNewTargetIndex === index ? 'active' : ''} ${detailDraft.card_type === 'new' ? 'editable' : ''}`}
+                                onClick={detailDraft.card_type === 'new' ? () => startEditNewTarget(index) : undefined}
+                              >
                                 <span>{target.display_name || '-'}</span>
                                 <span>{target.mgmt_ip || '-'}</span>
                                 <span>{target.model || '-'}</span>
                                 <span>{target.cvp_device_id ? 'CVP 연결됨' : '수기 등록'}</span>
                                 <span>
-                                  <button className="kanban-link-button danger" type="button" onClick={() => removeTargetItem(index)}>
+                                  {detailDraft.card_type === 'new' ? (
+                                    <button
+                                      className="kanban-link-button"
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        startEditNewTarget(index)
+                                      }}
+                                    >
+                                      수정
+                                    </button>
+                                  ) : null}
+                                  <button
+                                    className="kanban-link-button danger"
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      removeTargetItem(index)
+                                    }}
+                                  >
                                     삭제
                                   </button>
                                 </span>
@@ -1117,6 +1310,43 @@ function calculateProgress(items: KanbanCardInput['checklist_items']) {
     total,
     percent: total > 0 ? Math.round((completed / total) * 100) : 0,
   }
+}
+
+function createEmptyTarget(targetKind: KanbanTargetKind): KanbanTargetItem {
+  return {
+    target_kind: targetKind,
+    display_name: '',
+    mgmt_ip: '',
+    model: '',
+    role_hint: '',
+    cvp_device_id: '',
+    match_status: targetKind === 'existing' ? 'linked_to_cvp' : 'manual_only',
+  }
+}
+
+function parseBulkLines(text: string) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim().split(/[,\t]/)[0]?.trim() ?? '')
+    .filter(Boolean)
+}
+
+function parseNewTargetBulk(text: string): KanbanTargetItem[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [displayName = '', mgmtIp = '', model = '', roleHint = ''] = line.split(/[,\t]/).map((part) => part.trim())
+      return {
+        ...createEmptyTarget('new'),
+        display_name: displayName,
+        mgmt_ip: mgmtIp,
+        model,
+        role_hint: roleHint,
+      }
+    })
+    .filter((target) => target.display_name)
 }
 
 function normalizeCardInput(values: KanbanCardInput): KanbanCardInput {

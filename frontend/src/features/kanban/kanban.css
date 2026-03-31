@@ -107,6 +107,11 @@
   color: #152234;
 }
 
+.kanban-detail-back-row .kanban-ghost-button {
+  padding: 8px 11px;
+  font-size: 13px;
+}
+
 .kanban-danger-button {
   background: rgba(228, 89, 105, 0.12);
   color: #b33145;
@@ -671,6 +676,25 @@
   gap: 14px;
 }
 
+.kanban-target-editor-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kanban-target-editor-head p,
+.kanban-target-helper {
+  margin: 6px 0 0;
+  color: #67768c;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.kanban-target-card-actions p {
+  margin: 0;
+}
+
 .kanban-target-search {
   display: flex;
   align-items: center;
@@ -694,6 +718,9 @@
 .kanban-target-candidate-list {
   display: grid;
   gap: 10px;
+  max-height: 280px;
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .kanban-target-candidate {
@@ -760,6 +787,21 @@
 
 .kanban-target-table-row:last-child {
   border-bottom: 0;
+}
+
+.kanban-target-table-row.editable {
+  cursor: pointer;
+}
+
+.kanban-target-table-row.active {
+  background: linear-gradient(135deg, rgba(46, 114, 255, 0.12), rgba(46, 114, 255, 0.06));
+}
+
+.kanban-target-table-row span:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .kanban-target-empty {
@@ -928,6 +970,11 @@
   .kanban-checklist-head {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .kanban-target-editor-head {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .kanban-summary-head,

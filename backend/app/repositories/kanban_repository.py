@@ -166,6 +166,8 @@ class KanbanRepository:
                 return None
 
             target = dict(row)
+            target["target_kind"] = _normalize_enum_value(target.get("target_kind"), "existing")
+            target["match_status"] = _normalize_enum_value(target.get("match_status"), "manual_only")
             target["service_status"] = self._calculate_service_status(connection, target.get("cvp_device_id", ""))
             return target
 
@@ -362,6 +364,8 @@ class KanbanRepository:
         target_map: dict[int, list[dict[str, Any]]] = {}
         for row in rows:
             item = dict(row)
+            item["target_kind"] = _normalize_enum_value(item.get("target_kind"), "existing")
+            item["match_status"] = _normalize_enum_value(item.get("match_status"), "manual_only")
             item["service_status"] = service_status_map.get(int(item["id"]), "planned")
             target_map.setdefault(int(item["card_id"]), []).append(item)
         return target_map
@@ -493,13 +497,13 @@ class KanbanRepository:
             item_id = int(raw_item_id) if raw_item_id is not None else None
             sort_order = int(raw_item.get("sort_order") or index)
             values = (
-                str(raw_item.get("target_kind", "existing") or "existing"),
+                _normalize_enum_value(raw_item.get("target_kind"), "existing"),
                 display_name,
                 str(raw_item.get("mgmt_ip", "") or ""),
                 str(raw_item.get("model", "") or ""),
                 str(raw_item.get("role_hint", "") or ""),
                 str(raw_item.get("cvp_device_id", "") or ""),
-                str(raw_item.get("match_status", "manual_only") or "manual_only"),
+                _normalize_enum_value(raw_item.get("match_status"), "manual_only"),
                 sort_order,
                 timestamp,
             )
@@ -758,9 +762,39 @@ class KanbanRepository:
                 "ALTER TABLE kanban_cards ADD COLUMN assignee TEXT NOT NULL DEFAULT ''",
             )
 
+        target_table_exists = bool(
+            connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'kanban_targets'",
+            ).fetchone()
+        )
+        if target_table_exists:
+            connection.execute(
+                """
+                UPDATE kanban_targets
+                SET target_kind = CASE
+                    WHEN instr(target_kind, '.') > 0 THEN substr(target_kind, instr(target_kind, '.') + 1)
+                    ELSE target_kind
+                END,
+                match_status = CASE
+                    WHEN instr(match_status, '.') > 0 THEN substr(match_status, instr(match_status, '.') + 1)
+                    ELSE match_status
+                END
+                """,
+            )
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def _normalize_enum_value(value: Any, default: str) -> str:
+    if value is None:
+        return default
+    raw_value = getattr(value, "value", value)
+    token = str(raw_value or default).strip()
+    if "." in token:
+        token = token.rsplit(".", 1)[-1]
+    return token or default
 
 
 _CARD_ORDER_SQL = """

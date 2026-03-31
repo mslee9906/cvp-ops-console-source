@@ -289,5 +289,7 @@ export interface KanbanDiffLine {
 export interface KanbanDiffResponse {
   target_id: number
   snapshot_available: boolean
+  snapshot_text: string
+  planned_text: string
   lines: KanbanDiffLine[]
 }

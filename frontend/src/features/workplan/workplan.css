@@ -138,14 +138,14 @@
 
 .workplan-layout {
   display: grid;
-  grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
   gap: 14px;
   min-height: calc(100vh - 220px);
 }
 
 .workplan-sidebar {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(420px, 1fr);
   gap: 14px;
   min-height: 0;
 }
@@ -154,6 +154,12 @@
   display: grid;
   gap: 14px;
   min-height: 0;
+  align-content: start;
+}
+
+.workplan-selector-card.compact {
+  gap: 10px;
+  padding: 14px;
 }
 
 .workplan-selected-hero {
@@ -214,6 +220,10 @@
   min-height: 0;
 }
 
+.workplan-card-list.picker {
+  max-height: 340px;
+}
+
 .workplan-card-link {
   padding: 12px 14px;
   border-radius: 16px;
@@ -246,7 +256,9 @@
 .workplan-step-panel {
   display: grid;
   align-content: start;
+  align-self: stretch;
   gap: 8px;
+  min-height: 420px;
 }
 
 .workplan-step-link {
@@ -328,7 +340,7 @@
 }
 
 .workplan-stage-card.tall {
-  min-height: 520px;
+  min-height: 620px;
 }
 
 .workplan-stage-pill {
@@ -403,6 +415,11 @@
   border-radius: 16px;
   border: 1px solid rgba(20, 36, 52, 0.08);
   background: rgba(248, 251, 255, 0.82);
+}
+
+.workplan-validation-summary.subtle {
+  background: rgba(244, 248, 255, 0.88);
+  border-style: dashed;
 }
 
 .workplan-validation-summary p {
@@ -506,6 +523,43 @@
   margin: 6px 0 0;
 }
 
+.workplan-validation-match-summary {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.workplan-validation-match-summary strong {
+  font-size: 12px;
+  color: #415268;
+}
+
+.workplan-validation-match-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workplan-validation-match-chip {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(20, 36, 52, 0.08);
+}
+
+.workplan-validation-match-chip span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #152234;
+}
+
+.workplan-validation-match-chip small {
+  font-size: 11px;
+  color: #68788d;
+}
+
 .workplan-diff-table {
   border-radius: 18px;
   border: 1px solid rgba(20, 36, 52, 0.08);
@@ -522,8 +576,8 @@
 
 .workplan-diff-row span,
 .workplan-diff-row code {
-  padding: 8px 10px;
-  min-height: 38px;
+  padding: 7px 9px;
+  min-height: 34px;
   display: block;
 }
 
@@ -539,6 +593,8 @@
   white-space: pre-wrap;
   word-break: break-word;
   font-family: 'Consolas', 'SFMono-Regular', ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .workplan-diff-row.equal {
@@ -560,6 +616,19 @@
 .workplan-diff-row .mono {
   font-family: 'Consolas', 'SFMono-Regular', ui-monospace, monospace;
   color: #69798d;
+  font-size: 11px;
+}
+
+.workplan-copy-toast {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(35, 184, 172, 0.12);
+  color: #0f6c63;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 @media (max-width: 1200px) {

@@ -113,6 +113,8 @@ class KanbanService:
             return {
                 "target_id": target_id,
                 "snapshot_available": False,
+                "snapshot_text": "",
+                "planned_text": planned_config,
                 "lines": [],
             }
 
@@ -120,6 +122,8 @@ class KanbanService:
             return {
                 "target_id": target_id,
                 "snapshot_available": False,
+                "snapshot_text": "",
+                "planned_text": planned_config,
                 "lines": [],
             }
 
@@ -128,6 +132,8 @@ class KanbanService:
         return {
             "target_id": target_id,
             "snapshot_available": True,
+            "snapshot_text": snapshot_text,
+            "planned_text": planned_config,
             "lines": self._build_diff_lines(snapshot_text, planned_config),
         }
 

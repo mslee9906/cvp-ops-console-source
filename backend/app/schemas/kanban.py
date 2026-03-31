@@ -193,6 +193,8 @@ class KanbanDiffLine(BaseModel):
 class KanbanDiffResponse(BaseModel):
     target_id: int
     snapshot_available: bool
+    snapshot_text: str = ""
+    planned_text: str = ""
     lines: list[KanbanDiffLine] = Field(default_factory=list)
 
 

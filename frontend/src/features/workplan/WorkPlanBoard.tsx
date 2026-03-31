@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { CheckCircle2, ClipboardList, RefreshCcw, Search, Unlink2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { CheckCircle2, ClipboardList, Copy, RefreshCcw, Search, Unlink2 } from 'lucide-react'
 
 import { api } from '../../api'
 import type {
@@ -28,6 +28,7 @@ export function WorkPlanBoard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selectedCardId, setSelectedCardId] = useState<number | null>(null)
+  const [showCardPicker, setShowCardPicker] = useState(true)
   const [selectedTargetId, setSelectedTargetId] = useState<number | null>(null)
   const [cardFilter, setCardFilter] = useState('')
   const [linkFilter, setLinkFilter] = useState('')
@@ -40,8 +41,7 @@ export function WorkPlanBoard() {
   const [snapshotData, setSnapshotData] = useState<KanbanTargetSnapshotResponse | null>(null)
   const [validationData, setValidationData] = useState<KanbanValidationResponse | null>(null)
   const [diffData, setDiffData] = useState<KanbanDiffResponse | null>(null)
-
-  const diffScrollRef = useRef<HTMLDivElement | null>(null)
+  const [copyFeedback, setCopyFeedback] = useState('')
 
   const filteredCards = useMemo(() => {
     const token = cardFilter.trim().toLowerCase()
@@ -93,10 +93,12 @@ export function WorkPlanBoard() {
   useEffect(() => {
     if (!filteredCards.length) {
       setSelectedCardId(null)
+      setShowCardPicker(true)
       return
     }
-    if (!selectedCardId || !filteredCards.some((card) => card.id === selectedCardId)) {
-      setSelectedCardId(filteredCards[0].id)
+    if (selectedCardId && !filteredCards.some((card) => card.id === selectedCardId)) {
+      setSelectedCardId(null)
+      setShowCardPicker(true)
     }
   }, [filteredCards, selectedCardId])
 
@@ -127,6 +129,14 @@ export function WorkPlanBoard() {
     }
     void loadSnapshot(selectedTargetId)
   }, [activeStep, selectedTargetId])
+
+  useEffect(() => {
+    if (!copyFeedback) {
+      return
+    }
+    const timer = window.setTimeout(() => setCopyFeedback(''), 1800)
+    return () => window.clearTimeout(timer)
+  }, [copyFeedback])
 
   async function bootstrap() {
     try {
@@ -257,6 +267,20 @@ export function WorkPlanBoard() {
     }
   }
 
+  async function handleCopyConfigBlock(label: string, text: string) {
+    try {
+      await copyPlainText(text)
+      setCopyFeedback(`${label} 복사 완료`)
+    } catch (copyError) {
+      setError(copyError instanceof Error ? copyError.message : `${label} 복사에 실패했습니다.`)
+    }
+  }
+
+  function handleSelectCard(cardId: number) {
+    setSelectedCardId(cardId)
+    setShowCardPicker(false)
+  }
+
   return (
     <section className="workplan-shell">
       <div className="workplan-toolbar">
@@ -275,60 +299,77 @@ export function WorkPlanBoard() {
       {loading ? <div className="workplan-loading">작업 계획 데이터를 불러오는 중입니다.</div> : null}
 
       {!loading ? (
-        selectedCard ? (
+        cards.length > 0 ? (
           <div className="workplan-layout">
             <aside className="workplan-sidebar">
-              <article className="workplan-selector-card">
-                <div className="workplan-selected-hero">
-                  <div>
-                    <p className="workplan-kicker">Linked Card</p>
-                    <h4>{selectedCard.title}</h4>
-                    <small>{selectedCard.card_code}</small>
-                  </div>
-                  <ClipboardList size={18} />
-                </div>
-                <div className="workplan-summary-grid">
-                  <div className="workplan-summary-row">
-                    <span>담당자</span>
-                    <strong>{selectedCard.assignee || '미지정'}</strong>
-                  </div>
-                  <div className="workplan-summary-row">
-                    <span>상태</span>
-                    <strong>{columnLabel(selectedCard.column_key)}</strong>
-                  </div>
-                  <div className="workplan-summary-row">
-                    <span>유형</span>
-                    <strong>{selectedCard.card_type === 'new' ? '신규 장비 작업' : '기존 장비 작업'}</strong>
-                  </div>
-                  <div className="workplan-summary-row">
-                    <span>작업 대상</span>
-                    <strong>{selectedCard.targets.length}대</strong>
-                  </div>
-                </div>
-                <label className="workplan-filter">
-                  <Search size={16} />
-                  <input value={cardFilter} onChange={(event) => setCardFilter(event.target.value)} placeholder="카드 제목, 코드, 담당자 검색" />
-                </label>
-                <div className="workplan-card-list">
-                  {filteredCards.map((card) => (
-                    <button
-                      key={card.id}
-                      className={`workplan-card-link ${card.id === selectedCardId ? 'active' : ''}`}
-                      type="button"
-                      onClick={() => setSelectedCardId(card.id)}
-                    >
-                      <div className="workplan-card-link-head">
-                        <strong>{card.title}</strong>
-                        <span>{card.card_code}</span>
+              <article className={`workplan-selector-card ${selectedCard && !showCardPicker ? 'compact' : ''}`}>
+                {!selectedCard || showCardPicker ? (
+                  <>
+                    <div className="workplan-selected-hero">
+                      <div>
+                        <p className="workplan-kicker">Choose Card</p>
+                        <h4>작업 카드 선택</h4>
+                        <small>작업 계획을 열 칸반 카드를 먼저 고릅니다.</small>
                       </div>
-                      <p>{card.assignee || '담당자 미지정'}</p>
-                      <div className="workplan-card-link-meta">
-                        <small>{columnLabel(card.column_key)}</small>
-                        <small>{card.targets.length} targets</small>
+                      <ClipboardList size={18} />
+                    </div>
+                    <label className="workplan-filter">
+                      <Search size={16} />
+                      <input value={cardFilter} onChange={(event) => setCardFilter(event.target.value)} placeholder="카드 제목, 코드, 담당자 검색" />
+                    </label>
+                    <div className="workplan-card-list picker">
+                      {filteredCards.map((card) => (
+                        <button
+                          key={card.id}
+                          className={`workplan-card-link ${card.id === selectedCardId ? 'active' : ''}`}
+                          type="button"
+                          onClick={() => handleSelectCard(card.id)}
+                        >
+                          <div className="workplan-card-link-head">
+                            <strong>{card.title}</strong>
+                            <span>{card.card_code}</span>
+                          </div>
+                          <p>{card.assignee || '담당자 미지정'}</p>
+                          <div className="workplan-card-link-meta">
+                            <small>{columnLabel(card.column_key)}</small>
+                            <small>{card.targets.length} targets</small>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="workplan-selected-hero">
+                      <div>
+                        <p className="workplan-kicker">Selected Card</p>
+                        <h4>{selectedCard.title}</h4>
+                        <small>{selectedCard.card_code}</small>
                       </div>
-                    </button>
-                  ))}
-                </div>
+                      <button className="workplan-ghost-button" type="button" onClick={() => setShowCardPicker(true)}>
+                        다른 카드 선택
+                      </button>
+                    </div>
+                    <div className="workplan-summary-grid">
+                      <div className="workplan-summary-row">
+                        <span>담당자</span>
+                        <strong>{selectedCard.assignee || '미지정'}</strong>
+                      </div>
+                      <div className="workplan-summary-row">
+                        <span>상태</span>
+                        <strong>{columnLabel(selectedCard.column_key)}</strong>
+                      </div>
+                      <div className="workplan-summary-row">
+                        <span>유형</span>
+                        <strong>{selectedCard.card_type === 'new' ? '신규 장비 작업' : '기존 장비 작업'}</strong>
+                      </div>
+                      <div className="workplan-summary-row">
+                        <span>작업 대상</span>
+                        <strong>{selectedCard.targets.length}대</strong>
+                      </div>
+                    </div>
+                  </>
+                )}
               </article>
 
               <section className="workplan-step-panel">
@@ -358,7 +399,7 @@ export function WorkPlanBoard() {
                 </div>
               </div>
 
-              {selectedCard.targets.length > 0 ? (
+              {selectedCard && !showCardPicker && selectedCard.targets.length > 0 ? (
                 <div className="workplan-target-switcher">
                   {selectedCard.targets.map((target) => (
                     <button
@@ -372,14 +413,21 @@ export function WorkPlanBoard() {
                     </button>
                   ))}
                 </div>
-              ) : (
+              ) : selectedCard && !showCardPicker ? (
                 <div className="workplan-empty-state">
                   <strong>작업 대상 장비가 아직 없습니다.</strong>
                   <p>작업 보드 탭의 `작업 대상` 단계에서 장비를 먼저 지정하면, 여기서 Snapshot과 계획서를 이어서 관리할 수 있습니다.</p>
                 </div>
-              )}
+              ) : null}
 
-              {selectedTarget ? (
+              {!selectedCard || showCardPicker ? (
+                <div className="workplan-empty-state">
+                  <strong>작업 카드를 선택해 주세요.</strong>
+                  <p>왼쪽 카드 선택창에서 카드를 고르면, 그 순간부터 오른쪽 작업 계획 화면이 카드 기준으로 열립니다.</p>
+                </div>
+              ) : null}
+
+              {selectedCard && !showCardPicker && selectedTarget ? (
                 <div className="workplan-stage-body">
                   {activeStep === 'planned_config' ? (
                     <section className="workplan-two-column">
@@ -513,6 +561,10 @@ export function WorkPlanBoard() {
                           {validationLoading ? '검증 중...' : '다시 검증'}
                         </button>
                       </div>
+                      <div className="workplan-validation-summary subtle">
+                        <strong>검증 기준</strong>
+                        <p>CVP에 연결된 현재 대상 장비의 기존 snapshot 값은 제외하고, 나머지 장비와의 중복만 검사합니다.</p>
+                      </div>
                       {validationData && validationData.target_id === selectedTarget.id ? (
                         <div className="workplan-validation-grid">
                           {validationData.sections.map((section) => (
@@ -529,6 +581,7 @@ export function WorkPlanBoard() {
                                       <strong>{item.title}</strong>
                                     </div>
                                     <p>{item.body}</p>
+                                    <ValidationMatchSummary item={item} />
                                   </div>
                                 ))
                               ) : (
@@ -556,13 +609,40 @@ export function WorkPlanBoard() {
                     <section className="workplan-stage-card tall">
                       <div className="workplan-stage-card-head">
                         <strong>Snapshot vs 예정 Config Diff</strong>
-                        <button className="workplan-ghost-button" type="button" onClick={() => void handleLoadDiff()} disabled={diffLoading}>
-                          {diffLoading ? '비교 중...' : 'Diff 불러오기'}
-                        </button>
+                        <div className="workplan-inline-actions">
+                          {diffData && diffData.target_id === selectedTarget.id && diffData.snapshot_available ? (
+                            <>
+                              <button
+                                className="workplan-ghost-button"
+                                type="button"
+                                onClick={() =>
+                                  void handleCopyConfigBlock('Snapshot Config', buildDiffColumnText(diffData.lines, 'left'))
+                                }
+                              >
+                                <Copy size={16} />
+                                <span>Snapshot 복사</span>
+                              </button>
+                              <button
+                                className="workplan-ghost-button"
+                                type="button"
+                                onClick={() =>
+                                  void handleCopyConfigBlock('Planned Config', buildDiffColumnText(diffData.lines, 'right'))
+                                }
+                              >
+                                <Copy size={16} />
+                                <span>Planned 복사</span>
+                              </button>
+                            </>
+                          ) : null}
+                          <button className="workplan-ghost-button" type="button" onClick={() => void handleLoadDiff()} disabled={diffLoading}>
+                            {diffLoading ? '비교 중...' : 'Diff 불러오기'}
+                          </button>
+                        </div>
                       </div>
+                      {copyFeedback ? <div className="workplan-copy-toast">{copyFeedback}</div> : null}
                       {diffData && diffData.target_id === selectedTarget.id ? (
                         diffData.snapshot_available ? (
-                          <div ref={diffScrollRef} className="workplan-diff-table">
+                          <div className="workplan-diff-table">
                             <div className="workplan-diff-row header">
                               <span>Old #</span>
                               <span>Snapshot Config</span>
@@ -598,8 +678,8 @@ export function WorkPlanBoard() {
           </div>
         ) : (
           <div className="workplan-empty-state">
-            <strong>연결된 작업 카드가 없습니다.</strong>
-            <p>먼저 작업 보드에서 카드를 만들고 작업 대상 장비를 저장하면, 이 작업 계획 화면에서 카드와 대상 장비를 이어서 관리할 수 있습니다.</p>
+            <strong>작업 카드를 선택해 주세요.</strong>
+            <p>왼쪽 카드 선택창에서 카드를 고르면, 그 순간부터 작업 계획 화면이 카드 기준으로 전환됩니다.</p>
           </div>
         )
       ) : null}
@@ -639,6 +719,84 @@ function severityLabel(severity: string) {
   if (severity === 'error') return '중복'
   if (severity === 'warning') return '검토'
   return '안내'
+}
+
+function ValidationMatchSummary({ item }: { item: KanbanValidationResponse['sections'][number]['items'][number] }) {
+  const matches = extractValidationMatches(item.details)
+  if (!matches.length) {
+    return null
+  }
+
+  return (
+    <div className="workplan-validation-match-summary">
+      <strong>중복 대상 장비</strong>
+      <div className="workplan-validation-match-list">
+        {matches.map((match, index) => (
+          <div key={`${match.hostname}-${match.device_id}-${index}`} className="workplan-validation-match-chip">
+            <span>{match.hostname || match.device_id}</span>
+            <small>{formatValidationMatchMeta(match)}</small>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function extractValidationMatches(details: Record<string, unknown> | undefined) {
+  const rawMatches = details?.matches
+  if (!Array.isArray(rawMatches)) {
+    return []
+  }
+
+  return rawMatches
+    .map((entry) => (entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : null))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    .map((entry) => ({
+      device_id: String(entry.device_id ?? ''),
+      hostname: String(entry.hostname ?? ''),
+      interface_name: String(entry.interface_name ?? ''),
+      vrf: String(entry.vrf ?? ''),
+      address: String(entry.address ?? ''),
+      network: String(entry.network ?? ''),
+      asn: String(entry.asn ?? ''),
+    }))
+}
+
+function formatValidationMatchMeta(match: {
+  interface_name: string
+  vrf: string
+  address: string
+  network: string
+  asn: string
+}) {
+  const parts = [match.interface_name, match.vrf, match.address || match.network, match.asn ? `AS ${match.asn}` : ''].filter(Boolean)
+  return parts.join(' · ')
+}
+
+function buildDiffColumnText(lines: KanbanDiffResponse['lines'], side: 'left' | 'right') {
+  return lines
+    .map((line) => {
+      const raw = side === 'left' ? line.left_text : line.right_text
+      return raw.replace(/\t/g, '    ')
+    })
+    .join('\n')
+}
+
+async function copyPlainText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', 'true')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand('copy')
+  document.body.removeChild(textarea)
 }
 
 function sortCards(cards: KanbanCard[]) {
