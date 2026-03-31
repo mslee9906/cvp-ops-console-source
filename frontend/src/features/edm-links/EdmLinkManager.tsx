@@ -119,7 +119,7 @@ export function EdmLinkManager() {
   }
 
   function openLink(url: string) {
-    window.open(url, '_blank', 'noopener,noreferrer')
+    window.open(ensureAbsoluteUrl(url), '_blank', 'noopener,noreferrer')
   }
 
   return (
@@ -275,7 +275,21 @@ function normalizeLinkInput(values: EdmLinkInput): EdmLinkInput {
     title: values.title.trim(),
     subtitle: values.subtitle.trim(),
     link_type: values.link_type.trim(),
-    url: values.url.trim(),
+    url: ensureAbsoluteUrl(values.url.trim()),
     color_key: values.color_key,
   }
+}
+
+function ensureAbsoluteUrl(url: string) {
+  const trimmed = url.trim()
+  if (!trimmed) {
+    return ''
+  }
+  if (/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(trimmed)) {
+    return trimmed
+  }
+  if (trimmed.startsWith('//')) {
+    return `https:${trimmed}`
+  }
+  return `https://${trimmed.replace(/^\/+/, '')}`
 }

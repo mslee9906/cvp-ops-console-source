@@ -8,6 +8,9 @@
   KanbanCard,
   KanbanCardInput,
   KanbanCardPosition,
+  KanbanDiffResponse,
+  KanbanTargetSnapshotResponse,
+  KanbanValidationResponse,
   LookupResponse,
   OverviewResponse,
   RecordListResponse,
@@ -83,6 +86,18 @@ export const api = {
     request<KanbanCard[]>('/api/kanban/cards/reorder', {
       method: 'POST',
       body: JSON.stringify({ items }),
+    }),
+  getKanbanTargetSnapshot: (targetId: number) =>
+    request<KanbanTargetSnapshotResponse>(`/api/kanban/targets/${targetId}/snapshot`),
+  validateKanbanConfig: (targetId: number, configText: string) =>
+    request<KanbanValidationResponse>('/api/kanban/validate', {
+      method: 'POST',
+      body: JSON.stringify({ target_id: targetId, config_text: configText }),
+    }),
+  diffKanbanConfig: (targetId: number, configText: string) =>
+    request<KanbanDiffResponse>('/api/kanban/diff', {
+      method: 'POST',
+      body: JSON.stringify({ target_id: targetId, config_text: configText }),
     }),
   lookupIp: (query: string, vrf?: string) =>
     request<LookupResponse>(

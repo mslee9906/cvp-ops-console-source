@@ -29,11 +29,38 @@ CREATE TABLE IF NOT EXISTS kanban_checklist_items (
     sort_order INTEGER NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    FOREIGN KEY(card_id) REFERENCES kanban_cards(id)
+    FOREIGN KEY(card_id) REFERENCES kanban_cards(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS kanban_targets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    card_id INTEGER NOT NULL,
+    target_kind TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    mgmt_ip TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
+    role_hint TEXT NOT NULL DEFAULT '',
+    cvp_device_id TEXT NOT NULL DEFAULT '',
+    match_status TEXT NOT NULL DEFAULT 'manual_only',
+    sort_order INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(card_id) REFERENCES kanban_cards(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS kanban_planned_configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_id INTEGER NOT NULL UNIQUE,
+    config_text TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(target_id) REFERENCES kanban_targets(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_kanban_cards_column_order ON kanban_cards(column_key, sort_order, id);
 CREATE INDEX IF NOT EXISTS idx_kanban_checklist_items_card_order ON kanban_checklist_items(card_id, sort_order, id);
+CREATE INDEX IF NOT EXISTS idx_kanban_targets_card_order ON kanban_targets(card_id, sort_order, id);
+CREATE INDEX IF NOT EXISTS idx_kanban_targets_cvp_device_id ON kanban_targets(cvp_device_id);
 """
 
 
@@ -60,16 +87,33 @@ class KanbanRepository:
                 SELECT id, card_code, title, description, assignee, column_key, card_type, priority, sort_order, created_at, updated_at
                 FROM kanban_cards
                 ORDER BY
-                    """ + _CARD_ORDER_SQL + """,
+                    """
+                + _CARD_ORDER_SQL
+                + """,
                     sort_order,
                     id
                 """,
             ).fetchall()
-            checklist_map = self._get_checklist_map(connection)
-        return [self._hydrate_card(row, checklist_map.get(int(row["id"]), [])) for row in rows]
+            card_ids = [int(row["id"]) for row in rows]
+            checklist_map = self._get_checklist_map(connection, card_ids)
+            target_map = self._get_target_map(connection, card_ids)
+            planned_config_map = self._get_planned_config_map(connection, card_ids)
+        return [
+            self._hydrate_card(
+                row,
+                checklist_map.get(int(row["id"]), []),
+                target_map.get(int(row["id"]), []),
+                planned_config_map.get(int(row["id"]), []),
+            )
+            for row in rows
+        ]
 
     def create_card(self, payload: dict[str, Any]) -> dict[str, Any]:
         timestamp = _now_iso()
+        checklist_items = payload.get("checklist_items") or []
+        target_items = payload.get("targets") or []
+        planned_configs = payload.get("planned_configs") or []
+
         with self._connect() as connection:
             next_number = connection.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM kanban_cards").fetchone()[0]
             card_code = f"KAN-{int(next_number):03d}"
@@ -96,13 +140,46 @@ class KanbanRepository:
                     timestamp,
                 ),
             )
-            connection.commit()
             card_id = int(cursor.lastrowid)
+            self._replace_checklist_items(connection, card_id, checklist_items, timestamp)
+            target_id_map = self._replace_target_items(connection, card_id, target_items, timestamp)
+            self._replace_planned_config_items(connection, card_id, planned_configs, timestamp, target_id_map)
+            connection.commit()
         return self.get_card(card_id) or {}
 
     def get_card(self, card_id: int) -> dict[str, Any] | None:
         with self._connect() as connection:
             return self._get_card(connection, card_id)
+
+    def get_target(self, target_id: int) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, card_id, target_kind, display_name, mgmt_ip, model, role_hint, cvp_device_id, match_status,
+                       sort_order, created_at, updated_at
+                FROM kanban_targets
+                WHERE id = ?
+                """,
+                (target_id,),
+            ).fetchone()
+            if not row:
+                return None
+
+            target = dict(row)
+            target["service_status"] = self._calculate_service_status(connection, target.get("cvp_device_id", ""))
+            return target
+
+    def get_planned_config(self, target_id: int) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, target_id, config_text, created_at, updated_at
+                FROM kanban_planned_configs
+                WHERE target_id = ?
+                """,
+                (target_id,),
+            ).fetchone()
+        return dict(row) if row else None
 
     def update_card(self, card_id: int, changes: dict[str, Any]) -> dict[str, Any] | None:
         if not changes:
@@ -111,7 +188,9 @@ class KanbanRepository:
         allowed_fields = {"title", "description", "assignee", "column_key", "card_type", "priority"}
         updates = {key: value for key, value in changes.items() if key in allowed_fields}
         checklist_items = changes.get("checklist_items")
-        if not updates and checklist_items is None:
+        target_items = changes.get("targets")
+        planned_configs = changes.get("planned_configs")
+        if not updates and checklist_items is None and target_items is None and planned_configs is None:
             return self.get_card(card_id)
 
         with self._connect() as connection:
@@ -132,7 +211,7 @@ class KanbanRepository:
                 affected_columns.add(str(updates["column_key"]))
 
             timestamp = _now_iso()
-            if updates or checklist_items is not None:
+            if updates or checklist_items is not None or target_items is not None or planned_configs is not None:
                 updates["updated_at"] = timestamp
 
             if updates:
@@ -146,6 +225,13 @@ class KanbanRepository:
 
             if checklist_items is not None:
                 self._replace_checklist_items(connection, card_id, checklist_items, timestamp)
+
+            target_id_map: dict[int, int] = {}
+            if target_items is not None:
+                target_id_map = self._replace_target_items(connection, card_id, target_items, timestamp)
+
+            if planned_configs is not None:
+                self._replace_planned_config_items(connection, card_id, planned_configs, timestamp, target_id_map)
 
             if len(affected_columns) > 1:
                 self._normalize_column_orders(connection, affected_columns)
@@ -161,9 +247,8 @@ class KanbanRepository:
             if not row:
                 return False
 
-            connection.execute("DELETE FROM kanban_checklist_items WHERE card_id = ?", (card_id,))
             cursor = connection.execute("DELETE FROM kanban_cards WHERE id = ?", (card_id,))
-            self._normalize_column_orders(connection, {row["column_key"]})
+            self._normalize_column_orders(connection, {str(row["column_key"])})
             connection.commit()
         return cursor.rowcount > 0
 
@@ -222,7 +307,14 @@ class KanbanRepository:
             return None
 
         checklist_map = self._get_checklist_map(connection, [card_id])
-        return self._hydrate_card(row, checklist_map.get(card_id, []))
+        target_map = self._get_target_map(connection, [card_id])
+        planned_config_map = self._get_planned_config_map(connection, [card_id])
+        return self._hydrate_card(
+            row,
+            checklist_map.get(card_id, []),
+            target_map.get(card_id, []),
+            planned_config_map.get(card_id, []),
+        )
 
     def _get_checklist_map(
         self,
@@ -248,13 +340,72 @@ class KanbanRepository:
             checklist_map.setdefault(int(item["card_id"]), []).append(item)
         return checklist_map
 
-    def _hydrate_card(self, row: sqlite3.Row, checklist_items: list[dict[str, Any]]) -> dict[str, Any]:
+    def _get_target_map(
+        self,
+        connection: sqlite3.Connection,
+        card_ids: list[int] | None = None,
+    ) -> dict[int, list[dict[str, Any]]]:
+        query = """
+            SELECT id, card_id, target_kind, display_name, mgmt_ip, model, role_hint, cvp_device_id, match_status,
+                   sort_order, created_at, updated_at
+            FROM kanban_targets
+        """
+        params: list[Any] = []
+        if card_ids:
+            placeholders = ", ".join("?" for _ in card_ids)
+            query += f" WHERE card_id IN ({placeholders})"
+            params.extend(card_ids)
+        query += " ORDER BY card_id, sort_order, id"
+
+        rows = connection.execute(query, params).fetchall()
+        service_status_map = self._get_service_status_map(connection, rows)
+        target_map: dict[int, list[dict[str, Any]]] = {}
+        for row in rows:
+            item = dict(row)
+            item["service_status"] = service_status_map.get(int(item["id"]), "planned")
+            target_map.setdefault(int(item["card_id"]), []).append(item)
+        return target_map
+
+    def _get_planned_config_map(
+        self,
+        connection: sqlite3.Connection,
+        card_ids: list[int] | None = None,
+    ) -> dict[int, list[dict[str, Any]]]:
+        query = """
+            SELECT p.id, p.target_id, p.config_text, p.created_at, p.updated_at, t.card_id
+            FROM kanban_planned_configs AS p
+            INNER JOIN kanban_targets AS t ON t.id = p.target_id
+        """
+        params: list[Any] = []
+        if card_ids:
+            placeholders = ", ".join("?" for _ in card_ids)
+            query += f" WHERE t.card_id IN ({placeholders})"
+            params.extend(card_ids)
+        query += " ORDER BY t.card_id, t.sort_order, p.id"
+
+        rows = connection.execute(query, params).fetchall()
+        planned_config_map: dict[int, list[dict[str, Any]]] = {}
+        for row in rows:
+            item = dict(row)
+            card_id = int(item.pop("card_id"))
+            planned_config_map.setdefault(card_id, []).append(item)
+        return planned_config_map
+
+    def _hydrate_card(
+        self,
+        row: sqlite3.Row,
+        checklist_items: list[dict[str, Any]],
+        targets: list[dict[str, Any]],
+        planned_configs: list[dict[str, Any]],
+    ) -> dict[str, Any]:
         card = dict(row)
         completed = sum(1 for item in checklist_items if item["is_completed"])
         total = len(checklist_items)
         progress_percent = int(round((completed / total) * 100)) if total else 0
         card["assignee"] = card.get("assignee", "") or ""
         card["checklist_items"] = checklist_items
+        card["targets"] = targets
+        card["planned_configs"] = planned_configs
         card["checklist_total"] = total
         card["checklist_completed"] = completed
         card["progress_percent"] = progress_percent
@@ -314,6 +465,243 @@ class KanbanRepository:
 
         self._normalize_checklist_orders(connection, card_id)
 
+    def _replace_target_items(
+        self,
+        connection: sqlite3.Connection,
+        card_id: int,
+        items: list[dict[str, Any]],
+        timestamp: str,
+    ) -> dict[int, int]:
+        existing_rows = connection.execute(
+            """
+            SELECT id
+            FROM kanban_targets
+            WHERE card_id = ?
+            """,
+            (card_id,),
+        ).fetchall()
+        existing_ids = {int(row["id"]) for row in existing_rows}
+        retained_existing_ids: set[int] = set()
+        target_id_map: dict[int, int] = {}
+
+        for index, raw_item in enumerate(items, start=1):
+            display_name = str(raw_item.get("display_name", "")).strip()
+            if not display_name:
+                continue
+
+            raw_item_id = raw_item.get("id")
+            item_id = int(raw_item_id) if raw_item_id is not None else None
+            sort_order = int(raw_item.get("sort_order") or index)
+            values = (
+                str(raw_item.get("target_kind", "existing") or "existing"),
+                display_name,
+                str(raw_item.get("mgmt_ip", "") or ""),
+                str(raw_item.get("model", "") or ""),
+                str(raw_item.get("role_hint", "") or ""),
+                str(raw_item.get("cvp_device_id", "") or ""),
+                str(raw_item.get("match_status", "manual_only") or "manual_only"),
+                sort_order,
+                timestamp,
+            )
+
+            if item_id is not None and item_id in existing_ids:
+                retained_existing_ids.add(item_id)
+                connection.execute(
+                    """
+                    UPDATE kanban_targets
+                    SET target_kind = ?, display_name = ?, mgmt_ip = ?, model = ?, role_hint = ?,
+                        cvp_device_id = ?, match_status = ?, sort_order = ?, updated_at = ?
+                    WHERE id = ? AND card_id = ?
+                    """,
+                    (*values, item_id, card_id),
+                )
+                target_id_map[item_id] = item_id
+                continue
+
+            cursor = connection.execute(
+                """
+                INSERT INTO kanban_targets (
+                    card_id, target_kind, display_name, mgmt_ip, model, role_hint, cvp_device_id,
+                    match_status, sort_order, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (card_id, *values[:-1], timestamp, timestamp),
+            )
+            inserted_id = int(cursor.lastrowid)
+            retained_existing_ids.add(inserted_id)
+            if item_id is not None:
+                target_id_map[item_id] = inserted_id
+            target_id_map[inserted_id] = inserted_id
+
+        removed_ids = existing_ids - retained_existing_ids
+        if removed_ids:
+            placeholders = ", ".join("?" for _ in removed_ids)
+            connection.execute(
+                f"DELETE FROM kanban_targets WHERE card_id = ? AND id IN ({placeholders})",
+                [card_id, *sorted(removed_ids)],
+            )
+
+        self._normalize_target_orders(connection, card_id)
+
+        current_ids = [
+            int(row["id"])
+            for row in connection.execute(
+                """
+                SELECT id
+                FROM kanban_targets
+                WHERE card_id = ?
+                ORDER BY sort_order, id
+                """,
+                (card_id,),
+            ).fetchall()
+        ]
+        for current_id in current_ids:
+            target_id_map.setdefault(current_id, current_id)
+        return target_id_map
+
+    def _replace_planned_config_items(
+        self,
+        connection: sqlite3.Connection,
+        card_id: int,
+        items: list[dict[str, Any]],
+        timestamp: str,
+        target_id_map: dict[int, int] | None = None,
+    ) -> None:
+        target_rows = connection.execute(
+            """
+            SELECT id
+            FROM kanban_targets
+            WHERE card_id = ?
+            """,
+            (card_id,),
+        ).fetchall()
+        valid_target_ids = {int(row["id"]) for row in target_rows}
+        existing_rows = connection.execute(
+            """
+            SELECT p.id, p.target_id
+            FROM kanban_planned_configs AS p
+            INNER JOIN kanban_targets AS t ON t.id = p.target_id
+            WHERE t.card_id = ?
+            """,
+            (card_id,),
+        ).fetchall()
+        existing_by_target = {
+            int(row["target_id"]): int(row["id"])
+            for row in existing_rows
+        }
+        retained_targets: set[int] = set()
+        resolved_id_map = target_id_map or {}
+
+        for raw_item in items:
+            raw_target_id = raw_item.get("target_id")
+            if raw_target_id is None:
+                continue
+            target_id = resolved_id_map.get(int(raw_target_id), int(raw_target_id))
+            if target_id not in valid_target_ids:
+                continue
+
+            config_text = str(raw_item.get("config_text", "") or "").rstrip()
+            retained_targets.add(target_id)
+
+            existing_id = existing_by_target.get(target_id)
+            if existing_id is not None:
+                connection.execute(
+                    """
+                    UPDATE kanban_planned_configs
+                    SET config_text = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (config_text, timestamp, existing_id),
+                )
+                continue
+
+            connection.execute(
+                """
+                INSERT INTO kanban_planned_configs (target_id, config_text, created_at, updated_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (target_id, config_text, timestamp, timestamp),
+            )
+
+        removed_target_ids = set(existing_by_target) - retained_targets
+        if removed_target_ids:
+            placeholders = ", ".join("?" for _ in removed_target_ids)
+            connection.execute(
+                f"DELETE FROM kanban_planned_configs WHERE target_id IN ({placeholders})",
+                sorted(removed_target_ids),
+            )
+
+    def _get_service_status_map(
+        self,
+        connection: sqlite3.Connection,
+        target_rows: list[sqlite3.Row],
+    ) -> dict[int, str]:
+        linked_target_ids = {
+            int(row["id"]): str(row["cvp_device_id"] or "")
+            for row in target_rows
+            if str(row["cvp_device_id"] or "").strip()
+        }
+        return {
+            target_id: self._calculate_service_status(connection, device_id)
+            for target_id, device_id in linked_target_ids.items()
+        }
+
+    def _calculate_service_status(self, connection: sqlite3.Connection, device_id: str) -> str:
+        normalized_device_id = str(device_id or "").strip()
+        if not normalized_device_id:
+            return "planned"
+
+        device_exists = connection.execute(
+            "SELECT 1 FROM devices WHERE device_id = ? LIMIT 1",
+            (normalized_device_id,),
+        ).fetchone()
+        if not device_exists:
+            return "planned"
+
+        has_config = bool(
+            connection.execute(
+                "SELECT 1 FROM config_snapshots WHERE device_id = ? LIMIT 1",
+                (normalized_device_id,),
+            ).fetchone()
+        )
+        has_bgp = bool(
+            connection.execute(
+                "SELECT 1 FROM bgp_entries WHERE device_id = ? LIMIT 1",
+                (normalized_device_id,),
+            ).fetchone()
+        )
+        has_vrf = bool(
+            connection.execute(
+                "SELECT 1 FROM vrfs WHERE device_id = ? LIMIT 1",
+                (normalized_device_id,),
+            ).fetchone()
+        )
+        has_vlan = bool(
+            connection.execute(
+                "SELECT 1 FROM vlans WHERE device_id = ? LIMIT 1",
+                (normalized_device_id,),
+            ).fetchone()
+        )
+        has_vni = bool(
+            connection.execute(
+                "SELECT 1 FROM vni_entries WHERE device_id = ? LIMIT 1",
+                (normalized_device_id,),
+            ).fetchone()
+        )
+        has_ip = bool(
+            connection.execute(
+                "SELECT 1 FROM ip_records WHERE device_id = ? LIMIT 1",
+                (normalized_device_id,),
+            ).fetchone()
+        )
+
+        signal_count = sum(1 for flag in [has_config, has_bgp, has_vrf, has_vlan, has_vni, has_ip] if flag)
+        if signal_count == 0:
+            return "mgmt_only"
+        if has_config and signal_count >= 2:
+            return "service_ready"
+        return "service_partial"
+
     def _normalize_column_orders(self, connection: sqlite3.Connection, column_keys: set[str]) -> None:
         for column_key in column_keys:
             rows = connection.execute(
@@ -342,6 +730,21 @@ class KanbanRepository:
         ).fetchall()
         connection.executemany(
             "UPDATE kanban_checklist_items SET sort_order = ? WHERE id = ?",
+            [(index + 1, int(row["id"])) for index, row in enumerate(rows)],
+        )
+
+    def _normalize_target_orders(self, connection: sqlite3.Connection, card_id: int) -> None:
+        rows = connection.execute(
+            """
+            SELECT id
+            FROM kanban_targets
+            WHERE card_id = ?
+            ORDER BY sort_order, id
+            """,
+            (card_id,),
+        ).fetchall()
+        connection.executemany(
+            "UPDATE kanban_targets SET sort_order = ? WHERE id = ?",
             [(index + 1, int(row["id"])) for index, row in enumerate(rows)],
         )
 

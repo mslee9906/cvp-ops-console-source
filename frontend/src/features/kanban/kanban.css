@@ -641,6 +641,139 @@
   font-size: 16px;
 }
 
+.kanban-target-panel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(20, 36, 52, 0.08);
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0.95), rgba(242, 247, 252, 0.9));
+  align-content: start;
+}
+
+.kanban-target-head,
+.kanban-target-table-head,
+.kanban-target-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kanban-target-head h4 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.kanban-target-selector,
+.kanban-target-form-list {
+  display: grid;
+  gap: 14px;
+}
+
+.kanban-target-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(20, 36, 52, 0.08);
+}
+
+.kanban-target-search input {
+  width: 100%;
+  min-height: 46px;
+  border: 0;
+  background: transparent;
+  color: #152234;
+  font: inherit;
+  outline: none;
+}
+
+.kanban-target-candidate-list {
+  display: grid;
+  gap: 10px;
+}
+
+.kanban-target-candidate {
+  border: 1px solid rgba(20, 36, 52, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  color: #152234;
+}
+
+.kanban-target-candidate p {
+  margin: 4px 0 0;
+  color: #6c7a8c;
+  font-size: 13px;
+}
+
+.kanban-target-form-card {
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(20, 36, 52, 0.08);
+  background: rgba(255, 255, 255, 0.92);
+  display: grid;
+  gap: 14px;
+}
+
+.kanban-target-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.kanban-target-table-shell {
+  display: grid;
+  gap: 10px;
+}
+
+.kanban-target-table {
+  border-radius: 18px;
+  border: 1px solid rgba(20, 36, 52, 0.08);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.kanban-target-table-row {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(20, 36, 52, 0.06);
+  font-size: 14px;
+}
+
+.kanban-target-table-row.header {
+  background: rgba(244, 248, 253, 0.95);
+  font-weight: 700;
+  color: #495b70;
+}
+
+.kanban-target-table-row:last-child {
+  border-bottom: 0;
+}
+
+.kanban-target-empty {
+  padding: 18px 16px;
+  border-radius: 18px;
+  border: 1px dashed rgba(20, 36, 52, 0.12);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.kanban-target-empty strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
 .kanban-checklist-panel {
   display: grid;
   gap: 16px;
@@ -784,6 +917,11 @@
   }
 
   .kanban-field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .kanban-target-form-grid,
+  .kanban-target-table-row {
     grid-template-columns: 1fr;
   }
 

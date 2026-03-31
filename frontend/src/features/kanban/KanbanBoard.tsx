@@ -1,9 +1,17 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent, FormEvent } from 'react'
-import { ArrowLeft, GripVertical, Plus, RefreshCcw, Trash2 } from 'lucide-react'
+import { ArrowLeft, GripVertical, Plus, RefreshCcw, Search, Trash2 } from 'lucide-react'
 
 import { api } from '../../api'
-import type { KanbanCard, KanbanCardInput, KanbanColumnKey } from '../../types'
+import type {
+  DeviceSummary,
+  KanbanCard,
+  KanbanCardInput,
+  KanbanColumnKey,
+  KanbanPlannedConfigItem,
+  KanbanTargetItem,
+  KanbanTargetKind,
+} from '../../types'
 import { AutoGrowTextarea } from './AutoGrowTextarea'
 import { KanbanCardModal } from './KanbanCardModal'
 import './kanban.css'
@@ -19,10 +27,10 @@ const COLUMN_META: Array<{ key: KanbanColumnKey; label: string; tone: string }> 
   { key: 'done', label: '완료', tone: 'teal' },
 ]
 
-const DETAIL_STEP_META: Array<{ key: DetailStepKey; label: string; body: string; implemented: boolean }> = [
-  { key: 'basic', label: '기본 정보', body: '제목, 담당자, 상태를 정리합니다.', implemented: true },
-  { key: 'target', label: '작업 대상', body: '기존 또는 신규 장비를 지정합니다.', implemented: false },
-  { key: 'checklist', label: '체크리스트', body: '체크 항목과 진행률을 관리합니다.', implemented: true },
+const DETAIL_STEP_META: Array<{ key: DetailStepKey; label: string; body: string }> = [
+  { key: 'basic', label: '기본 정보', body: '제목, 담당자, 상태와 작업 분류를 정리합니다.' },
+  { key: 'target', label: '작업 대상', body: '기존 장비는 인벤토리에서 선택하고, 신규 장비는 수기로 등록합니다.' },
+  { key: 'checklist', label: '체크리스트', body: '체크 항목과 진행률을 관리합니다.' },
 ]
 
 const EMPTY_CARD_INPUT: KanbanCardInput = {
@@ -33,11 +41,15 @@ const EMPTY_CARD_INPUT: KanbanCardInput = {
   card_type: 'existing',
   priority: 'medium',
   checklist_items: [],
+  targets: [],
+  planned_configs: [],
 }
 
 export function KanbanBoard() {
   const [cards, setCards] = useState<KanbanCard[]>([])
+  const [devices, setDevices] = useState<DeviceSummary[]>([])
   const [loading, setLoading] = useState(true)
+  const [deviceLoading, setDeviceLoading] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [editorMode, setEditorMode] = useState<'create' | 'edit' | null>(null)
@@ -47,7 +59,11 @@ export function KanbanBoard() {
   const [activeDetailStep, setActiveDetailStep] = useState<DetailStepKey>('basic')
   const [dragCardId, setDragCardId] = useState<number | null>(null)
   const [dragChecklistIndex, setDragChecklistIndex] = useState<number | null>(null)
+  const [targetSearch, setTargetSearch] = useState('')
   const checklistDraftIdRef = useRef(-1)
+  const targetDraftIdRef = useRef(-1)
+
+  const deferredTargetSearch = useDeferredValue(targetSearch)
 
   const selectedCard = useMemo(
     () => cards.find((item) => item.id === selectedCardId) ?? null,
@@ -68,8 +84,32 @@ export function KanbanBoard() {
     ) as Record<KanbanColumnKey, KanbanCard[]>
   }, [cards])
 
+  const targetRows = detailDraft?.targets ?? []
+  const inventoryCandidates = useMemo(() => {
+    const token = deferredTargetSearch.trim().toLowerCase()
+    const selectedIds = new Set(
+      (detailDraft?.targets ?? [])
+        .map((item) => item.cvp_device_id)
+        .filter(Boolean),
+    )
+    return devices
+      .filter((device) => {
+        if (selectedIds.has(device.device_id)) {
+          return false
+        }
+        if (!token) {
+          return true
+        }
+        return [device.hostname, device.mgmt_ip, device.model, device.serial, device.site]
+          .join(' ')
+          .toLowerCase()
+          .includes(token)
+      })
+      .slice(0, 8)
+  }, [deferredTargetSearch, detailDraft?.targets, devices])
+
   useEffect(() => {
-    void loadCards()
+    void bootstrap()
   }, [])
 
   useEffect(() => {
@@ -77,6 +117,20 @@ export function KanbanBoard() {
       setDetailDraft(toCardInput(selectedCard))
     }
   }, [selectedCard])
+
+  async function bootstrap() {
+    try {
+      setLoading(true)
+      setError('')
+      const [cardResponse, deviceResponse] = await Promise.all([api.getKanbanCards(), api.getDevices()])
+      setCards(sortCards(cardResponse))
+      setDevices(deviceResponse)
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : '칸반 정보를 불러오지 못했습니다.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   async function loadCards() {
     try {
@@ -88,6 +142,19 @@ export function KanbanBoard() {
       setError(loadError instanceof Error ? loadError.message : '칸반 카드를 불러오지 못했습니다.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function loadDevices() {
+    try {
+      setDeviceLoading(true)
+      setError('')
+      const response = await api.getDevices()
+      setDevices(response)
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : '장비 인벤토리를 불러오지 못했습니다.')
+    } finally {
+      setDeviceLoading(false)
     }
   }
 
@@ -111,6 +178,7 @@ export function KanbanBoard() {
     setDetailDraft(toCardInput(card))
     setActiveDetailStep('basic')
     setDragChecklistIndex(null)
+    setTargetSearch('')
   }
 
   function closeDetail() {
@@ -118,6 +186,7 @@ export function KanbanBoard() {
     setDetailDraft(null)
     setActiveDetailStep('basic')
     setDragChecklistIndex(null)
+    setTargetSearch('')
   }
 
   async function handleCreate(values: KanbanCardInput) {
@@ -313,6 +382,93 @@ export function KanbanBoard() {
     setDragChecklistIndex(null)
   }
 
+  function addExistingTarget(device: DeviceSummary) {
+    setDetailDraft((current) => {
+      if (!current) {
+        return current
+      }
+      if ((current.targets ?? []).some((item) => item.cvp_device_id === device.device_id)) {
+        return current
+      }
+
+      const nextTargets = [
+        ...(current.targets ?? []),
+        {
+          id: targetDraftIdRef.current--,
+          target_kind: 'existing' as const,
+          display_name: device.hostname,
+          mgmt_ip: device.mgmt_ip,
+          model: device.model,
+          role_hint: device.site ?? '',
+          cvp_device_id: device.device_id,
+          match_status: 'linked_to_cvp' as const,
+        },
+      ]
+
+      return {
+        ...current,
+        targets: nextTargets,
+      }
+    })
+  }
+
+  function addNewTarget() {
+    setDetailDraft((current) =>
+      current
+        ? {
+            ...current,
+            targets: [
+              ...(current.targets ?? []),
+              {
+                id: targetDraftIdRef.current--,
+                target_kind: 'new',
+                display_name: '',
+                mgmt_ip: '',
+                model: '',
+                role_hint: '',
+                cvp_device_id: '',
+                match_status: 'manual_only',
+              },
+            ],
+          }
+        : current,
+    )
+  }
+
+  function updateTargetItem(index: number, changes: Partial<KanbanTargetItem>) {
+    setDetailDraft((current) => {
+      if (!current) {
+        return current
+      }
+
+      const nextTargets = (current.targets ?? []).map((item, itemIndex) =>
+        itemIndex === index ? { ...item, ...changes } : item,
+      )
+
+      return {
+        ...current,
+        targets: nextTargets,
+      }
+    })
+  }
+
+  function removeTargetItem(index: number) {
+    setDetailDraft((current) => {
+      if (!current) {
+        return current
+      }
+      const target = (current.targets ?? [])[index]
+      const nextTargets = (current.targets ?? []).filter((_, itemIndex) => itemIndex !== index)
+      const nextConfigs = (current.planned_configs ?? []).filter((item) => item.target_id !== Number(target?.id))
+
+      return {
+        ...current,
+        targets: nextTargets,
+        planned_configs: nextConfigs,
+      }
+    })
+  }
+
   const boardContent = (
     <div className="kanban-board-scroll">
       <div className="kanban-board-grid">
@@ -414,7 +570,10 @@ export function KanbanBoard() {
         <div>
           <p className="kanban-kicker">Kanban Board</p>
           <h3>작업 칸반 보드</h3>
-          <p className="kanban-copy">보드에서는 카드 요약만 빠르게 보고, 자세히 보기에서는 기본 정보와 작업 대상, 체크리스트만 관리합니다. 작업 계획 성격의 단계는 별도 작업 계획 화면으로 이동합니다.</p>
+          <p className="kanban-copy">
+            보드에서는 카드 요약만 빠르게 보고, 자세히 보기에서는 기본 정보와 작업 대상, 체크리스트만 관리합니다.
+            작업 계획 성격의 단계는 별도 작업 계획 화면에서 이어집니다.
+          </p>
         </div>
         <div className="kanban-inline-actions">
           <button className="kanban-ghost-button" type="button" onClick={() => void loadCards()} disabled={loading || submitting}>
@@ -465,6 +624,10 @@ export function KanbanBoard() {
                 <div className="kanban-summary-row">
                   <span>작업 유형</span>
                   <strong>{detailDraft.card_type === 'new' ? '신규 장비 작업' : '기존 장비 작업'}</strong>
+                </div>
+                <div className="kanban-summary-row">
+                  <span>작업 대상</span>
+                  <strong>{detailDraft.targets?.length ?? 0}대</strong>
                 </div>
                 <div className="kanban-summary-row">
                   <span>우선순위</span>
@@ -593,6 +756,161 @@ export function KanbanBoard() {
                   </form>
                 ) : null}
 
+                {activeDetailStep === 'target' ? (
+                  <form className="kanban-form" onSubmit={handleDetailSubmit}>
+                    <section className="kanban-target-panel">
+                      <div className="kanban-target-head">
+                        <div>
+                          <p className="kanban-kicker">Target Inventory</p>
+                          <h4>{detailDraft.card_type === 'new' ? '신규 대상 장비 등록' : '기존 장비 선택'}</h4>
+                        </div>
+                        <div className="kanban-inline-actions left">
+                          {detailDraft.card_type === 'existing' ? (
+                            <button className="kanban-ghost-button" type="button" onClick={() => void loadDevices()} disabled={deviceLoading}>
+                              <RefreshCcw size={16} />
+                              <span>{deviceLoading ? '불러오는 중...' : '인벤토리 갱신'}</span>
+                            </button>
+                          ) : (
+                            <button className="kanban-primary-button" type="button" onClick={addNewTarget}>
+                              <Plus size={16} />
+                              <span>신규 대상 추가</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {detailDraft.card_type === 'existing' ? (
+                        <div className="kanban-target-selector">
+                          <label className="kanban-target-search">
+                            <Search size={16} />
+                            <input
+                              value={targetSearch}
+                              onChange={(event) => setTargetSearch(event.target.value)}
+                              placeholder="Hostname, Mgmt IP, Model, Serial 검색"
+                            />
+                          </label>
+                          <div className="kanban-target-candidate-list">
+                            {inventoryCandidates.length > 0 ? (
+                              inventoryCandidates.map((device) => (
+                                <button
+                                  key={device.device_id}
+                                  className="kanban-target-candidate"
+                                  type="button"
+                                  onClick={() => addExistingTarget(device)}
+                                >
+                                  <div>
+                                    <strong>{device.hostname}</strong>
+                                    <p>{device.mgmt_ip || 'Mgmt IP 없음'}</p>
+                                  </div>
+                                  <span>{device.model || 'Model 없음'}</span>
+                                </button>
+                              ))
+                            ) : (
+                              <div className="kanban-target-empty">
+                                <strong>추가 가능한 장비가 없습니다.</strong>
+                                <p>검색 조건을 바꾸거나 이미 선택된 장비를 확인해 주세요.</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {detailDraft.card_type === 'new' ? (
+                        targetRows.length > 0 ? (
+                          <div className="kanban-target-form-list">
+                            {targetRows.map((target, index) => (
+                              <div key={target.id ?? `target-${index}`} className="kanban-target-form-card">
+                                <div className="kanban-target-form-grid">
+                                  <label className="kanban-field">
+                                    <span>장비 이름 / Hostname</span>
+                                    <input
+                                      value={target.display_name}
+                                      onChange={(event) => updateTargetItem(index, { display_name: event.target.value, target_kind: 'new' })}
+                                      placeholder="예: LEAF-NEW-01"
+                                    />
+                                  </label>
+                                  <label className="kanban-field">
+                                    <span>Mgmt IP</span>
+                                    <input
+                                      value={target.mgmt_ip}
+                                      onChange={(event) => updateTargetItem(index, { mgmt_ip: event.target.value, target_kind: 'new' })}
+                                      placeholder="예: 10.10.10.11"
+                                    />
+                                  </label>
+                                  <label className="kanban-field">
+                                    <span>Model</span>
+                                    <input
+                                      value={target.model}
+                                      onChange={(event) => updateTargetItem(index, { model: event.target.value, target_kind: 'new' })}
+                                      placeholder="예: DCS-7280"
+                                    />
+                                  </label>
+                                  <label className="kanban-field">
+                                    <span>역할 / 메모</span>
+                                    <input
+                                      value={target.role_hint}
+                                      onChange={(event) => updateTargetItem(index, { role_hint: event.target.value, target_kind: 'new' })}
+                                      placeholder="예: Spine uplink"
+                                    />
+                                  </label>
+                                </div>
+                                <div className="kanban-target-card-actions">
+                                  <button className="kanban-link-button danger" type="button" onClick={() => removeTargetItem(index)}>
+                                    <Trash2 size={14} />
+                                    <span>대상 삭제</span>
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="kanban-target-empty">
+                            <strong>등록된 신규 대상 장비가 없습니다.</strong>
+                            <p>신규 대상 추가 버튼으로 작업 계획의 기준 장비를 먼저 등록해 주세요.</p>
+                          </div>
+                        )
+                      ) : null}
+
+                      {targetRows.length > 0 ? (
+                        <div className="kanban-target-table-shell">
+                          <div className="kanban-target-table-head">
+                            <strong>선택된 작업 대상</strong>
+                            <span>{targetRows.length}대</span>
+                          </div>
+                          <div className="kanban-target-table">
+                            <div className="kanban-target-table-row header">
+                              <span>장비</span>
+                              <span>Mgmt IP</span>
+                              <span>Model</span>
+                              <span>연결 상태</span>
+                              <span>동작</span>
+                            </div>
+                            {targetRows.map((target, index) => (
+                              <div key={target.id ?? `${target.display_name}-${index}`} className="kanban-target-table-row">
+                                <span>{target.display_name || '-'}</span>
+                                <span>{target.mgmt_ip || '-'}</span>
+                                <span>{target.model || '-'}</span>
+                                <span>{target.cvp_device_id ? 'CVP 연결됨' : '수기 등록'}</span>
+                                <span>
+                                  <button className="kanban-link-button danger" type="button" onClick={() => removeTargetItem(index)}>
+                                    삭제
+                                  </button>
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </section>
+
+                    <div className="kanban-detail-actions end">
+                      <button className="kanban-primary-button" type="submit" disabled={submitting}>
+                        {submitting ? '저장 중...' : '작업 대상 저장'}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
+
                 {activeDetailStep === 'checklist' ? (
                   <form className="kanban-form" onSubmit={handleDetailSubmit}>
                     <section className="kanban-checklist-panel">
@@ -668,14 +986,6 @@ export function KanbanBoard() {
                       </button>
                     </div>
                   </form>
-                ) : null}
-
-                {!activeStepMeta.implemented ? (
-                  <div className="kanban-stage-placeholder">
-                    <strong>{activeStepMeta.label} 단계 준비 중</strong>
-                    <p>{activeStepMeta.body}</p>
-                    <p>현재 버전에서는 구조만 먼저 열어 두었고, 실제 기능은 다음 단계에서 이어서 구현할 예정입니다.</p>
-                  </div>
                 ) : null}
               </div>
             </section>
@@ -762,6 +1072,15 @@ function toCardInput(card: KanbanCard): KanbanCardInput {
       is_completed: item.is_completed,
       sort_order: item.sort_order ?? index + 1,
     })),
+    targets: (card.targets ?? []).map((target, index) => ({
+      ...target,
+      id: target.id ?? undefined,
+      sort_order: target.sort_order ?? index + 1,
+    })),
+    planned_configs: (card.planned_configs ?? []).map((item) => ({
+      ...item,
+      id: item.id ?? undefined,
+    })),
   }
 }
 
@@ -812,11 +1131,42 @@ function normalizeCardInput(values: KanbanCardInput): KanbanCardInput {
       sort_order: index + 1,
     }))
 
+  const normalizedTargets = (values.targets ?? [])
+    .map((item) => normalizeTargetItem(item, values.card_type))
+    .filter((item) => item.display_name || item.cvp_device_id)
+    .map((item, index) => ({
+      ...item,
+      sort_order: index + 1,
+    }))
+
+  const validTargetIds = new Set(normalizedTargets.map((item) => Number(item.id)).filter((value) => Number.isFinite(value)))
+  const normalizedPlannedConfigs = (values.planned_configs ?? [])
+    .map((item) => ({
+      ...item,
+      config_text: item.config_text.replace(/\s+$/, ''),
+    }))
+    .filter((item) => validTargetIds.has(Number(item.target_id)) && item.config_text.trim().length > 0)
+
   return {
     ...values,
     title: values.title.trim(),
     description: values.description.trim(),
     assignee: values.assignee.trim(),
     checklist_items: normalizedChecklistItems,
+    targets: normalizedTargets,
+    planned_configs: normalizedPlannedConfigs as KanbanPlannedConfigItem[],
+  }
+}
+
+function normalizeTargetItem(target: KanbanTargetItem, cardType: KanbanCardInput['card_type']): KanbanTargetItem {
+  const targetKind: KanbanTargetKind = target.target_kind ?? (cardType === 'new' ? 'new' : 'existing')
+  return {
+    ...target,
+    target_kind: targetKind,
+    display_name: target.display_name.trim(),
+    mgmt_ip: target.mgmt_ip.trim(),
+    model: target.model.trim(),
+    role_hint: target.role_hint.trim(),
+    cvp_device_id: target.cvp_device_id.trim(),
   }
 }

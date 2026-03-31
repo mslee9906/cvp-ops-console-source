@@ -176,12 +176,38 @@ export interface EdmLinkInput {
 export type KanbanColumnKey = 'blocked' | 'planned' | 'ready' | 'in_progress' | 'verifying' | 'done'
 export type KanbanCardType = 'existing' | 'new'
 export type KanbanPriority = 'high' | 'medium' | 'low'
+export type KanbanTargetKind = 'existing' | 'new'
+export type KanbanTargetMatchStatus = 'manual_only' | 'candidate_found' | 'linked_to_cvp' | 'ignored'
+export type KanbanTargetServiceStatus = 'planned' | 'mgmt_only' | 'service_partial' | 'service_ready'
 
 export interface KanbanChecklistItem {
   id?: number | null
   title: string
   is_completed: boolean
   sort_order?: number | null
+}
+
+export interface KanbanTargetItem {
+  id?: number | null
+  target_kind: KanbanTargetKind
+  display_name: string
+  mgmt_ip: string
+  model: string
+  role_hint: string
+  cvp_device_id: string
+  match_status: KanbanTargetMatchStatus
+  service_status?: KanbanTargetServiceStatus
+  sort_order?: number | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface KanbanPlannedConfigItem {
+  id?: number | null
+  target_id: number
+  config_text: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface KanbanCard {
@@ -198,6 +224,8 @@ export interface KanbanCard {
   checklist_completed: number
   progress_percent: number
   checklist_items: KanbanChecklistItem[]
+  targets: KanbanTargetItem[]
+  planned_configs: KanbanPlannedConfigItem[]
   created_at: string
   updated_at: string
 }
@@ -210,10 +238,56 @@ export interface KanbanCardInput {
   card_type: KanbanCardType
   priority: KanbanPriority
   checklist_items?: KanbanChecklistItem[]
+  targets?: KanbanTargetItem[]
+  planned_configs?: KanbanPlannedConfigItem[]
 }
 
 export interface KanbanCardPosition {
   id: number
   column_key: KanbanColumnKey
   sort_order: number
+}
+
+export interface KanbanTargetSnapshotResponse {
+  target: KanbanTargetItem
+  linked_device: DeviceSummary | Record<string, never>
+  config: ConfigPreviewResponse | Record<string, never>
+  bgp_entries: Array<Record<string, DetailValue>>
+  vrfs: Array<Record<string, DetailValue>>
+  vlans: Array<Record<string, DetailValue>>
+  vnis: Array<Record<string, DetailValue>>
+  ip_records: Array<Record<string, DetailValue>>
+}
+
+export interface KanbanValidationMatch {
+  title: string
+  body: string
+  severity: 'info' | 'warning' | 'error'
+  details: Record<string, DetailValue>
+}
+
+export interface KanbanValidationSection {
+  key: string
+  title: string
+  items: KanbanValidationMatch[]
+}
+
+export interface KanbanValidationResponse {
+  target_id: number
+  has_conflict: boolean
+  sections: KanbanValidationSection[]
+}
+
+export interface KanbanDiffLine {
+  left_line_number: number | null
+  right_line_number: number | null
+  left_text: string
+  right_text: string
+  kind: 'equal' | 'insert' | 'delete' | 'replace' | string
+}
+
+export interface KanbanDiffResponse {
+  target_id: number
+  snapshot_available: boolean
+  lines: KanbanDiffLine[]
 }

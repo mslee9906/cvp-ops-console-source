@@ -385,6 +385,22 @@ class SnapshotRepository:
             ).fetchone()
         return dict(row) if row else None
 
+    def get_device(self, device_id: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT device_id, hostname, serial, mgmt_ip, model, site, tags_json, last_collected_at
+                FROM devices
+                WHERE device_id = ?
+                """,
+                (device_id,),
+            ).fetchone()
+        if not row:
+            return None
+        item = dict(row)
+        item["tags"] = json.loads(item.pop("tags_json"))
+        return item
+
     def get_bgp_entries(self, asn: str) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
@@ -412,6 +428,19 @@ class SnapshotRepository:
             rows = connection.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
+    def get_bgp_entries_for_device(self, device_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT device_id, hostname, vrf, asn, router_id, shutdown, source_path
+                FROM bgp_entries
+                WHERE device_id = ?
+                ORDER BY vrf, asn
+                """,
+                (device_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def get_vrf_entries(self, vrf_name: str) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
@@ -437,6 +466,19 @@ class SnapshotRepository:
             params = (limit,)
         with self._connect() as connection:
             rows = connection.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_vrf_entries_for_device(self, device_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT device_id, hostname, vrf_name, vrf_id
+                FROM vrfs
+                WHERE device_id = ?
+                ORDER BY vrf_name
+                """,
+                (device_id,),
+            ).fetchall()
         return [dict(row) for row in rows]
 
     def list_config_snapshots(self) -> list[dict[str, Any]]:
@@ -473,6 +515,19 @@ class SnapshotRepository:
             rows = connection.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
+    def get_vlan_entries_for_device(self, device_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT device_id, hostname, vlan_id, vlan_name, svi_name, description, source_path
+                FROM vlans
+                WHERE device_id = ?
+                ORDER BY vlan_id
+                """,
+                (device_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def get_vni_entries(
         self,
         vni: str | None = None,
@@ -499,6 +554,19 @@ class SnapshotRepository:
             rows = connection.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
+    def get_vni_entries_for_device(self, device_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT device_id, hostname, vlan_id, vni, source_path
+                FROM vni_entries
+                WHERE device_id = ?
+                ORDER BY vni, vlan_id
+                """,
+                (device_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def get_ip_records(self, vrf: str | None = None) -> list[dict[str, Any]]:
         query = """
             SELECT
@@ -522,4 +590,27 @@ class SnapshotRepository:
         query += " ORDER BY hostname, interface_name, ip"
         with self._connect() as connection:
             rows = connection.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_ip_records_for_device(self, device_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    device_id,
+                    hostname,
+                    interface_name,
+                    ip,
+                    address,
+                    prefix_length,
+                    network,
+                    vrf,
+                    ip_kind,
+                    source
+                FROM ip_records
+                WHERE device_id = ?
+                ORDER BY interface_name, ip
+                """,
+                (device_id,),
+            ).fetchall()
         return [dict(row) for row in rows]

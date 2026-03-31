@@ -5,8 +5,13 @@ from fastapi import APIRouter, HTTPException, Request
 from app.schemas.kanban import (
     KanbanCardCreate,
     KanbanCardResponse,
+    KanbanDiffRequest,
+    KanbanDiffResponse,
     KanbanCardUpdate,
     KanbanReorderRequest,
+    KanbanTargetSnapshotResponse,
+    KanbanValidationRequest,
+    KanbanValidationResponse,
 )
 
 
@@ -45,3 +50,27 @@ def delete_kanban_card(request: Request, card_id: int) -> dict[str, bool]:
     if not deleted:
         raise HTTPException(status_code=404, detail="Kanban card not found")
     return {"ok": True}
+
+
+@router.get("/targets/{target_id}/snapshot", response_model=KanbanTargetSnapshotResponse)
+def get_kanban_target_snapshot(request: Request, target_id: int) -> KanbanTargetSnapshotResponse:
+    snapshot = request.app.state.kanban_service.get_target_snapshot(target_id)
+    if not snapshot:
+        raise HTTPException(status_code=404, detail="Kanban target not found")
+    return snapshot
+
+
+@router.post("/validate", response_model=KanbanValidationResponse)
+def validate_kanban_config(request: Request, payload: KanbanValidationRequest) -> KanbanValidationResponse:
+    result = request.app.state.kanban_service.validate_planned_config(payload.target_id, payload.config_text)
+    if not result:
+        raise HTTPException(status_code=404, detail="Kanban target not found")
+    return result
+
+
+@router.post("/diff", response_model=KanbanDiffResponse)
+def diff_kanban_config(request: Request, payload: KanbanDiffRequest) -> KanbanDiffResponse:
+    result = request.app.state.kanban_service.build_diff(payload.target_id, payload.config_text)
+    if not result:
+        raise HTTPException(status_code=404, detail="Kanban target not found")
+    return result

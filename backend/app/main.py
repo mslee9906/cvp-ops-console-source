@@ -36,7 +36,7 @@ file_manager = ConfigFileManager(settings.config_dir)
 collection_service = CollectionService(repository, file_manager, settings)
 query_service = QueryService(repository)
 edm_link_service = EdmLinkService(edm_link_repository)
-kanban_service = KanbanService(kanban_repository)
+kanban_service = KanbanService(kanban_repository, repository)
 
 app = FastAPI(
     title="CVP Ops Console API",
