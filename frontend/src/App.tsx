@@ -1,5 +1,6 @@
 ﻿import { startTransition, useDeferredValue, useEffect, useMemo, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
+import { useRef } from 'react'
 import {
   Activity,
   ClipboardList,
@@ -21,6 +22,7 @@ import {
   ShieldAlert,
   Wrench,
 } from 'lucide-react'
+import { Copy, X } from 'lucide-react'
 import './App.css'
 import { api } from './api'
 import { EdmLinkManager } from './features/edm-links/EdmLinkManager'
@@ -54,6 +56,7 @@ type ViewId =
   | 'edm_link'
   | 'automation'
   | 'kanban'
+  | 'work_tool'
   | 'work_plan'
 type ViewMeta = {
   label: string
@@ -61,6 +64,14 @@ type ViewMeta = {
   title: string
   description: string
   icon: typeof Search
+}
+
+type ConfigSearchOverlayState = {
+  open: boolean
+  loading: boolean
+  error: string
+  match: ConfigSearchMatch | null
+  preview: ConfigPreviewResponse | null
 }
 
 const DEFAULT_PAGE_SIZE = 200
@@ -145,18 +156,25 @@ const viewMeta: Record<ViewId, ViewMeta> = {
     description: '작업 카드를 생성하고, 수정하고, 삭제하고, 드래그로 상태를 이동하는 보드입니다.',
     icon: Layers3,
   },
+  work_tool: {
+    label: '작업 툴',
+    eyebrow: 'Tool Workspace',
+    title: '작업 카드 연계 작업 툴',
+    description: '기존 작업 카드와 연결된 작업 대상, Snapshot, 예정 Config, 검증, Diff를 한 화면에서 이어서 관리합니다.',
+    icon: ClipboardList,
+  },
   work_plan: {
     label: '작업 계획',
     eyebrow: 'Planning Workspace',
-    title: '작업 카드 연계 계획 캔버스',
-    description: '기존 작업 카드와 연결된 작업 계획 틀을 구성하고, 향후 현황 및 자동화 연계를 준비합니다.',
+    title: '작업 계획 준비 영역',
+    description: '이후 작업 계획서와 로드맵 구조를 넣기 위한 빈 준비 탭입니다.',
     icon: ClipboardList,
   },
 }
 
 const managementViews: ViewId[] = ['ip', 'bgp', 'vlan', 'vni', 'vrf', 'devices', 'config', 'edm_link']
 const automationViews: ViewId[] = ['automation']
-const kanbanViews: ViewId[] = ['kanban', 'work_plan']
+const kanbanViews: ViewId[] = ['kanban', 'work_tool', 'work_plan']
 
 const initialLookupState = {
   loading: false,
@@ -168,6 +186,14 @@ const initialConfigSearchState = {
   loading: false,
   error: '',
   result: null as ConfigSearchResponse | null,
+}
+
+const initialConfigSearchOverlayState: ConfigSearchOverlayState = {
+  open: false,
+  loading: false,
+  error: '',
+  match: null,
+  preview: null,
 }
 
 const emptyRecordLists: Record<RecordScope, RecordListResponse> = {
@@ -245,6 +271,7 @@ function App() {
   const [configSearchQuery, setConfigSearchQuery] = useState('')
   const [configSearchLimit, setConfigSearchLimit] = useState(DEFAULT_PAGE_SIZE)
   const [configSearchState, setConfigSearchState] = useState(initialConfigSearchState)
+  const [configSearchOverlay, setConfigSearchOverlay] = useState(initialConfigSearchOverlayState)
   const [showConfigGuide, setShowConfigGuide] = useState(false)
 
   const [ipQuery, setIpQuery] = useState('')
@@ -257,7 +284,7 @@ function App() {
   const currentView = viewMeta[activeView]
   const currentScope = isRecordScope(activeView) ? activeView : null
   const activeConfigDevice = devices.find((item) => item.device_id === selectedDeviceId)
-  const showSnapshotRefreshPanels = !['kanban', 'work_plan', 'edm_link'].includes(activeView)
+  const showSnapshotRefreshPanels = !['kanban', 'work_tool', 'work_plan', 'edm_link'].includes(activeView)
 
   const filteredDevices = useMemo(() => {
     const token = deferredDeviceSearch.trim().toLowerCase()
@@ -379,6 +406,27 @@ function App() {
       window.removeEventListener('resize', measureOverflow)
     }
   }, [managementOpen, automationOpen, kanbanOpen, showSnapshotRefreshPanels])
+
+  useEffect(() => {
+    if (!configSearchOverlay.open && !showConfigGuide) {
+      return
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return
+      }
+      if (configSearchOverlay.open) {
+        setConfigSearchOverlay(initialConfigSearchOverlayState)
+      }
+      if (showConfigGuide) {
+        setShowConfigGuide(false)
+      }
+    }
+
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [configSearchOverlay.open, showConfigGuide])
 
   async function bootstrap() {
     await Promise.all([
@@ -590,6 +638,7 @@ function App() {
     setConfigSearchQuery('')
     setConfigSearchLimit(DEFAULT_PAGE_SIZE)
     setConfigSearchState(initialConfigSearchState)
+    setConfigSearchOverlay(initialConfigSearchOverlayState)
   }
 
   function changeView(view: ViewId) {
@@ -597,10 +646,70 @@ function App() {
       setActiveView(view)
       setLookup(initialLookupState)
       setConfigError('')
+      setShowConfigGuide(false)
+      setConfigSearchOverlay(initialConfigSearchOverlayState)
       if (view !== 'devices') {
         setConfigPreview(null)
       }
     })
+  }
+
+  async function handleCopyConfigPreview() {
+    if (!configPreview) {
+      return
+    }
+    try {
+      await copyPlainText(configPreview.content)
+    } catch (error) {
+      setConfigError(error instanceof Error ? error.message : 'Config 복사에 실패했습니다.')
+    }
+  }
+
+  async function handleCopyOverlayConfig() {
+    if (!configSearchOverlay.preview) {
+      return
+    }
+    try {
+      await copyPlainText(configSearchOverlay.preview.content)
+    } catch (error) {
+      setConfigSearchOverlay((current) => ({
+        ...current,
+        error: error instanceof Error ? error.message : 'Config 복사에 실패했습니다.',
+      }))
+    }
+  }
+
+  async function openConfigSearchOverlay(match: ConfigSearchMatch) {
+    setConfigSearchOverlay({
+      open: true,
+      loading: true,
+      error: '',
+      match,
+      preview: null,
+    })
+
+    try {
+      const preview = await api.getConfig(match.device_id)
+      setConfigSearchOverlay({
+        open: true,
+        loading: false,
+        error: '',
+        match,
+        preview,
+      })
+    } catch (error) {
+      setConfigSearchOverlay({
+        open: true,
+        loading: false,
+        error: error instanceof Error ? error.message : '전체 Config를 불러오지 못했습니다.',
+        match,
+        preview: null,
+      })
+    }
+  }
+
+  function closeConfigSearchOverlay() {
+    setConfigSearchOverlay(initialConfigSearchOverlayState)
   }
 
   async function reloadCurrentViewList() {
@@ -813,6 +922,17 @@ function App() {
                   <p className="section-kicker">Config Backup</p>
                   <h3>{activeConfigDevice?.hostname ?? '장비를 선택하세요'}</h3>
                 </div>
+                {configPreview ? (
+                  <button
+                    className="ghost-action icon-action"
+                    type="button"
+                    onClick={() => void handleCopyConfigPreview()}
+                    title="전체 Config 복사"
+                    aria-label="전체 Config 복사"
+                  >
+                    <Copy size={15} />
+                  </button>
+                ) : null}
               </div>
 
               {!selectedDeviceId ? <PanelState title="Config 미리보기" body="왼쪽 장비를 선택하면 최신 Config 백업을 확인할 수 있습니다." /> : null}
@@ -1221,7 +1341,7 @@ function App() {
                     <>
                       <div className="config-hit-grid">
                         {configSearchState.result.items.map((item) => (
-                          <ConfigSearchCard key={item.device_id} match={item} />
+                          <ConfigSearchCard key={item.device_id} match={item} onPreview={openConfigSearchOverlay} />
                         ))}
                       </div>
                       <LoadMoreBar
@@ -1265,9 +1385,21 @@ function App() {
           </section>
         ) : null}
 
-        {activeView === 'work_plan' ? (
+        {activeView === 'work_tool' ? (
           <section className="stack-layout">
             <WorkPlanBoard />
+          </section>
+        ) : null}
+
+        {activeView === 'work_plan' ? (
+          <section className="stack-layout">
+            <div className="main-card">
+              <SectionHeader title="작업 계획 준비 영역" note="작업 계획서, 로드맵, 대외 제출용 플로우를 이어서 넣기 위한 빈 화면입니다." />
+              <div className="guide-grid">
+                <GuideCard title="현재 상태" body="탭 위치와 기본 레이아웃만 먼저 확보해 둔 상태입니다. 이후 요구사항에 맞춰 계획서 전용 기능을 추가하면 됩니다." />
+                <GuideCard title="확장 방향" body="칸반 카드, 작업 툴, 현황 관리, 자동화 결과와 연결되는 작업 계획 전용 구조를 이 탭에 이어서 넣을 수 있습니다." />
+              </div>
+            </div>
           </section>
         ) : null}
 
@@ -1289,6 +1421,46 @@ function App() {
                 <GuideCard title="결과 표시" body="장비별 총 매칭 수와, 앞쪽 3개 매칭 줄을 함께 표시합니다." />
                 <GuideCard title="검색 예시" body="router bgp, interface Vlan200, ip route, description UPLINK 같은 문자열을 그대로 넣어 확인할 수 있습니다." />
               </div>
+            </div>
+          </div>
+        ) : null}
+
+        {configSearchOverlay.open ? (
+          <div className="modal-backdrop" onClick={closeConfigSearchOverlay}>
+            <div className="modal-card config-overlay-card" onClick={(event) => event.stopPropagation()}>
+              <div className="card-head compact">
+                <div>
+                  <p className="section-kicker">Config Overlay</p>
+                  <h3>{configSearchOverlay.match?.hostname ?? '전체 Config 보기'}</h3>
+                </div>
+                <div className="toolbar-row">
+                  {configSearchOverlay.preview ? (
+                    <button
+                      className="secondary-action"
+                      type="button"
+                      onClick={() => void handleCopyOverlayConfig()}
+                    >
+                      <Copy />
+                      <span>Config 복사</span>
+                    </button>
+                  ) : null}
+                  <button className="secondary-action icon-action" type="button" onClick={closeConfigSearchOverlay} aria-label="오버레이 닫기">
+                    <X />
+                  </button>
+                </div>
+              </div>
+
+              {configSearchOverlay.loading ? (
+                <PanelState title="전체 Config를 불러오는 중입니다." body="선택한 장비의 최신 스냅샷 Config를 열고 있습니다." />
+              ) : null}
+              {configSearchOverlay.error ? <div className="message-banner error">{configSearchOverlay.error}</div> : null}
+              {configSearchOverlay.preview && configSearchOverlay.match ? (
+                <ConfigSearchOverlayPreview
+                  preview={configSearchOverlay.preview}
+                  match={configSearchOverlay.match}
+                  query={configSearchState.result?.query ?? configSearchQuery}
+                />
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -1680,7 +1852,13 @@ function LoadMoreBar({ visible, total, onMore }: { visible: number; total: numbe
   )
 }
 
-function ConfigSearchCard({ match }: { match: ConfigSearchMatch }) {
+function ConfigSearchCard({
+  match,
+  onPreview,
+}: {
+  match: ConfigSearchMatch
+  onPreview: (match: ConfigSearchMatch) => void
+}) {
   return (
     <article className="config-hit-card">
       <div className="config-hit-head">
@@ -1688,7 +1866,13 @@ function ConfigSearchCard({ match }: { match: ConfigSearchMatch }) {
           <strong>{match.hostname}</strong>
           <p>{match.mgmt_ip || 'Mgmt IP 없음'}</p>
         </div>
-        <span className="config-match-pill">{match.match_count}건 매칭</span>
+        <div className="config-hit-actions">
+          <span className="config-match-pill">{match.match_count}건 매칭</span>
+          <button className="ghost-action compact-action" type="button" onClick={() => onPreview(match)}>
+            <FileText />
+            <span>전체 Config</span>
+          </button>
+        </div>
       </div>
       <div className="config-meta compact-meta">
         <div>
@@ -1706,6 +1890,134 @@ function ConfigSearchCard({ match }: { match: ConfigSearchMatch }) {
       </div>
     </article>
   )
+}
+
+function ConfigSearchOverlayPreview({
+  preview,
+  match,
+  query,
+}: {
+  preview: ConfigPreviewResponse
+  match: ConfigSearchMatch
+  query: string
+}) {
+  const firstMatchedRowRef = useRef<HTMLDivElement | null>(null)
+  const normalizedLines = useMemo(() => normalizeConfigLines(preview.content), [preview.content])
+  const normalizedQuery = query.trim().toLowerCase()
+  const matchedLineNumbers = useMemo(() => {
+    if (!normalizedQuery) {
+      return new Set(match.matched_lines.map((line) => line.line_number))
+    }
+
+    const next = new Set<number>()
+    normalizedLines.forEach((line, index) => {
+      if (line.toLowerCase().includes(normalizedQuery)) {
+        next.add(index + 1)
+      }
+    })
+    return next
+  }, [match.matched_lines, normalizedLines, normalizedQuery])
+  const firstMatchedLineNumber = useMemo(() => {
+    const values = Array.from(matchedLineNumbers.values())
+    return values.length > 0 ? Math.min(...values) : null
+  }, [matchedLineNumbers])
+
+  useEffect(() => {
+    firstMatchedRowRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [preview.device_id, normalizedQuery, match.device_id, firstMatchedLineNumber])
+
+  return (
+    <div className="config-overlay-shell">
+      <div className="config-meta">
+        <div>
+          <span>Device</span>
+          <strong>{preview.hostname}</strong>
+        </div>
+        <div>
+          <span>Collected</span>
+          <strong>{formatDateTime(preview.collected_at)}</strong>
+        </div>
+        <div>
+          <span>Match Lines</span>
+          <strong>{matchedLineNumbers.size}</strong>
+        </div>
+      </div>
+      <div className="config-overlay-content">
+        {normalizedLines.map((line, index) => {
+          const lineNumber = index + 1
+          const isMatched = matchedLineNumbers.has(lineNumber)
+          const ref = lineNumber === firstMatchedLineNumber ? firstMatchedRowRef : undefined
+
+          return (
+            <div
+              key={`${preview.device_id}-${lineNumber}`}
+              ref={ref}
+              className={`config-overlay-row ${isMatched ? 'hit' : ''}`}
+            >
+              <span className="config-overlay-line-number mono-cell">{lineNumber}</span>
+              <code className="config-overlay-line-text">
+                {renderConfigHighlight(line || ' ', normalizedQuery)}
+              </code>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function normalizeConfigLines(content: string) {
+  return content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+}
+
+function renderConfigHighlight(line: string, normalizedQuery: string) {
+  if (!normalizedQuery) {
+    return line
+  }
+
+  const source = line || ' '
+  const lowered = source.toLowerCase()
+  const segments: Array<string | ReactNode> = []
+  let cursor = 0
+
+  while (cursor < source.length) {
+    const foundAt = lowered.indexOf(normalizedQuery, cursor)
+    if (foundAt === -1) {
+      segments.push(source.slice(cursor))
+      break
+    }
+
+    if (foundAt > cursor) {
+      segments.push(source.slice(cursor, foundAt))
+    }
+
+    const end = foundAt + normalizedQuery.length
+    segments.push(
+      <mark key={`${foundAt}-${end}`} className="config-inline-mark">
+        {source.slice(foundAt, end)}
+      </mark>,
+    )
+    cursor = end
+  }
+
+  return segments.length > 0 ? segments : source
+}
+
+async function copyPlainText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', 'true')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand('copy')
+  document.body.removeChild(textarea)
 }
 
 export default App

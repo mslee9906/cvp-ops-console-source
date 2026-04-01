@@ -442,6 +442,19 @@
   color: var(--ink-700);
 }
 
+.icon-action {
+  width: 2.3rem;
+  height: 2.3rem;
+  justify-content: center;
+  padding: 0;
+  flex: none;
+}
+
+.compact-action {
+  padding: 0.55rem 0.74rem;
+  font-size: 0.78rem;
+}
+
 .message-banner {
   padding: 0.82rem 0.94rem;
   border-radius: 0.95rem;
@@ -852,6 +865,14 @@
   gap: 0.8rem;
 }
 
+.config-hit-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .config-hit-head strong,
 .config-hit-head p {
   display: block;
@@ -920,6 +941,61 @@
   box-shadow: 0 24px 56px rgba(17, 39, 43, 0.16);
 }
 
+.config-overlay-card {
+  width: min(1180px, 100%);
+}
+
+.config-overlay-shell {
+  display: grid;
+  gap: 0.82rem;
+}
+
+.config-overlay-content {
+  max-height: min(72vh, 900px);
+  overflow: auto;
+  border-radius: 0.98rem;
+  border: 1px solid rgba(9, 47, 52, 0.08);
+  background: #0b1d24;
+}
+
+.config-overlay-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  border-bottom: 1px solid rgba(229, 245, 243, 0.08);
+}
+
+.config-overlay-row.hit {
+  background: rgba(29, 177, 255, 0.12);
+}
+
+.config-overlay-line-number,
+.config-overlay-line-text {
+  padding: 0.48rem 0.72rem;
+}
+
+.config-overlay-line-number {
+  color: rgba(173, 205, 200, 0.72);
+  border-right: 1px solid rgba(229, 245, 243, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.config-overlay-line-text {
+  margin: 0;
+  color: #e5f5f3;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.56;
+}
+
+.config-inline-mark {
+  padding: 0.04rem 0.12rem;
+  border-radius: 0.2rem;
+  background: rgba(255, 220, 133, 0.88);
+  color: #533600;
+}
+
 @media (max-width: 960px) {
   .config-hit-grid {
     grid-template-columns: 1fr;
@@ -936,5 +1012,9 @@
   .load-more-bar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .config-overlay-row {
+    grid-template-columns: 58px minmax(0, 1fr);
   }
 }

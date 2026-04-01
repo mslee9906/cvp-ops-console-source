@@ -277,9 +277,13 @@ class KanbanService:
         return str(saved.get("config_text", "") if saved else "")
 
     def _build_diff_lines(self, snapshot_text: str, planned_text: str) -> list[dict[str, Any]]:
-        left_lines = snapshot_text.splitlines()
-        right_lines = planned_text.splitlines()
-        matcher = difflib.SequenceMatcher(a=left_lines, b=right_lines)
+        left_lines = self._prepare_diff_lines(snapshot_text)
+        right_lines = self._prepare_diff_lines(planned_text)
+        matcher = difflib.SequenceMatcher(
+            a=self._build_diff_keys(left_lines),
+            b=self._build_diff_keys(right_lines),
+            autojunk=False,
+        )
         diff_lines: list[dict[str, Any]] = []
         left_number = 1
         right_number = 1
@@ -296,7 +300,7 @@ class KanbanService:
                             "right_line_number": right_number,
                             "left_text": left_text,
                             "right_text": right_text,
-                            "kind": "equal",
+                            "kind": "equal" if left_text == right_text else "replace",
                         }
                     )
                     left_number += 1
@@ -331,22 +335,209 @@ class KanbanService:
                     right_number += 1
                 continue
 
-            max_length = max(len(left_chunk), len(right_chunk))
-            for index in range(max_length):
-                left_text = left_chunk[index] if index < len(left_chunk) else ""
-                right_text = right_chunk[index] if index < len(right_chunk) else ""
+            for line_kind, left_text, right_text in self._align_replace_chunk(left_chunk, right_chunk):
                 diff_lines.append(
                     {
-                        "left_line_number": left_number if index < len(left_chunk) else None,
-                        "right_line_number": right_number if index < len(right_chunk) else None,
-                        "left_text": left_text,
-                        "right_text": right_text,
-                        "kind": "replace",
+                        "left_line_number": left_number if left_text is not None else None,
+                        "right_line_number": right_number if right_text is not None else None,
+                        "left_text": left_text or "",
+                        "right_text": right_text or "",
+                        "kind": line_kind,
                     }
                 )
-                if index < len(left_chunk):
+                if left_text is not None:
                     left_number += 1
-                if index < len(right_chunk):
+                if right_text is not None:
                     right_number += 1
 
         return diff_lines
+
+    def _split_config_lines(self, text: str) -> list[str]:
+        normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+        if not normalized:
+            return []
+
+        lines = normalized.split("\n")
+        if normalized.endswith("\n"):
+            lines = lines[:-1]
+        return lines
+
+    def _prepare_diff_lines(self, text: str) -> list[str]:
+        return [self._strip_leading_diff_indent(line) for line in self._split_config_lines(text)]
+
+    def _strip_leading_diff_indent(self, line: str) -> str:
+        return line.lstrip(" \t")
+
+    def _build_diff_keys(self, lines: list[str]) -> list[str]:
+        return [self._normalize_diff_line(line) for line in lines]
+
+    def _normalize_diff_line(self, line: str) -> str:
+        expanded = line.expandtabs(4).strip()
+        if not expanded:
+            return ""
+        return " ".join(expanded.split())
+
+    def _align_replace_chunk(self, left_chunk: list[str], right_chunk: list[str]) -> list[tuple[str, str | None, str | None]]:
+        if not left_chunk:
+            return [("insert", None, right_text) for right_text in right_chunk]
+        if not right_chunk:
+            return [("delete", left_text, None) for left_text in left_chunk]
+
+        matcher = difflib.SequenceMatcher(
+            a=self._build_diff_keys(left_chunk),
+            b=self._build_diff_keys(right_chunk),
+            autojunk=False,
+        )
+        aligned_rows: list[tuple[str, str | None, str | None]] = []
+
+        for opcode, left_start, left_end, right_start, right_end in matcher.get_opcodes():
+            left_slice = left_chunk[left_start:left_end]
+            right_slice = right_chunk[right_start:right_end]
+
+            if opcode == "equal":
+                for left_text, right_text in zip(left_slice, right_slice):
+                    aligned_rows.append(("equal" if left_text == right_text else "replace", left_text, right_text))
+                continue
+
+            if opcode == "delete":
+                aligned_rows.extend(("delete", left_text, None) for left_text in left_slice)
+                continue
+
+            if opcode == "insert":
+                aligned_rows.extend(("insert", None, right_text) for right_text in right_slice)
+                continue
+
+            aligned_rows.extend(self._pair_replace_slice(left_slice, right_slice))
+
+        return aligned_rows
+
+    def _pair_replace_slice(self, left_chunk: list[str], right_chunk: list[str]) -> list[tuple[str, str | None, str | None]]:
+        if not left_chunk:
+            return [("insert", None, right_text) for right_text in right_chunk]
+        if not right_chunk:
+            return [("delete", left_text, None) for left_text in left_chunk]
+
+        max_matrix_cells = 160_000
+        if len(left_chunk) * len(right_chunk) > max_matrix_cells:
+            return self._pair_replace_slice_greedy(left_chunk, right_chunk)
+
+        gap_cost = 1.0
+        rows = len(left_chunk)
+        cols = len(right_chunk)
+        costs = [[0.0] * (cols + 1) for _ in range(rows + 1)]
+        choices = [[""] * (cols + 1) for _ in range(rows + 1)]
+
+        for left_index in range(1, rows + 1):
+            costs[left_index][0] = left_index * gap_cost
+            choices[left_index][0] = "delete"
+        for right_index in range(1, cols + 1):
+            costs[0][right_index] = right_index * gap_cost
+            choices[0][right_index] = "insert"
+
+        for left_index in range(1, rows + 1):
+            for right_index in range(1, cols + 1):
+                delete_cost = costs[left_index - 1][right_index] + gap_cost
+                insert_cost = costs[left_index][right_index - 1] + gap_cost
+                pair_cost = costs[left_index - 1][right_index - 1] + self._line_pair_cost(
+                    left_chunk[left_index - 1],
+                    right_chunk[right_index - 1],
+                )
+
+                if pair_cost < delete_cost and pair_cost < insert_cost:
+                    costs[left_index][right_index] = pair_cost
+                    choices[left_index][right_index] = "pair"
+                elif delete_cost <= insert_cost:
+                    costs[left_index][right_index] = delete_cost
+                    choices[left_index][right_index] = "delete"
+                else:
+                    costs[left_index][right_index] = insert_cost
+                    choices[left_index][right_index] = "insert"
+
+        aligned_rows: list[tuple[str, str | None, str | None]] = []
+        left_index = rows
+        right_index = cols
+
+        while left_index > 0 or right_index > 0:
+            choice = choices[left_index][right_index]
+            if choice == "pair":
+                left_text = left_chunk[left_index - 1]
+                right_text = right_chunk[right_index - 1]
+                aligned_rows.append(("equal" if left_text == right_text else "replace", left_text, right_text))
+                left_index -= 1
+                right_index -= 1
+                continue
+
+            if choice == "delete":
+                aligned_rows.append(("delete", left_chunk[left_index - 1], None))
+                left_index -= 1
+                continue
+
+            aligned_rows.append(("insert", None, right_chunk[right_index - 1]))
+            right_index -= 1
+
+        aligned_rows.reverse()
+        return aligned_rows
+
+    def _pair_replace_slice_greedy(
+        self,
+        left_chunk: list[str],
+        right_chunk: list[str],
+    ) -> list[tuple[str, str | None, str | None]]:
+        aligned_rows: list[tuple[str, str | None, str | None]] = []
+        left_index = 0
+        right_index = 0
+
+        while left_index < len(left_chunk) or right_index < len(right_chunk):
+            if left_index >= len(left_chunk):
+                aligned_rows.extend(("insert", None, right_text) for right_text in right_chunk[right_index:])
+                break
+            if right_index >= len(right_chunk):
+                aligned_rows.extend(("delete", left_text, None) for left_text in left_chunk[left_index:])
+                break
+
+            current_cost = self._line_pair_cost(left_chunk[left_index], right_chunk[right_index])
+            next_insert_cost = (
+                self._line_pair_cost(left_chunk[left_index], right_chunk[right_index + 1])
+                if right_index + 1 < len(right_chunk)
+                else float("inf")
+            )
+            next_delete_cost = (
+                self._line_pair_cost(left_chunk[left_index + 1], right_chunk[right_index])
+                if left_index + 1 < len(left_chunk)
+                else float("inf")
+            )
+
+            if current_cost < 1.0:
+                left_text = left_chunk[left_index]
+                right_text = right_chunk[right_index]
+                aligned_rows.append(("equal" if left_text == right_text else "replace", left_text, right_text))
+                left_index += 1
+                right_index += 1
+            elif next_insert_cost < next_delete_cost:
+                aligned_rows.append(("insert", None, right_chunk[right_index]))
+                right_index += 1
+            else:
+                aligned_rows.append(("delete", left_chunk[left_index], None))
+                left_index += 1
+
+        return aligned_rows
+
+    def _line_pair_cost(self, left_text: str, right_text: str) -> float:
+        if left_text == right_text:
+            return 0.0
+        if not left_text or not right_text:
+            return 2.2
+
+        left_normalized = self._normalize_diff_line(left_text)
+        right_normalized = self._normalize_diff_line(right_text)
+        if left_normalized == right_normalized:
+            return 0.18
+
+        similarity = difflib.SequenceMatcher(a=left_normalized, b=right_normalized, autojunk=False).ratio()
+        if similarity >= 0.9:
+            return 0.35
+        if similarity >= 0.78:
+            return 0.7
+        if similarity >= 0.65:
+            return 0.95
+        return 2.2
