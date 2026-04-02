@@ -11,18 +11,31 @@
   KanbanDiffResponse,
   KanbanTargetSnapshotResponse,
   KanbanValidationResponse,
+  LoginResponse,
   LookupResponse,
   OverviewResponse,
   RecordListResponse,
   RecordScope,
+  UserCreateInput,
+  UserSummary,
   VniGroupListResponse,
   VrfGroupListResponse,
 } from './types'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
+export class ApiError extends Error {
+  status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(options?.headers ?? {}),
@@ -31,14 +44,43 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   })
 
   if (!response.ok) {
-    const message = await response.text()
-    throw new Error(message || `Request failed with status ${response.status}`)
+    const raw = await response.text()
+    let message = raw
+    try {
+      message = raw ? JSON.parse(raw).detail ?? raw : raw
+    } catch {
+      message = raw
+    }
+    throw new ApiError(response.status, message || `Request failed with status ${response.status}`)
   }
 
   return response.json() as Promise<T>
 }
 
 export const api = {
+  login: (username: string, password: string) =>
+    request<LoginResponse>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  logout: async () => {
+    await request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' })
+  },
+  getCurrentUser: () => request<UserSummary>('/api/auth/me'),
+  getUsers: () => request<UserSummary[]>('/api/auth/users'),
+  createUser: (payload: UserCreateInput) =>
+    request<UserSummary>('/api/auth/users', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  deleteUser: async (userId: number) => {
+    await request<{ ok: boolean }>(`/api/auth/users/${userId}`, { method: 'DELETE' })
+  },
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<UserSummary>('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
   getOverview: () => request<OverviewResponse>('/api/overview'),
   getDevices: () => request<DeviceSummary[]>('/api/devices'),
   getConfig: (deviceId: string) => request<ConfigPreviewResponse>(`/api/devices/${deviceId}/config`),

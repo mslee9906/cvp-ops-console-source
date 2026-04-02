@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 
-import type { KanbanCard, KanbanCardInput, KanbanColumnKey, KanbanPriority, KanbanCardType } from '../../types'
+import type { KanbanCard, KanbanCardInput, KanbanColumnKey, KanbanPriority, KanbanCardType, UserSummary } from '../../types'
 import { AutoGrowTextarea } from './AutoGrowTextarea'
 
 const columnOptions: Array<{ value: KanbanColumnKey; label: string }> = [
@@ -28,13 +28,14 @@ type Props = {
   mode: 'create' | 'edit'
   initialValues: KanbanCardInput
   card?: KanbanCard | null
+  users: UserSummary[]
   submitting: boolean
   onClose: () => void
   onSubmit: (values: KanbanCardInput) => void | Promise<void>
   onDelete?: (() => void | Promise<void>) | undefined
 }
 
-export function KanbanCardModal({ mode, initialValues, card, submitting, onClose, onSubmit, onDelete }: Props) {
+export function KanbanCardModal({ mode, initialValues, card, users, submitting, onClose, onSubmit, onDelete }: Props) {
   const [values, setValues] = useState<KanbanCardInput>(initialValues)
 
   useEffect(() => {
@@ -73,11 +74,25 @@ export function KanbanCardModal({ mode, initialValues, card, submitting, onClose
           <div className="kanban-field-grid">
             <label className="kanban-field">
               <span>담당자</span>
-              <input
-                value={values.assignee}
-                onChange={(event) => setValues((current) => ({ ...current, assignee: event.target.value }))}
-                placeholder="예: 김철수"
-              />
+              <select
+                value={values.assignee_user_id ?? ''}
+                onChange={(event) => {
+                  const selectedId = event.target.value ? Number(event.target.value) : null
+                  const selectedUser = users.find((user) => user.id === selectedId) ?? null
+                  setValues((current) => ({
+                    ...current,
+                    assignee_user_id: selectedId,
+                    assignee: selectedUser?.display_name ?? '',
+                  }))
+                }}
+              >
+                <option value="">미지정</option>
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.display_name} ({user.username})
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label className="kanban-field">
@@ -177,6 +192,7 @@ function normalizeCardInput(values: KanbanCardInput): KanbanCardInput {
     title: values.title.trim(),
     description: values.description.trim(),
     assignee: values.assignee.trim(),
+    assignee_user_id: values.assignee_user_id ?? null,
     checklist_items: normalizedChecklistItems,
   }
 }

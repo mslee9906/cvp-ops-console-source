@@ -11,6 +11,7 @@ import type {
   KanbanPlannedConfigItem,
   KanbanTargetItem,
   KanbanTargetKind,
+  UserSummary,
 } from '../../types'
 import { AutoGrowTextarea } from './AutoGrowTextarea'
 import { KanbanCardModal } from './KanbanCardModal'
@@ -37,6 +38,7 @@ const EMPTY_CARD_INPUT: KanbanCardInput = {
   title: '',
   description: '',
   assignee: '',
+  assignee_user_id: null,
   column_key: 'planned',
   card_type: 'existing',
   priority: 'medium',
@@ -45,7 +47,11 @@ const EMPTY_CARD_INPUT: KanbanCardInput = {
   planned_configs: [],
 }
 
-export function KanbanBoard() {
+type Props = {
+  users: UserSummary[]
+}
+
+export function KanbanBoard({ users }: Props) {
   const [cards, setCards] = useState<KanbanCard[]>([])
   const [devices, setDevices] = useState<DeviceSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -324,6 +330,15 @@ export function KanbanBoard() {
 
   function updateDetailDraft(changes: Partial<KanbanCardInput>) {
     setDetailDraft((current) => (current ? { ...current, ...changes } : current))
+  }
+
+  function handleAssigneeChange(rawUserId: string) {
+    const nextUserId = rawUserId ? Number(rawUserId) : null
+    const selectedUser = users.find((user) => user.id === nextUserId) ?? null
+    updateDetailDraft({
+      assignee_user_id: nextUserId,
+      assignee: selectedUser?.display_name ?? '',
+    })
   }
 
   function addChecklistItem() {
@@ -667,7 +682,10 @@ export function KanbanBoard() {
                       </div>
 
                       <p className="kanban-card-description">{card.description || '작업 설명이 아직 없습니다.'}</p>
-
+                      <div className="kanban-card-ownership">
+                        <span>생성 {card.created_by_name || '미지정'}</span>
+                        <span>담당 {card.assignee || '미지정'}</span>
+                      </div>
                       <div className="kanban-card-meta">
                         <span>{priorityLabel(card.priority)}</span>
                         <span>{formatDateTime(card.updated_at)}</span>
@@ -751,6 +769,10 @@ export function KanbanBoard() {
                   <strong>{detailDraft.assignee.trim() || '미지정'}</strong>
                 </div>
                 <div className="kanban-summary-row">
+                  <span>생성자</span>
+                  <strong>{selectedCard.created_by_name || '미지정'}</strong>
+                </div>
+                <div className="kanban-summary-row">
                   <span>현재 상태</span>
                   <strong>{columnLabel(detailDraft.column_key)}</strong>
                 </div>
@@ -769,6 +791,10 @@ export function KanbanBoard() {
                 <div className="kanban-summary-row">
                   <span>수정 시각</span>
                   <strong>{formatDateTime(selectedCard.updated_at)}</strong>
+                </div>
+                <div className="kanban-summary-row">
+                  <span>최종 수정자</span>
+                  <strong>{selectedCard.updated_by_name || '미지정'}</strong>
                 </div>
                 <div className="kanban-progress-card">
                   <div className="kanban-progress-head">
@@ -825,11 +851,14 @@ export function KanbanBoard() {
                     <div className="kanban-field-grid">
                       <label className="kanban-field">
                         <span>담당자</span>
-                        <input
-                          value={detailDraft.assignee}
-                          onChange={(event) => updateDetailDraft({ assignee: event.target.value })}
-                          placeholder="예: 김철수"
-                        />
+                        <select value={detailDraft.assignee_user_id ?? ''} onChange={(event) => handleAssigneeChange(event.target.value)}>
+                          <option value="">미지정</option>
+                          {users.map((user) => (
+                            <option key={user.id} value={user.id}>
+                              {user.display_name} ({user.username})
+                            </option>
+                          ))}
+                        </select>
                       </label>
 
                       <label className="kanban-field">
@@ -1203,6 +1232,7 @@ export function KanbanBoard() {
         <KanbanCardModal
           mode={editorMode}
           card={editorCard}
+          users={users}
           initialValues={editorCard ? toCardInput(editorCard) : EMPTY_CARD_INPUT}
           submitting={submitting}
           onClose={closeModal}
@@ -1278,6 +1308,7 @@ function toCardInput(card: KanbanCard): KanbanCardInput {
     title: card.title,
     description: card.description,
     assignee: card.assignee,
+    assignee_user_id: card.assignee_user_id ?? null,
     column_key: card.column_key,
     card_type: card.card_type,
     priority: card.priority,
@@ -1410,6 +1441,7 @@ function normalizeCardInput(values: KanbanCardInput): KanbanCardInput {
     title: values.title.trim(),
     description: values.description.trim(),
     assignee: values.assignee.trim(),
+    assignee_user_id: values.assignee_user_id ?? null,
     checklist_items: normalizedChecklistItems,
     targets: normalizedTargets,
     planned_configs: normalizedPlannedConfigs as KanbanPlannedConfigItem[],

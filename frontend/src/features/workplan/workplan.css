@@ -9,10 +9,10 @@
 .workplan-main,
 .workplan-stage-card,
 .workplan-validation-card {
-  border: 1px solid rgba(20, 36, 52, 0.08);
-  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.96);
   border-radius: 24px;
-  box-shadow: 0 18px 42px rgba(16, 28, 44, 0.08);
+  box-shadow: var(--shadow-panel);
 }
 
 .workplan-toolbar,
@@ -101,18 +101,21 @@
 }
 
 .workplan-primary-button {
-  background: linear-gradient(135deg, #1953dd, #2e72ff);
+  background: var(--accent-blue);
+  border: 1px solid rgba(53, 99, 233, 0.12);
   color: white;
 }
 
 .workplan-ghost-button {
-  background: rgba(19, 31, 46, 0.06);
+  background: var(--surface-soft);
+  border: 1px solid var(--line-soft);
   color: #152234;
 }
 
 .workplan-ghost-button.danger {
-  background: rgba(228, 89, 105, 0.12);
-  color: #b33145;
+  background: var(--accent-rose-soft);
+  border-color: rgba(190, 83, 100, 0.12);
+  color: var(--accent-rose);
 }
 
 .workplan-loading,
@@ -120,15 +123,15 @@
 .workplan-message {
   padding: 16px 18px;
   border-radius: 18px;
-  border: 1px dashed rgba(20, 36, 52, 0.12);
-  background: rgba(255, 255, 255, 0.78);
+  border: 1px dashed var(--line-strong);
+  background: var(--surface-muted);
 }
 
 .workplan-message.error {
   border-style: solid;
-  border-color: rgba(228, 89, 105, 0.22);
-  background: rgba(255, 240, 242, 0.92);
-  color: #962c3d;
+  border-color: rgba(190, 83, 100, 0.18);
+  background: var(--accent-rose-soft);
+  color: #8e3748;
 }
 
 .workplan-empty-state strong {
@@ -157,9 +160,85 @@
   align-content: start;
 }
 
-.workplan-selector-card.compact {
+.workplan-selector-card.selector {
+  gap: 12px;
+  position: relative;
+  overflow: visible;
+}
+
+.workplan-selector-head,
+.workplan-selector-head-actions,
+.workplan-selected-card-head,
+.workplan-selected-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  padding: 14px;
+}
+
+.workplan-selector-head {
+  align-items: flex-start;
+}
+
+.workplan-selector-head small {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-600);
+  line-height: 1.45;
+}
+
+.workplan-ghost-button.compact {
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.workplan-selected-card {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  background: var(--surface-base);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.workplan-selected-card:hover,
+.workplan-selected-card.open {
+  border-color: rgba(53, 99, 233, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(53, 99, 233, 0.08);
+}
+
+.workplan-selected-card-head {
+  align-items: flex-start;
+}
+
+.workplan-selected-card-head strong {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.workplan-selected-card-head span {
+  color: var(--ink-600);
+  font-size: 12px;
+  flex: none;
+}
+
+.workplan-selected-card-meta {
+  margin-top: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.workplan-selected-card-meta small {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--ink-700);
+  font-size: 11px;
+  border: 1px solid var(--line-soft);
 }
 
 .workplan-selected-hero {
@@ -181,7 +260,7 @@
 
 .workplan-summary-row {
   padding-top: 8px;
-  border-top: 1px solid rgba(20, 36, 52, 0.06);
+  border-top: 1px solid var(--line-soft);
   font-size: 13px;
 }
 
@@ -195,12 +274,20 @@
   gap: 8px;
   padding: 0 14px;
   border-radius: 999px;
-  background: rgba(244, 248, 247, 0.9);
-  border: 1px solid rgba(9, 47, 52, 0.08);
+  background: var(--surface-muted);
+  border: 1px solid var(--line-soft);
 }
 
 .workplan-filter.compact {
   margin-bottom: 8px;
+}
+
+.workplan-filter.selector {
+  margin-top: 2px;
+}
+
+.workplan-card-picker {
+  position: relative;
 }
 
 .workplan-filter input {
@@ -224,19 +311,37 @@
   max-height: 340px;
 }
 
+.workplan-card-list.dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 12;
+  max-height: 320px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: var(--shadow-overlay);
+}
+
 .workplan-card-link {
   padding: 12px 14px;
   border-radius: 16px;
-  background: rgba(246, 249, 255, 0.96);
+  background: var(--surface-soft);
   text-align: left;
   display: grid;
   gap: 6px;
-  border: 1px solid rgba(20, 36, 52, 0.08);
+  border: 1px solid var(--line-soft);
 }
 
 .workplan-card-link.active {
-  background: linear-gradient(135deg, rgba(46, 114, 255, 0.14), rgba(46, 114, 255, 0.08));
-  box-shadow: inset 0 0 0 1px rgba(46, 114, 255, 0.18);
+  background: var(--accent-blue-soft);
+  box-shadow: inset 0 0 0 1px rgba(53, 99, 233, 0.16);
+}
+
+.workplan-empty-state.compact {
+  padding: 14px 16px;
 }
 
 .workplan-card-link-head strong {
@@ -266,14 +371,15 @@
   text-align: left;
   padding: 12px 14px;
   border-radius: 16px;
-  background: rgba(245, 249, 255, 0.72);
+  background: var(--surface-soft);
+  border: 1px solid transparent;
   color: #152234;
 }
 
 .workplan-step-link.active {
-  background: linear-gradient(135deg, rgba(46, 114, 255, 0.16), rgba(46, 114, 255, 0.1));
-  box-shadow: inset 0 0 0 1px rgba(46, 114, 255, 0.1);
-  color: #1550ce;
+  background: var(--accent-blue-soft);
+  box-shadow: inset 0 0 0 1px rgba(53, 99, 233, 0.14);
+  color: var(--accent-blue-strong);
 }
 
 .workplan-step-link strong {
@@ -302,15 +408,16 @@
 .workplan-target-pill {
   padding: 10px 14px;
   border-radius: 16px;
-  background: rgba(245, 249, 255, 0.72);
+  background: var(--surface-soft);
+  border: 1px solid transparent;
   display: grid;
   gap: 4px;
   text-align: left;
 }
 
 .workplan-target-pill.active {
-  background: linear-gradient(135deg, rgba(35, 184, 172, 0.15), rgba(46, 114, 255, 0.12));
-  box-shadow: inset 0 0 0 1px rgba(35, 184, 172, 0.18);
+  background: var(--accent-teal-soft);
+  box-shadow: inset 0 0 0 1px rgba(31, 139, 119, 0.14);
 }
 
 .workplan-target-pill strong {
@@ -348,14 +455,14 @@
   align-items: center;
   padding: 5px 10px;
   border-radius: 999px;
-  background: rgba(46, 114, 255, 0.12);
-  color: #1550ce;
+  background: var(--accent-blue-soft);
+  color: var(--accent-blue-strong);
   font-size: 11px;
   font-weight: 800;
 }
 
 .workplan-stage-pill.soft {
-  background: rgba(19, 31, 46, 0.08);
+  background: var(--surface-strong);
   color: #43546a;
 }
 
@@ -371,8 +478,8 @@
   min-height: 360px;
   resize: vertical;
   border-radius: 18px;
-  border: 1px solid rgba(20, 36, 52, 0.1);
-  background: rgba(247, 250, 255, 0.98);
+  border: 1px solid var(--line-soft);
+  background: var(--surface-base);
   padding: 16px;
   font: inherit;
   font-size: 14px;
@@ -382,8 +489,8 @@
 
 .workplan-config-textarea:focus {
   outline: none;
-  border-color: rgba(46, 114, 255, 0.36);
-  box-shadow: 0 0 0 4px rgba(46, 114, 255, 0.08);
+  border-color: rgba(53, 99, 233, 0.36);
+  box-shadow: 0 0 0 4px rgba(53, 99, 233, 0.08);
 }
 
 .workplan-info-list {
@@ -396,7 +503,7 @@
   display: grid;
   gap: 4px;
   padding-bottom: 10px;
-  border-bottom: 1px solid rgba(20, 36, 52, 0.06);
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .workplan-info-list dt {
@@ -413,12 +520,12 @@
 .workplan-validation-summary {
   padding: 14px 16px;
   border-radius: 16px;
-  border: 1px solid rgba(20, 36, 52, 0.08);
-  background: rgba(248, 251, 255, 0.82);
+  border: 1px solid var(--line-soft);
+  background: var(--surface-muted);
 }
 
 .workplan-validation-summary.subtle {
-  background: rgba(244, 248, 255, 0.88);
+  background: var(--surface-soft);
   border-style: dashed;
 }
 
@@ -436,8 +543,8 @@
 .workplan-link-row {
   padding: 12px 14px;
   border-radius: 16px;
-  background: rgba(246, 249, 255, 0.96);
-  border: 1px solid rgba(20, 36, 52, 0.08);
+  background: var(--surface-base);
+  border: 1px solid var(--line-soft);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -459,8 +566,8 @@
 .workplan-stat-card {
   padding: 12px;
   border-radius: 16px;
-  background: rgba(245, 249, 255, 0.88);
-  border: 1px solid rgba(20, 36, 52, 0.08);
+  background: var(--surface-soft);
+  border: 1px solid var(--line-soft);
   display: grid;
   gap: 6px;
 }
@@ -489,23 +596,23 @@
 .workplan-validation-item {
   padding: 12px 14px;
   border-radius: 16px;
-  border: 1px solid rgba(20, 36, 52, 0.08);
-  background: rgba(248, 251, 255, 0.88);
+  border: 1px solid var(--line-soft);
+  background: var(--surface-soft);
 }
 
 .workplan-validation-item.error {
-  border-color: rgba(228, 89, 105, 0.2);
-  background: rgba(255, 241, 243, 0.92);
+  border-color: rgba(190, 83, 100, 0.18);
+  background: var(--accent-rose-soft);
 }
 
 .workplan-validation-item.warning {
-  border-color: rgba(240, 177, 69, 0.24);
-  background: rgba(255, 248, 236, 0.92);
+  border-color: rgba(169, 110, 24, 0.18);
+  background: var(--accent-amber-soft);
 }
 
 .workplan-validation-item.ok {
-  border-color: rgba(35, 184, 172, 0.18);
-  background: rgba(239, 252, 248, 0.92);
+  border-color: rgba(31, 139, 119, 0.16);
+  background: var(--accent-teal-soft);
 }
 
 .workplan-validation-item-head span {
@@ -513,7 +620,7 @@
   align-items: center;
   padding: 4px 8px;
   border-radius: 999px;
-  background: rgba(19, 31, 46, 0.08);
+  background: rgba(24, 34, 47, 0.08);
   color: #43546a;
   font-size: 11px;
   font-weight: 800;
@@ -545,8 +652,8 @@
   gap: 2px;
   padding: 8px 10px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.75);
-  border: 1px solid rgba(20, 36, 52, 0.08);
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--line-soft);
 }
 
 .workplan-validation-match-chip span {
@@ -562,16 +669,16 @@
 
 .workplan-diff-table {
   border-radius: 18px;
-  border: 1px solid rgba(20, 36, 52, 0.08);
+  border: 1px solid var(--line-soft);
   overflow: auto;
-  background: rgba(248, 251, 255, 0.9);
+  background: var(--surface-muted);
 }
 
 .workplan-diff-row {
   display: grid;
   grid-template-columns: 70px minmax(0, 1fr) 70px minmax(0, 1fr);
   gap: 0;
-  border-bottom: 1px solid rgba(20, 36, 52, 0.06);
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .workplan-diff-row span,
@@ -585,7 +692,7 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: rgba(236, 242, 250, 0.98);
+  background: var(--surface-strong);
   font-weight: 700;
 }
 
@@ -598,19 +705,19 @@
 }
 
 .workplan-diff-row.equal {
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.74);
 }
 
 .workplan-diff-row.insert {
-  background: rgba(236, 253, 242, 0.9);
+  background: #eef8f2;
 }
 
 .workplan-diff-row.delete {
-  background: rgba(255, 241, 243, 0.92);
+  background: var(--accent-rose-soft);
 }
 
 .workplan-diff-row.replace {
-  background: rgba(255, 247, 230, 0.9);
+  background: var(--accent-amber-soft);
 }
 
 .workplan-diff-row .mono {
@@ -625,8 +732,8 @@
   width: fit-content;
   padding: 8px 12px;
   border-radius: 999px;
-  background: rgba(35, 184, 172, 0.12);
-  color: #0f6c63;
+  background: var(--accent-teal-soft);
+  color: var(--accent-teal);
   font-size: 12px;
   font-weight: 700;
 }
@@ -637,9 +744,9 @@
   z-index: 90;
   display: grid;
   place-items: center;
-  background: rgba(15, 23, 38, 0.14);
+  background: rgba(15, 23, 42, 0.12);
   pointer-events: none;
-  backdrop-filter: blur(3px);
+  backdrop-filter: blur(2px);
 }
 
 .workplan-action-overlay-card {
@@ -648,10 +755,10 @@
   gap: 10px;
   padding: 16px 22px;
   border-radius: 18px;
-  border: 1px solid rgba(32, 163, 95, 0.16);
-  background: rgba(255, 255, 255, 0.94);
-  color: #116a43;
-  box-shadow: 0 18px 40px rgba(16, 28, 44, 0.16);
+  border: 1px solid rgba(31, 139, 119, 0.14);
+  background: rgba(255, 255, 255, 0.96);
+  color: #216d4a;
+  box-shadow: var(--shadow-overlay);
 }
 
 .workplan-action-overlay-card strong {

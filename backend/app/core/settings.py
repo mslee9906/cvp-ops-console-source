@@ -59,6 +59,10 @@ class Settings:
     cvp_insecure_tls: bool
     cvp_device_ids: list[str]
     cors_origins: list[str]
+    auth_session_hours: int
+    default_admin_username: str
+    default_admin_password: str
+    default_admin_display_name: str
 
     @property
     def has_cvp_credentials(self) -> bool:
@@ -120,4 +124,8 @@ def get_settings() -> Settings:
         cvp_device_ids=_read_csv("CVP_DEVICE_IDS"),
         cors_origins=_read_csv("OPS_CONSOLE_CORS")
         or ["http://localhost:5173", "http://127.0.0.1:5173"],
+        auth_session_hours=_read_int("OPS_CONSOLE_AUTH_SESSION_HOURS", 8),
+        default_admin_username=os.getenv("OPS_CONSOLE_ADMIN_USERNAME", "admin").strip() or "admin",
+        default_admin_password=os.getenv("OPS_CONSOLE_ADMIN_PASSWORD", "admin1234").strip() or "admin1234",
+        default_admin_display_name=os.getenv("OPS_CONSOLE_ADMIN_DISPLAY_NAME", "Administrator").strip() or "Administrator",
     )

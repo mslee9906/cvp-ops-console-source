@@ -18,6 +18,14 @@ from app.schemas.responses import (
 router = APIRouter()
 
 
+def _require_editor(request: Request) -> None:
+    user = getattr(request.state, "current_user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail='로그인이 필요합니다.')
+    if user.get("role") not in {"admin", "editor"}:
+        raise HTTPException(status_code=403, detail='수정 권한이 없습니다.')
+
+
 @router.get('/overview', response_model=OverviewResponse)
 def get_overview(request: Request) -> OverviewResponse:
     return request.app.state.query_service.get_overview(request.app.state.source_mode)
@@ -139,6 +147,7 @@ def get_collection_status(request: Request) -> CollectionProgressResponse:
 
 @router.post('/collections/refresh', response_model=CollectionProgressResponse)
 def refresh_collection(request: Request) -> CollectionProgressResponse:
+    _require_editor(request)
     progress = request.app.state.collection_service.start_refresh()
     request.app.state.source_mode = progress['source_mode']
     return progress

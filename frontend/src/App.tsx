@@ -14,17 +14,21 @@ import {
   House,
   Layers3,
   Link2,
+  LogOut,
   Network,
   Radar,
   RefreshCcw,
   Search,
   Server,
   ShieldAlert,
+  UserCog,
   Wrench,
 } from 'lucide-react'
 import { Copy, X } from 'lucide-react'
 import './App.css'
-import { api } from './api'
+import { ApiError, api } from './api'
+import { LoginScreen } from './features/auth/LoginScreen'
+import { UserSettingsModal } from './features/auth/UserSettingsModal'
 import { EdmLinkManager } from './features/edm-links/EdmLinkManager'
 import { KanbanBoard } from './features/kanban/KanbanBoard'
 import { WorkPlanBoard } from './features/workplan/WorkPlanBoard'
@@ -40,6 +44,8 @@ import type {
   OverviewResponse,
   RecordListResponse,
   RecordScope,
+  UserCreateInput,
+  UserSummary,
   VniGroupListResponse,
   VrfGroupListResponse,
 } from './types'
@@ -152,7 +158,7 @@ const viewMeta: Record<ViewId, ViewMeta> = {
   kanban: {
     label: '작업 보드',
     eyebrow: 'Kanban Workflow',
-    title: '칸반 기반 작업 카드 관리',
+    title: '작업 보드',
     description: '작업 카드를 생성하고, 수정하고, 삭제하고, 드래그로 상태를 이동하는 보드입니다.',
     icon: Layers3,
   },
@@ -164,10 +170,10 @@ const viewMeta: Record<ViewId, ViewMeta> = {
     icon: ClipboardList,
   },
   work_plan: {
-    label: '작업 계획',
+    label: '워크플로우',
     eyebrow: 'Planning Workspace',
-    title: '작업 계획 준비 영역',
-    description: '이후 작업 계획서와 로드맵 구조를 넣기 위한 빈 준비 탭입니다.',
+    title: '워크플로우 준비 영역',
+    description: '이후 작업 절차와 진행 공유 구조를 넣기 위한 빈 준비 탭입니다.',
     icon: ClipboardList,
   },
 }
@@ -225,6 +231,15 @@ function isRecordScope(view: ViewId): view is RecordScope {
 }
 
 function App() {
+  const [authReady, setAuthReady] = useState(false)
+  const [authSubmitting, setAuthSubmitting] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const [currentUser, setCurrentUser] = useState<UserSummary | null>(null)
+  const [users, setUsers] = useState<UserSummary[]>([])
+  const [accountModalOpen, setAccountModalOpen] = useState(false)
+  const [accountActionBusy, setAccountActionBusy] = useState(false)
+  const [accountActionError, setAccountActionError] = useState('')
+  const [accountActionSuccess, setAccountActionSuccess] = useState('')
   const [activeView, setActiveView] = useState<ViewId>('home')
   const [managementOpen, setManagementOpen] = useState(true)
   const [automationOpen, setAutomationOpen] = useState(true)
@@ -333,7 +348,7 @@ function App() {
 
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
-    void bootstrap()
+    void initializeSession()
   }, [])
 
   useEffect(() => {
@@ -427,6 +442,103 @@ function App() {
     window.addEventListener('keydown', handleEscape)
     return () => window.removeEventListener('keydown', handleEscape)
   }, [configSearchOverlay.open, showConfigGuide])
+
+  async function initializeSession() {
+    try {
+      setAuthError('')
+      const user = await api.getCurrentUser()
+      setCurrentUser(user)
+      await Promise.all([loadUsers(), bootstrap()])
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        setCurrentUser(null)
+        setUsers([])
+        return
+      }
+      setAuthError(error instanceof Error ? error.message : '세션을 확인하지 못했습니다.')
+    } finally {
+      setAuthReady(true)
+    }
+  }
+
+  async function loadUsers() {
+    const loadedUsers = await api.getUsers()
+    setUsers(loadedUsers)
+    return loadedUsers
+  }
+
+  async function handleLogin(username: string, password: string) {
+    try {
+      setAuthSubmitting(true)
+      setAuthError('')
+      const response = await api.login(username, password)
+      setCurrentUser(response.user)
+      await Promise.all([loadUsers(), bootstrap()])
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : '로그인하지 못했습니다.')
+    } finally {
+      setAuthSubmitting(false)
+      setAuthReady(true)
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await api.logout()
+    } catch {
+      // Ignore logout failures and force local sign-out.
+    } finally {
+      setCurrentUser(null)
+      setUsers([])
+      setAccountModalOpen(false)
+      setAuthError('')
+    }
+  }
+
+  async function handleCreateUser(payload: UserCreateInput) {
+    try {
+      setAccountActionBusy(true)
+      setAccountActionError('')
+      setAccountActionSuccess('')
+      await api.createUser(payload)
+      await loadUsers()
+      setAccountActionSuccess('사용자를 생성했습니다.')
+    } catch (error) {
+      setAccountActionError(error instanceof Error ? error.message : '사용자를 생성하지 못했습니다.')
+    } finally {
+      setAccountActionBusy(false)
+    }
+  }
+
+  async function handleDeleteUser(userId: number) {
+    try {
+      setAccountActionBusy(true)
+      setAccountActionError('')
+      setAccountActionSuccess('')
+      await api.deleteUser(userId)
+      await loadUsers()
+      setAccountActionSuccess('사용자를 삭제했습니다.')
+    } catch (error) {
+      setAccountActionError(error instanceof Error ? error.message : '사용자를 삭제하지 못했습니다.')
+    } finally {
+      setAccountActionBusy(false)
+    }
+  }
+
+  async function handleChangePassword(currentPassword: string, newPassword: string) {
+    try {
+      setAccountActionBusy(true)
+      setAccountActionError('')
+      setAccountActionSuccess('')
+      const updatedUser = await api.changePassword(currentPassword, newPassword)
+      setCurrentUser(updatedUser)
+      setAccountActionSuccess('비밀번호를 변경했습니다.')
+    } catch (error) {
+      setAccountActionError(error instanceof Error ? error.message : '비밀번호를 변경하지 못했습니다.')
+    } finally {
+      setAccountActionBusy(false)
+    }
+  }
 
   async function bootstrap() {
     await Promise.all([
@@ -743,6 +855,22 @@ function App() {
     }
   }
 
+  if (!authReady) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-panel auth-panel-compact">
+          <p className="eyebrow">Access Control</p>
+          <h1>세션 확인 중</h1>
+          <p>현재 로그인 상태를 확인하고 있습니다.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!currentUser) {
+    return <LoginScreen submitting={authSubmitting} error={authError} onSubmit={handleLogin} />
+  }
+
   return (
     <div className="app-shell">
       <aside className="rail">
@@ -770,7 +898,7 @@ function App() {
           </button>
 
           <SidebarSection
-            title="칸반 보드"
+            title="작업 보드"
             open={kanbanOpen}
             onToggle={() => setKanbanOpen((value) => !value)}
             items={kanbanViews}
@@ -799,6 +927,33 @@ function App() {
         </nav>
 
         <div className="rail-footer">
+          <div className="user-panel">
+            <div className="user-panel-head">
+              <div className="user-panel-copy">
+                <strong>{currentUser.display_name}</strong>
+                <span>@{currentUser.username}</span>
+              </div>
+              <span className={`user-role-chip ${currentUser.role}`}>{currentUser.role}</span>
+            </div>
+            <div className="user-panel-actions">
+              <button
+                className="user-panel-button"
+                type="button"
+                onClick={() => {
+                  setAccountActionError('')
+                  setAccountActionSuccess('')
+                  setAccountModalOpen(true)
+                }}
+              >
+                <UserCog size={14} />
+                <span>계정</span>
+              </button>
+              <button className="user-panel-button" type="button" onClick={() => void handleLogout()}>
+                <LogOut size={14} />
+                <span>로그아웃</span>
+              </button>
+            </div>
+          </div>
           <button className="refresh-button" onClick={() => void handleStartRefresh()} disabled={collectionProgress?.status === 'running'}>
             <RefreshCcw className={collectionProgress?.status === 'running' ? 'spin' : ''} />
             <span>{collectionProgress?.status === 'running' ? '스냅샷 갱신 중' : '스냅샷 갱신'}</span>
@@ -1381,7 +1536,7 @@ function App() {
 
         {activeView === 'kanban' ? (
           <section className="stack-layout">
-            <KanbanBoard />
+            <KanbanBoard users={users} />
           </section>
         ) : null}
 
@@ -1394,10 +1549,10 @@ function App() {
         {activeView === 'work_plan' ? (
           <section className="stack-layout">
             <div className="main-card">
-              <SectionHeader title="작업 계획 준비 영역" note="작업 계획서, 로드맵, 대외 제출용 플로우를 이어서 넣기 위한 빈 화면입니다." />
+              <SectionHeader title="워크플로우 준비 영역" note="작업 절차, 진행 공유, 후속 로드맵 구조를 이어서 넣기 위한 빈 화면입니다." />
               <div className="guide-grid">
                 <GuideCard title="현재 상태" body="탭 위치와 기본 레이아웃만 먼저 확보해 둔 상태입니다. 이후 요구사항에 맞춰 계획서 전용 기능을 추가하면 됩니다." />
-                <GuideCard title="확장 방향" body="칸반 카드, 작업 툴, 현황 관리, 자동화 결과와 연결되는 작업 계획 전용 구조를 이 탭에 이어서 넣을 수 있습니다." />
+                <GuideCard title="확장 방향" body="작업 카드, 작업 툴, 현황 관리, 자동화 결과와 연결되는 워크플로우 전용 구조를 이 탭에 이어서 넣을 수 있습니다." />
               </div>
             </div>
           </section>
@@ -1463,6 +1618,20 @@ function App() {
               ) : null}
             </div>
           </div>
+        ) : null}
+
+        {accountModalOpen ? (
+          <UserSettingsModal
+            currentUser={currentUser}
+            users={users}
+            busy={accountActionBusy}
+            error={accountActionError}
+            success={accountActionSuccess}
+            onClose={() => setAccountModalOpen(false)}
+            onCreateUser={handleCreateUser}
+            onDeleteUser={handleDeleteUser}
+            onChangePassword={handleChangePassword}
+          />
         ) : null}
       </main>
     </div>

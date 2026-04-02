@@ -25,10 +25,15 @@ class KanbanService:
     def list_cards(self) -> list[dict]:
         return self.repository.list_cards()
 
-    def create_card(self, payload: dict) -> dict:
+    def create_card(self, payload: dict, current_user: dict[str, Any] | None = None) -> dict:
+        if current_user:
+            payload["created_by_user_id"] = int(current_user["id"])
+            payload["updated_by_user_id"] = int(current_user["id"])
         return self.repository.create_card(payload)
 
-    def update_card(self, card_id: int, changes: dict) -> dict | None:
+    def update_card(self, card_id: int, changes: dict, current_user: dict[str, Any] | None = None) -> dict | None:
+        if current_user:
+            changes["updated_by_user_id"] = int(current_user["id"])
         return self.repository.update_card(card_id, changes)
 
     def delete_card(self, card_id: int) -> bool:

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, ClipboardList, Copy, RefreshCcw, Search, Unlink2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { CheckCircle2, Copy, RefreshCcw, Search, Unlink2 } from 'lucide-react'
 
 import { api } from '../../api'
 import type {
@@ -23,12 +23,13 @@ const WORK_PLAN_STEP_META: Array<{ key: WorkPlanStepKey; label: string; body: st
 ]
 
 export function WorkPlanBoard() {
+  const cardPickerRef = useRef<HTMLDivElement | null>(null)
   const [cards, setCards] = useState<KanbanCard[]>([])
   const [devices, setDevices] = useState<DeviceSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selectedCardId, setSelectedCardId] = useState<number | null>(null)
-  const [showCardPicker, setShowCardPicker] = useState(true)
+  const [showCardPicker, setShowCardPicker] = useState(false)
   const [selectedTargetId, setSelectedTargetId] = useState<number | null>(null)
   const [cardFilter, setCardFilter] = useState('')
   const [linkFilter, setLinkFilter] = useState('')
@@ -51,7 +52,7 @@ export function WorkPlanBoard() {
       return sorted
     }
     return sorted.filter((card) =>
-      [card.card_code, card.title, card.assignee, columnLabel(card.column_key)].join(' ').toLowerCase().includes(token),
+      [card.card_code, card.title, card.assignee].join(' ').toLowerCase().includes(token),
     )
   }, [cardFilter, cards])
 
@@ -92,16 +93,16 @@ export function WorkPlanBoard() {
   }, [])
 
   useEffect(() => {
-    if (!filteredCards.length) {
+    if (!cards.length) {
       setSelectedCardId(null)
-      setShowCardPicker(true)
+      setShowCardPicker(false)
       return
     }
-    if (selectedCardId && !filteredCards.some((card) => card.id === selectedCardId)) {
+    if (selectedCardId && !cards.some((card) => card.id === selectedCardId)) {
       setSelectedCardId(null)
-      setShowCardPicker(true)
+      setShowCardPicker(false)
     }
-  }, [filteredCards, selectedCardId])
+  }, [cards, selectedCardId])
 
   useEffect(() => {
     const targets = selectedCard?.targets ?? []
@@ -146,6 +147,21 @@ export function WorkPlanBoard() {
     const timer = window.setTimeout(() => setActionOverlayMessage(''), 1100)
     return () => window.clearTimeout(timer)
   }, [actionOverlayMessage])
+
+  useEffect(() => {
+    if (!showCardPicker) {
+      return
+    }
+
+    function handleOutsidePointer(event: MouseEvent) {
+      if (!cardPickerRef.current?.contains(event.target as Node)) {
+        setShowCardPicker(false)
+      }
+    }
+
+    window.addEventListener('mousedown', handleOutsidePointer)
+    return () => window.removeEventListener('mousedown', handleOutsidePointer)
+  }, [showCardPicker])
 
   async function bootstrap() {
     try {
@@ -294,6 +310,12 @@ export function WorkPlanBoard() {
   function handleSelectCard(cardId: number) {
     setSelectedCardId(cardId)
     setShowCardPicker(false)
+    setCardFilter('')
+  }
+
+  function handleCardFilterChange(value: string) {
+    setCardFilter(value)
+    setShowCardPicker(true)
   }
 
   return (
@@ -318,42 +340,7 @@ export function WorkPlanBoard() {
           <div className="workplan-layout">
             <aside className="workplan-sidebar">
               <article className={`workplan-selector-card ${selectedCard && !showCardPicker ? 'compact' : ''}`}>
-                {!selectedCard || showCardPicker ? (
-                  <>
-                    <div className="workplan-selected-hero">
-                      <div>
-                        <p className="workplan-kicker">Choose Card</p>
-                        <h4>작업 카드 선택</h4>
-                        <small>작업 계획을 열 칸반 카드를 먼저 고릅니다.</small>
-                      </div>
-                      <ClipboardList size={18} />
-                    </div>
-                    <label className="workplan-filter">
-                      <Search size={16} />
-                      <input value={cardFilter} onChange={(event) => setCardFilter(event.target.value)} placeholder="카드 제목, 코드, 담당자 검색" />
-                    </label>
-                    <div className="workplan-card-list picker">
-                      {filteredCards.map((card) => (
-                        <button
-                          key={card.id}
-                          className={`workplan-card-link ${card.id === selectedCardId ? 'active' : ''}`}
-                          type="button"
-                          onClick={() => handleSelectCard(card.id)}
-                        >
-                          <div className="workplan-card-link-head">
-                            <strong>{card.title}</strong>
-                            <span>{card.card_code}</span>
-                          </div>
-                          <p>{card.assignee || '담당자 미지정'}</p>
-                          <div className="workplan-card-link-meta">
-                            <small>{columnLabel(card.column_key)}</small>
-                            <small>{card.targets.length} targets</small>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                ) : (
+                {selectedCard ? (
                   <>
                     <div className="workplan-selected-hero">
                       <div>
@@ -361,8 +348,8 @@ export function WorkPlanBoard() {
                         <h4>{selectedCard.title}</h4>
                         <small>{selectedCard.card_code}</small>
                       </div>
-                      <button className="workplan-ghost-button" type="button" onClick={() => setShowCardPicker(true)}>
-                        다른 카드 선택
+                      <button className="workplan-ghost-button compact" type="button" onClick={() => setShowCardPicker((open) => !open)}>
+                        {showCardPicker ? '닫기' : '다른 카드 선택'}
                       </button>
                     </div>
                     <div className="workplan-summary-grid">
@@ -384,7 +371,51 @@ export function WorkPlanBoard() {
                       </div>
                     </div>
                   </>
+                ) : (
+                  <div className="workplan-selected-hero">
+                    <div>
+                      <p className="workplan-kicker">Choose Card</p>
+                      <h4>작업 카드 선택</h4>
+                      <small>제목, 코드, 담당자로 검색해 작업 카드를 선택합니다.</small>
+                    </div>
+                  </div>
                 )}
+
+                <div ref={cardPickerRef} className="workplan-card-picker">
+                  <label className="workplan-filter selector">
+                    <Search size={16} />
+                    <input value={cardFilter} onFocus={() => setShowCardPicker(true)} onChange={(event) => handleCardFilterChange(event.target.value)} placeholder="카드 제목, 코드, 담당자 검색" />
+                  </label>
+                  {showCardPicker ? (
+                    <div className="workplan-card-list picker dropdown">
+                      {filteredCards.length > 0 ? (
+                        filteredCards.map((card) => (
+                          <button
+                            key={card.id}
+                            className={`workplan-card-link ${card.id === selectedCardId ? 'active' : ''}`}
+                            type="button"
+                            onClick={() => handleSelectCard(card.id)}
+                          >
+                            <div className="workplan-card-link-head">
+                              <strong>{card.title}</strong>
+                              <span>{card.card_code}</span>
+                            </div>
+                            <p>{card.assignee || '담당자 미지정'}</p>
+                            <div className="workplan-card-link-meta">
+                              <small>{columnLabel(card.column_key)}</small>
+                              <small>{card.targets.length} targets</small>
+                            </div>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="workplan-empty-state compact">
+                          <strong>검색 결과가 없습니다.</strong>
+                          <p>제목, 코드, 담당자 기준으로 다시 검색해 주세요.</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
               </article>
 
               <section className="workplan-step-panel">
@@ -414,7 +445,7 @@ export function WorkPlanBoard() {
                 </div>
               </div>
 
-              {selectedCard && !showCardPicker && selectedCard.targets.length > 0 ? (
+              {selectedCard && selectedCard.targets.length > 0 ? (
                 <div className="workplan-target-switcher">
                   {selectedCard.targets.map((target) => (
                     <button
@@ -428,21 +459,21 @@ export function WorkPlanBoard() {
                     </button>
                   ))}
                 </div>
-              ) : selectedCard && !showCardPicker ? (
+              ) : selectedCard ? (
                 <div className="workplan-empty-state">
                   <strong>작업 대상 장비가 아직 없습니다.</strong>
                   <p>작업 보드 탭의 `작업 대상` 단계에서 장비를 먼저 지정하면, 여기서 Snapshot과 계획서를 이어서 관리할 수 있습니다.</p>
                 </div>
               ) : null}
 
-              {!selectedCard || showCardPicker ? (
+              {!selectedCard ? (
                 <div className="workplan-empty-state">
                   <strong>작업 카드를 선택해 주세요.</strong>
                   <p>왼쪽 카드 선택창에서 카드를 고르면, 그 순간부터 오른쪽 작업 계획 화면이 카드 기준으로 열립니다.</p>
                 </div>
               ) : null}
 
-              {selectedCard && !showCardPicker && selectedTarget ? (
+              {selectedCard && selectedTarget ? (
                 <div className="workplan-stage-body">
                   {activeStep === 'planned_config' ? (
                     <section className="workplan-two-column">

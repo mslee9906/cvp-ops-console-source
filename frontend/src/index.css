@@ -8,17 +8,36 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color: #11272b;
-  background:
-    radial-gradient(circle at top left, rgba(93, 224, 196, 0.18), transparent 28%),
-    radial-gradient(circle at bottom right, rgba(255, 181, 103, 0.16), transparent 24%),
-    #eef3ef;
+  color: #18222f;
+  background: #edf1f5;
 
-  --ink-950: #11272b;
-  --ink-900: #18363c;
-  --ink-700: #43626a;
-  --ink-600: #5c757b;
-  --ink-500: #71878c;
+  --bg-page: #edf1f5;
+  --surface-base: #ffffff;
+  --surface-muted: #f6f8fb;
+  --surface-soft: #f2f5f9;
+  --surface-strong: #ebf0f5;
+  --surface-dark: #1d2128;
+  --surface-dark-soft: #242932;
+  --line-soft: #d9e1ea;
+  --line-strong: #ccd5e0;
+  --shadow-soft: 0 16px 36px rgba(15, 23, 42, 0.06);
+  --shadow-panel: 0 8px 18px rgba(15, 23, 42, 0.04);
+  --shadow-overlay: 0 24px 48px rgba(15, 23, 42, 0.12);
+  --accent-blue: #3563e9;
+  --accent-blue-strong: #244ec7;
+  --accent-blue-soft: #eaf0ff;
+  --accent-teal: #1f8b77;
+  --accent-teal-soft: #e8f5f1;
+  --accent-amber: #a96e18;
+  --accent-amber-soft: #fff4de;
+  --accent-rose: #be5364;
+  --accent-rose-soft: #fff0f3;
+  --ink-950: #18222f;
+  --ink-900: #243140;
+  --ink-800: #344357;
+  --ink-700: #506074;
+  --ink-600: #66778b;
+  --ink-500: #8795a5;
 }
 
 * {
@@ -34,6 +53,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background: var(--bg-page);
 }
 
 button,

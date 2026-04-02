@@ -467,10 +467,15 @@ class QueryService:
         exact_matches: list[dict[str, Any]] = []
         overlap_matches: list[dict[str, Any]] = []
 
-        seen_networks: set[tuple[str, str]] = set()
+        seen_networks: set[tuple[str, str, str, str]] = set()
         for row in rows:
             row_network = ipaddress.ip_network(row['network'], strict=False)
-            dedupe_key = (row['device_id'], row['network'])
+            dedupe_key = (
+                str(row['device_id']),
+                str(row.get('interface_name', '') or ''),
+                str(row.get('ip', '') or ''),
+                str(row['network']),
+            )
             if dedupe_key in seen_networks:
                 continue
             seen_networks.add(dedupe_key)

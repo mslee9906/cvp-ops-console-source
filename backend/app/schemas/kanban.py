@@ -100,6 +100,11 @@ class KanbanCardResponse(BaseModel):
     title: str
     description: str = ""
     assignee: str = ""
+    assignee_user_id: int | None = None
+    created_by_user_id: int | None = None
+    created_by_name: str = ""
+    updated_by_user_id: int | None = None
+    updated_by_name: str = ""
     column_key: KanbanColumnKey
     card_type: KanbanCardType
     priority: KanbanPriority
@@ -118,6 +123,7 @@ class KanbanCardCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: str = Field(default="", max_length=5000)
     assignee: str = Field(default="", max_length=120)
+    assignee_user_id: int | None = Field(default=None, ge=1)
     column_key: KanbanColumnKey = KanbanColumnKey.planned
     card_type: KanbanCardType = KanbanCardType.existing
     priority: KanbanPriority = KanbanPriority.medium
@@ -129,6 +135,7 @@ class KanbanCardUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
     assignee: str | None = Field(default=None, max_length=120)
+    assignee_user_id: int | None = Field(default=None, ge=1)
     column_key: KanbanColumnKey | None = None
     card_type: KanbanCardType | None = None
     priority: KanbanPriority | None = None

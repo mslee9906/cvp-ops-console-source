@@ -173,6 +173,30 @@ export interface EdmLinkInput {
   color_key: EdmLinkColorKey
 }
 
+export type UserRole = 'admin' | 'editor' | 'viewer'
+
+export interface UserSummary {
+  id: number
+  username: string
+  display_name: string
+  role: UserRole
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  last_login_at: string
+}
+
+export interface LoginResponse {
+  user: UserSummary
+}
+
+export interface UserCreateInput {
+  username: string
+  display_name: string
+  password: string
+  role: UserRole
+}
+
 export type KanbanColumnKey = 'blocked' | 'planned' | 'ready' | 'in_progress' | 'verifying' | 'done'
 export type KanbanCardType = 'existing' | 'new'
 export type KanbanPriority = 'high' | 'medium' | 'low'
@@ -216,6 +240,11 @@ export interface KanbanCard {
   title: string
   description: string
   assignee: string
+  assignee_user_id?: number | null
+  created_by_user_id?: number | null
+  created_by_name?: string
+  updated_by_user_id?: number | null
+  updated_by_name?: string
   column_key: KanbanColumnKey
   card_type: KanbanCardType
   priority: KanbanPriority
@@ -234,6 +263,7 @@ export interface KanbanCardInput {
   title: string
   description: string
   assignee: string
+  assignee_user_id?: number | null
   column_key: KanbanColumnKey
   card_type: KanbanCardType
   priority: KanbanPriority

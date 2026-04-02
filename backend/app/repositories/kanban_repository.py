@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS kanban_cards (
     title TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     assignee TEXT NOT NULL DEFAULT '',
+    assignee_user_id INTEGER,
+    created_by_user_id INTEGER,
+    updated_by_user_id INTEGER,
     column_key TEXT NOT NULL,
     card_type TEXT NOT NULL,
     priority TEXT NOT NULL,
@@ -84,14 +87,33 @@ class KanbanRepository:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, card_code, title, description, assignee, column_key, card_type, priority, sort_order, created_at, updated_at
-                FROM kanban_cards
+                SELECT
+                    c.id,
+                    c.card_code,
+                    c.title,
+                    c.description,
+                    COALESCE(assignee_user.display_name, c.assignee, '') AS assignee,
+                    c.assignee_user_id,
+                    c.created_by_user_id,
+                    COALESCE(created_user.display_name, '') AS created_by_name,
+                    c.updated_by_user_id,
+                    COALESCE(updated_user.display_name, '') AS updated_by_name,
+                    c.column_key,
+                    c.card_type,
+                    c.priority,
+                    c.sort_order,
+                    c.created_at,
+                    c.updated_at
+                FROM kanban_cards AS c
+                LEFT JOIN users AS assignee_user ON assignee_user.id = c.assignee_user_id
+                LEFT JOIN users AS created_user ON created_user.id = c.created_by_user_id
+                LEFT JOIN users AS updated_user ON updated_user.id = c.updated_by_user_id
                 ORDER BY
                     """
                 + _CARD_ORDER_SQL
                 + """,
-                    sort_order,
-                    id
+                    c.sort_order,
+                    c.id
                 """,
             ).fetchall()
             card_ids = [int(row["id"]) for row in rows]
@@ -121,17 +143,25 @@ class KanbanRepository:
                 "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM kanban_cards WHERE column_key = ?",
                 (payload["column_key"],),
             ).fetchone()[0]
+            assignee_user_id = _normalize_optional_int(payload.get("assignee_user_id"))
+            created_by_user_id = _normalize_optional_int(payload.get("created_by_user_id"))
+            updated_by_user_id = _normalize_optional_int(payload.get("updated_by_user_id")) or created_by_user_id
+            assignee = self._resolve_user_display_name(connection, assignee_user_id, str(payload.get("assignee", "") or ""))
             cursor = connection.execute(
                 """
                 INSERT INTO kanban_cards (
-                    card_code, title, description, assignee, column_key, card_type, priority, sort_order, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    card_code, title, description, assignee, assignee_user_id, created_by_user_id, updated_by_user_id,
+                    column_key, card_type, priority, sort_order, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card_code,
                     payload["title"],
                     payload.get("description", ""),
-                    payload.get("assignee", ""),
+                    assignee,
+                    assignee_user_id,
+                    created_by_user_id,
+                    updated_by_user_id,
                     payload["column_key"],
                     payload["card_type"],
                     payload["priority"],
@@ -187,7 +217,16 @@ class KanbanRepository:
         if not changes:
             return self.get_card(card_id)
 
-        allowed_fields = {"title", "description", "assignee", "column_key", "card_type", "priority"}
+        allowed_fields = {
+            "title",
+            "description",
+            "assignee",
+            "assignee_user_id",
+            "updated_by_user_id",
+            "column_key",
+            "card_type",
+            "priority",
+        }
         updates = {key: value for key, value in changes.items() if key in allowed_fields}
         checklist_items = changes.get("checklist_items")
         target_items = changes.get("targets")
@@ -215,6 +254,18 @@ class KanbanRepository:
             timestamp = _now_iso()
             if updates or checklist_items is not None or target_items is not None or planned_configs is not None:
                 updates["updated_at"] = timestamp
+
+            if "assignee_user_id" in updates or "assignee" in updates:
+                assignee_user_id = _normalize_optional_int(updates.get("assignee_user_id"))
+                updates["assignee_user_id"] = assignee_user_id
+                updates["assignee"] = self._resolve_user_display_name(
+                    connection,
+                    assignee_user_id,
+                    str(updates.get("assignee", "") or ""),
+                )
+
+            if "updated_by_user_id" in updates:
+                updates["updated_by_user_id"] = _normalize_optional_int(updates.get("updated_by_user_id"))
 
             if updates:
                 assignments = ", ".join(f"{field} = ?" for field in updates)
@@ -299,9 +350,28 @@ class KanbanRepository:
     def _get_card(self, connection: sqlite3.Connection, card_id: int) -> dict[str, Any] | None:
         row = connection.execute(
             """
-            SELECT id, card_code, title, description, assignee, column_key, card_type, priority, sort_order, created_at, updated_at
-            FROM kanban_cards
-            WHERE id = ?
+            SELECT
+                c.id,
+                c.card_code,
+                c.title,
+                c.description,
+                COALESCE(assignee_user.display_name, c.assignee, '') AS assignee,
+                c.assignee_user_id,
+                c.created_by_user_id,
+                COALESCE(created_user.display_name, '') AS created_by_name,
+                c.updated_by_user_id,
+                COALESCE(updated_user.display_name, '') AS updated_by_name,
+                c.column_key,
+                c.card_type,
+                c.priority,
+                c.sort_order,
+                c.created_at,
+                c.updated_at
+            FROM kanban_cards AS c
+            LEFT JOIN users AS assignee_user ON assignee_user.id = c.assignee_user_id
+            LEFT JOIN users AS created_user ON created_user.id = c.created_by_user_id
+            LEFT JOIN users AS updated_user ON updated_user.id = c.updated_by_user_id
+            WHERE c.id = ?
             """,
             (card_id,),
         ).fetchone()
@@ -407,6 +477,11 @@ class KanbanRepository:
         total = len(checklist_items)
         progress_percent = int(round((completed / total) * 100)) if total else 0
         card["assignee"] = card.get("assignee", "") or ""
+        card["assignee_user_id"] = _normalize_optional_int(card.get("assignee_user_id"))
+        card["created_by_user_id"] = _normalize_optional_int(card.get("created_by_user_id"))
+        card["updated_by_user_id"] = _normalize_optional_int(card.get("updated_by_user_id"))
+        card["created_by_name"] = card.get("created_by_name", "") or ""
+        card["updated_by_name"] = card.get("updated_by_name", "") or ""
         card["checklist_items"] = checklist_items
         card["targets"] = targets
         card["planned_configs"] = planned_configs
@@ -706,6 +781,20 @@ class KanbanRepository:
             return "service_ready"
         return "service_partial"
 
+    def _resolve_user_display_name(
+        self,
+        connection: sqlite3.Connection,
+        user_id: int | None,
+        fallback: str = "",
+    ) -> str:
+        if user_id is None:
+            return fallback.strip()
+        row = connection.execute(
+            "SELECT display_name FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+        return str(row["display_name"]).strip() if row else fallback.strip()
+
     def _normalize_column_orders(self, connection: sqlite3.Connection, column_keys: set[str]) -> None:
         for column_key in column_keys:
             rows = connection.execute(
@@ -761,6 +850,12 @@ class KanbanRepository:
             connection.execute(
                 "ALTER TABLE kanban_cards ADD COLUMN assignee TEXT NOT NULL DEFAULT ''",
             )
+        if "assignee_user_id" not in card_columns:
+            connection.execute("ALTER TABLE kanban_cards ADD COLUMN assignee_user_id INTEGER")
+        if "created_by_user_id" not in card_columns:
+            connection.execute("ALTER TABLE kanban_cards ADD COLUMN created_by_user_id INTEGER")
+        if "updated_by_user_id" not in card_columns:
+            connection.execute("ALTER TABLE kanban_cards ADD COLUMN updated_by_user_id INTEGER")
 
         target_table_exists = bool(
             connection.execute(
@@ -797,8 +892,17 @@ def _normalize_enum_value(value: Any, default: str) -> str:
     return token or default
 
 
+def _normalize_optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    token = str(value).strip()
+    if not token:
+        return None
+    return int(token)
+
+
 _CARD_ORDER_SQL = """
-CASE column_key
+CASE c.column_key
     WHEN 'blocked' THEN 1
     WHEN 'planned' THEN 2
     WHEN 'ready' THEN 3
