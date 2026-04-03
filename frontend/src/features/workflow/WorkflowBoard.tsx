@@ -110,6 +110,21 @@ function getBlockRowSpan(heightPx?: number) {
   return Math.max(1, Math.ceil((getBlockHeightPx(heightPx) + BLOCK_GRID_GAP) / (BLOCK_GRID_ROW_HEIGHT + BLOCK_GRID_GAP)))
 }
 
+function getMinimumTableInnerWidth(block: WorkflowTableBlock) {
+  const columnsWidth = block.columns.reduce((total, column) => total + Math.max(Number(column.width) || 0, MIN_COLUMN_WIDTH), 0)
+  const manageColumnWidth = block.editing ? 56 : 0
+  return columnsWidth + manageColumnWidth
+}
+
+function getMinimumTableSpan(block: WorkflowTableBlock, columnWidth: number) {
+  const requiredCardWidth = getMinimumTableInnerWidth(block) + 24
+  return clamp(
+    Math.ceil((requiredCardWidth + BLOCK_GRID_GAP) / Math.max(columnWidth + BLOCK_GRID_GAP, 1)),
+    MIN_BLOCK_SPAN,
+    MAX_BLOCK_SPAN,
+  )
+}
+
 function getBlockLayoutColumn(block: WorkflowBlock) {
   const widthUnits = clamp(block.widthUnits ?? 6, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)
   const rawColumn = typeof block.layoutColumn === 'number' ? Math.round(block.layoutColumn) : 1
@@ -446,14 +461,8 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
 
           let nextWidthUnits = clamp(block.widthUnits ?? 6, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)
           if (block.type === 'table') {
-            const table = card.querySelector<HTMLElement>('.workflow-table')
-            if (table) {
-              const overflowWidth = table.scrollWidth - body.clientWidth
-              if (overflowWidth > 10) {
-                const columnDelta = Math.ceil(overflowWidth / Math.max(columnWidth + BLOCK_GRID_GAP, 1))
-                nextWidthUnits = clamp(nextWidthUnits + columnDelta, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)
-              }
-            }
+            const minSpanFromTable = getMinimumTableSpan(block, columnWidth)
+            nextWidthUnits = Math.max(nextWidthUnits, minSpanFromTable)
           }
 
           if (nextHeight === currentHeight && nextWidthUnits === clamp(block.widthUnits ?? 6, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)) {
@@ -1450,10 +1459,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
     const others = selectedPhase.blocks
       .filter((item) => item.id !== blockId)
       .map((item) => selectedPhaseLayoutMap.get(item.id) ?? buildBlockLayoutRect(item))
-    const tableElement = card.querySelector<HTMLElement>('.workflow-table')
-    const minSpanFromContent = tableElement
-      ? clamp(Math.ceil((tableElement.scrollWidth + 28) / Math.max(colWidth + BLOCK_GRID_GAP, 1)), MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)
-      : MIN_BLOCK_SPAN
+    const minSpanFromContent = block.type === 'table' ? getMinimumTableSpan(block, colWidth) : MIN_BLOCK_SPAN
     let nextSpan = startSpan
     let nextHeight = startHeight
     let lastGoodSpan = startSpan
