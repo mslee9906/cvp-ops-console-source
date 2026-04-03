@@ -126,6 +126,8 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
   const [, setCopyFeedback] = useState('')
   const [completingPhase, setCompletingPhase] = useState(false)
   const [completionFeedback, setCompletionFeedback] = useState('')
+  const [draggingBlockId, setDraggingBlockId] = useState('')
+  const [dropTargetBlockId, setDropTargetBlockId] = useState('')
 
   const selectedCard = useMemo(
     () => cards.find((card) => card.id === selectedCardId) ?? null,
@@ -290,6 +292,71 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       container.removeEventListener('wheel', handleWheel)
     }
   }, [workflow?.phases.length])
+
+  useEffect(() => {
+    if (!selectedPhase || !blockBoardRef.current) {
+      return
+    }
+
+    const syncBlockHeights = () => {
+      const board = blockBoardRef.current
+      if (!board) {
+        return
+      }
+
+      const pendingHeights = selectedPhase.blocks
+        .map((block) => {
+          const card = board.querySelector<HTMLElement>(`[data-block-card-id="${block.id}"]`)
+          if (!card) {
+            return null
+          }
+          const head = card.querySelector<HTMLElement>('.workflow-block-head')
+          const body = card.querySelector<HTMLElement>('.workflow-block-body')
+          if (!head || !body) {
+            return null
+          }
+
+          const measuredHeight = Math.ceil(head.offsetHeight + body.scrollHeight + 2)
+          const currentHeight = getBlockHeightPx(block.heightPx)
+          if (measuredHeight <= currentHeight + 6) {
+            return null
+          }
+
+          return { id: block.id, heightPx: Math.max(measuredHeight, MIN_BLOCK_HEIGHT) }
+        })
+        .filter((item): item is { id: string; heightPx: number } => item !== null)
+
+      if (!pendingHeights.length) {
+        return
+      }
+
+      mutateWorkflow(
+        (draft) => {
+          const phase = draft.phases.find((item) => item.id === selectedPhase.id)
+          if (!phase) {
+            return
+          }
+
+          pendingHeights.forEach(({ id, heightPx }) => {
+            const block = phase.blocks.find((item) => item.id === id)
+            if (block) {
+              block.heightPx = heightPx
+            }
+          })
+        },
+        { touch: false },
+      )
+    }
+
+    const frameId = window.requestAnimationFrame(syncBlockHeights)
+    const handleResize = () => window.requestAnimationFrame(syncBlockHeights)
+    window.addEventListener('resize', handleResize)
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [selectedPhase])
 
   useEffect(() => {
     if (!focusRequest?.cardId) {
@@ -1080,6 +1147,14 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
 
   function handleBlockDragStart(blockId: string) {
     draggedBlockIdRef.current = blockId
+    setDraggingBlockId(blockId)
+    setDropTargetBlockId('')
+  }
+
+  function handleBlockDragEnd() {
+    draggedBlockIdRef.current = null
+    setDraggingBlockId('')
+    setDropTargetBlockId('')
   }
 
   function handleBlockDrop(targetBlockId: string) {
@@ -1088,6 +1163,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
     }
     const draggedBlockId = draggedBlockIdRef.current
     if (!draggedBlockId || draggedBlockId === targetBlockId) {
+      setDropTargetBlockId('')
       return
     }
     mutateWorkflow((draft) => {
@@ -1103,6 +1179,9 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       const [moved] = phase.blocks.splice(from, 1)
       phase.blocks.splice(to, 0, moved)
     })
+    draggedBlockIdRef.current = null
+    setDraggingBlockId('')
+    setDropTargetBlockId('')
   }
 
   function handleColumnDragStart(blockId: string, columnKey: string) {
@@ -1253,15 +1332,27 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
         {block.editing ? (
           <div className="workflow-block-toolbar">
             <div className="workflow-toolbar-group">
-              <button className="workflow-soft-btn" type="button" onClick={() => handleAddRow(phase.id, block.id)}>
+              <button
+                className="workflow-soft-btn workflow-block-tool-button"
+                type="button"
+                onClick={() => handleAddRow(phase.id, block.id)}
+              >
                 행 추가
               </button>
-              <button className="workflow-soft-btn" type="button" onClick={() => handleAddColumn(phase.id, block.id)}>
+              <button
+                className="workflow-soft-btn workflow-block-tool-button"
+                type="button"
+                onClick={() => handleAddColumn(phase.id, block.id)}
+              >
                 컬럼 추가
               </button>
               {block.mode === 'target' ? (
-                <button className="workflow-soft-btn" type="button" onClick={() => handleReloadTargets(phase.id, block.id)}>
-                  장비 목록 다시 가져오기
+                <button
+                  className="workflow-soft-btn workflow-block-tool-button"
+                  type="button"
+                  onClick={() => handleReloadTargets(phase.id, block.id)}
+                >
+                  장비 동기화
                 </button>
               ) : null}
             </div>
@@ -1316,14 +1407,14 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                         <>
                           <div className="workflow-column-tools">
                             <button
-                              className="workflow-mini-icon-button"
+                              className="workflow-mini-icon-button workflow-column-delete-button"
                               type="button"
                               onClick={() => handleRemoveColumn(phase.id, block.id, column.key)}
                               disabled={!canDelete}
                               aria-label={`${column.label} 컬럼 삭제`}
                               title={`${column.label} 컬럼 삭제`}
                             >
-                              x
+                              <X size={12} />
                             </button>
                           </div>
                           <div
@@ -1398,13 +1489,13 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                   {block.editing ? (
                     <td>
                       <button
-                        className="workflow-mini-icon-button"
+                        className="workflow-mini-icon-button workflow-row-delete-button"
                         type="button"
                         onClick={() => handleRemoveRow(phase.id, block.id, rowIndex)}
                         aria-label={`행 ${rowIndex + 1} 삭제`}
                         title={`행 ${rowIndex + 1} 삭제`}
                       >
-                        x
+                        <X size={12} />
                       </button>
                     </td>
                   ) : null}
@@ -1422,7 +1513,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       return (
         <textarea
           className="workflow-note-textarea"
-          rows={9}
+          rows={5}
           value={block.content}
           onChange={(event) => handleNoteChange(phase.id, block.id, event.target.value)}
         />
@@ -1438,7 +1529,11 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
         {block.editing ? (
           <div className="workflow-block-toolbar">
             <div className="workflow-toolbar-group">
-              <button className="workflow-soft-btn" type="button" onClick={() => handleAddChecklistItem(phase.id, block.id)}>
+              <button
+                className="workflow-soft-btn workflow-block-tool-button"
+                type="button"
+                onClick={() => handleAddChecklistItem(phase.id, block.id)}
+              >
                 항목 추가
               </button>
             </div>
@@ -1878,7 +1973,10 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                   return (
                     <article
                       key={block.id}
-                      className="workflow-block-card"
+                      data-block-card-id={block.id}
+                      className={`workflow-block-card type-${block.type} ${
+                        draggingBlockId === block.id ? 'is-dragging' : ''
+                      } ${dropTargetBlockId === block.id ? 'is-drop-target' : ''}`}
                       style={{
                         gridColumn: `span ${clamp(block.widthUnits ?? 6, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)}`,
                         gridRow: `span ${getBlockRowSpan(blockHeightPx)}`,
@@ -1887,6 +1985,9 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                       onDragOver={(event) => {
                         if (canEdit) {
                           event.preventDefault()
+                          if (draggedBlockIdRef.current && draggedBlockIdRef.current !== block.id) {
+                            setDropTargetBlockId(block.id)
+                          }
                         }
                       }}
                       onDrop={() => handleBlockDrop(block.id)}
@@ -1901,6 +2002,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                           }
                           handleBlockDragStart(block.id)
                         }}
+                        onDragEnd={handleBlockDragEnd}
                       >
                         <div className="workflow-block-head-left">
                           <span className="workflow-drag-handle">
@@ -1922,8 +2024,8 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                               </>
                             ) : (
                               <div className="workflow-block-title-view">
-                                <strong>전체 진행률</strong>
-                                <span>템플릿</span>
+                                <strong>{block.title || '제목 없음'}</strong>
+                                {block.subtitle ? <span>{block.subtitle}</span> : null}
                               </div>
                             )}
                           </div>
@@ -1941,9 +2043,6 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                               <Copy size={14} />
                             </button>
                           ) : null}
-                          <span className={`workflow-block-type type-${block.type}`}>
-                            {block.type === 'table' ? '표 블록' : block.type === 'note' ? '메모 블록' : '체크리스트 블록'}
-                          </span>
                           <button
                             className="workflow-icon-button"
                             type="button"
@@ -1965,7 +2064,9 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                         </div>
                       </div>
 
-                      <div className="workflow-block-body">{renderBlockBody(selectedPhase, block)}</div>
+                      <div className={`workflow-block-body type-${block.type} ${block.editing ? 'is-editing' : ''}`}>
+                        {renderBlockBody(selectedPhase, block)}
+                      </div>
 
                       {canEdit ? (
                         <div className="workflow-resize-handle" onPointerDown={(event) => startBlockResize(block.id, event)} />
