@@ -347,7 +347,6 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
   const [, setSaveMessage] = useState('')
   const [, setCopyFeedback] = useState('')
   const [completingPhase, setCompletingPhase] = useState(false)
-  const [completionFeedback, setCompletionFeedback] = useState('')
   const [permissionOverlayMessage, setPermissionOverlayMessage] = useState('')
   const [blockDragState, setBlockDragState] = useState<BlockPointerDragState | null>(null)
   const [resizingBlockId, setResizingBlockId] = useState('')
@@ -757,7 +756,6 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
     try {
       setLoadingWorkflow(true)
       setError('')
-      setCompletionFeedback('')
       const [workflowResponse, templateResponse] = await Promise.all([
         api.getWorkflow(cardId),
         api.getWorkflowTemplates(card.card_type),
@@ -997,26 +995,47 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       const normalized = normalizeWorkflowDocument(response.workflow, selectedCard)
       saveFingerprintRef.current = JSON.stringify(normalized)
       setWorkflow(normalized)
-      if (response.notification_recipient && response.notification_title) {
-        setCompletionFeedback(
-          `알림 발송: ${response.notification_recipient} / ${response.notification_title} / ${response.notification_body}`,
-        )
-      } else if (response.notified_phase_title) {
-        setCompletionFeedback(`다음 단계 "${response.notified_phase_title}"는 준비되었지만 자동 알림 대상이 없습니다.`)
-      } else {
-        setCompletionFeedback('다음 담당자가 없어 자동 알림은 발송되지 않았습니다.')
-      }
-      if (response.notified_phase_id && normalized.phases.some((phase) => phase.id === response.notified_phase_id)) {
-        setSelectedPhaseId(response.notified_phase_id)
-      } else if (normalized.phases.some((phase) => phase.id === selectedPhase.id)) {
-        setSelectedPhaseId(selectedPhase.id)
-      }
-      setEditingPhase(false)
+        if (response.notified_phase_id && normalized.phases.some((phase) => phase.id === response.notified_phase_id)) {
+          setSelectedPhaseId(response.notified_phase_id)
+        } else if (normalized.phases.some((phase) => phase.id === selectedPhase.id)) {
+          setSelectedPhaseId(selectedPhase.id)
+        }
+        setEditingPhase(false)
     } catch (completeError) {
       if (completeError instanceof ApiError && completeError.status === 403) {
         setPermissionOverlayMessage('이 단계는 담당자 또는 admin만 완료할 수 있습니다.')
       } else {
         setError(completeError instanceof Error ? completeError.message : '단계를 완료 처리하지 못했습니다.')
+      }
+    } finally {
+      setCompletingPhase(false)
+    }
+  }
+
+  async function handleUncompleteSelectedPhase() {
+    if (!selectedCard || !selectedPhase || !selectedPhase.isCompleted) {
+      return
+    }
+    if (!hasSelectedPhaseCompletionPermission) {
+      setPermissionOverlayMessage('이 단계는 담당자 또는 admin만 완료 취소할 수 있습니다.')
+      return
+    }
+    try {
+      setCompletingPhase(true)
+      setError('')
+      await flushPendingSave()
+      const response = await api.uncompleteWorkflowPhase(selectedCard.id, selectedPhase.id)
+      const normalized = normalizeWorkflowDocument(response.workflow, selectedCard)
+      saveFingerprintRef.current = JSON.stringify(normalized)
+      setWorkflow(normalized)
+      if (normalized.phases.some((phase) => phase.id === selectedPhase.id)) {
+        setSelectedPhaseId(selectedPhase.id)
+      }
+    } catch (cancelError) {
+      if (cancelError instanceof ApiError && cancelError.status === 403) {
+        setPermissionOverlayMessage('이 단계는 담당자 또는 admin만 완료 취소할 수 있습니다.')
+      } else {
+        setError(cancelError instanceof Error ? cancelError.message : '단계 완료를 취소하지 못했습니다.')
       }
     } finally {
       setCompletingPhase(false)
@@ -2139,9 +2158,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
   return (
     <section className={`workflow-shell ${compactMode ? 'compact' : ''}`}>
       {error ? <div className="workflow-message error">{error}</div> : null}
-      {completionFeedback ? <div className="workflow-message success">{completionFeedback}</div> : null}
-
-      {loadingWorkflow || !workflow || !selectedCard ? (
+        {loadingWorkflow || !workflow || !selectedCard ? (
         <div className="workflow-state-panel">
           <strong>전체 진행률</strong>
           <p>선택한 작업 카드의 단계, 블록, 템플릿을 준비하고 있습니다.</p>
@@ -2457,24 +2474,39 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                         </label>
                       </div>
                     ) : null}
-                    <button
-                      className={`workflow-primary-button workflow-complete-button ${selectedPhase.isCompleted ? 'is-complete' : ''}`}
-                      type="button"
-                      onClick={() => void handleCompleteSelectedPhase()}
-                      disabled={completingPhase || selectedPhase.isCompleted || !canAttemptSelectedPhaseCompletion}
-                      title={
-                        selectedPhase.isCompleted
-                          ? '이 단계는 이미 완료된 상태입니다.'
-                          : canCompleteSelectedPhase
-                            ? '단계를 완료 처리합니다.'
-                            : selectedPhaseProgress < 100
-                            ? '진행률이 100%가 되면 완료할 수 있습니다.'
-                            : '담당자 또는 admin만 완료할 수 있습니다.'
-                      }
-                    >
-                      <Check size={15} />
-                      <span>{selectedPhase.isCompleted ? '완료됨' : completingPhase ? '완료 처리 중...' : '단계 완료'}</span>
-                    </button>
+                      <button
+                        className={`workflow-primary-button workflow-complete-button ${selectedPhase.isCompleted ? 'is-complete' : ''}`}
+                        type="button"
+                        onClick={() =>
+                          void (selectedPhase.isCompleted ? handleUncompleteSelectedPhase() : handleCompleteSelectedPhase())
+                        }
+                        disabled={
+                          completingPhase ||
+                          (selectedPhase.isCompleted ? !hasSelectedPhaseCompletionPermission : !canAttemptSelectedPhaseCompletion)
+                        }
+                        title={
+                          selectedPhase.isCompleted
+                            ? hasSelectedPhaseCompletionPermission
+                              ? '단계 완료를 취소합니다.'
+                              : '담당자 또는 admin만 완료 취소할 수 있습니다.'
+                            : canCompleteSelectedPhase
+                              ? '단계를 완료 처리합니다.'
+                              : selectedPhaseProgress < 100
+                              ? '진행률이 100%가 되면 완료할 수 있습니다.'
+                              : '담당자 또는 admin만 완료할 수 있습니다.'
+                        }
+                      >
+                        <Check size={15} />
+                        <span>
+                          {selectedPhase.isCompleted
+                            ? completingPhase
+                              ? '완료 취소 중...'
+                              : '완료 취소'
+                            : completingPhase
+                              ? '완료 처리 중...'
+                              : '단계 완료'}
+                        </span>
+                      </button>
                     <button className="workflow-ghost-button" type="button" onClick={() => setShowAddOverlay(true)} disabled={!canEdit}>
                       <Plus size={15} />
                       <span>블록 추가</span>

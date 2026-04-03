@@ -201,6 +201,7 @@
 .notification-anchor {
   position: relative;
   flex: none;
+  isolation: isolate;
 }
 
 .notification-anchor.open {
@@ -249,7 +250,8 @@
 .notification-popover {
   position: absolute;
   left: calc(100% + 0.8rem);
-  top: -0.2rem;
+  top: auto;
+  bottom: 0;
   width: min(340px, calc(100vw - 3rem));
   max-height: 420px;
   display: grid;

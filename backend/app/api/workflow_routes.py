@@ -74,6 +74,23 @@ def complete_card_phase(request: Request, card_id: int, phase_id: str) -> Workfl
     return document
 
 
+@router.post("/cards/{card_id}/phases/{phase_id}/uncomplete", response_model=WorkflowDocumentResponse)
+def uncomplete_card_phase(request: Request, card_id: int, phase_id: str) -> WorkflowDocumentResponse:
+    try:
+        document = request.app.state.workflow_service.uncomplete_phase(
+            card_id,
+            phase_id,
+            _require_user(request),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    if not document:
+        raise HTTPException(status_code=404, detail="Workflow card not found")
+    return document
+
+
 @router.get("/templates", response_model=list[WorkflowTemplateResponse])
 def list_workflow_templates(
     request: Request,

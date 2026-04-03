@@ -200,6 +200,10 @@ export const api = {
     request<WorkflowPhaseCompleteResponse>(`/api/workflows/cards/${cardId}/phases/${encodeURIComponent(phaseId)}/complete`, {
       method: 'POST',
     }),
+  uncompleteWorkflowPhase: (cardId: number, phaseId: string) =>
+    request<WorkflowDocumentResponse>(`/api/workflows/cards/${cardId}/phases/${encodeURIComponent(phaseId)}/uncomplete`, {
+      method: 'POST',
+    }),
   getWorkflowTemplates: (cardType?: string) =>
     request<WorkflowTemplate[]>(
       `/api/workflows/templates${cardType ? `?card_type=${encodeURIComponent(cardType)}` : ''}`,

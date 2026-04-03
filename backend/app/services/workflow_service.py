@@ -154,6 +154,44 @@ class WorkflowService:
             "notification_body": notification_body,
         }
 
+    def uncomplete_phase(
+        self,
+        card_id: int,
+        phase_id: str,
+        current_user: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        card = self.kanban_repository.get_card(card_id)
+        if not card:
+            return None
+
+        current_user_id = int(current_user["id"])
+        document = self.repository.get_document_by_card_id(card_id)
+        if not document:
+            document = self._create_document_from_card(card)
+        workflow = self._normalize_workflow_document(document.get("workflow") or {}, card)
+
+        phases = workflow.get("phases") or []
+        phase_index = next((index for index, phase in enumerate(phases) if str(phase.get("id") or "") == phase_id), -1)
+        if phase_index == -1:
+            raise LookupError("Workflow phase not found")
+
+        phase = phases[phase_index]
+        phase_assignee_user_id = self._coerce_optional_int(phase.get("assigneeUserId"))
+        if current_user.get("role") != "admin" and phase_assignee_user_id != current_user_id:
+            raise PermissionError("Only the phase assignee or admin can cancel this phase completion")
+
+        timestamp = self._now_iso()
+        phase["isCompleted"] = False
+        phase["completedAt"] = ""
+        phase["completedByUserId"] = None
+        phase["completedByName"] = ""
+        workflow["lastUpdated"] = timestamp
+        workflow["lastUpdatedBy"] = self._user_label(current_user)
+
+        saved = self.repository.save_document(card_id, workflow, timestamp=timestamp)
+        self.kanban_repository.touch_card(card_id, updated_by_user_id=current_user_id, timestamp=timestamp)
+        return saved
+
     def list_templates(self, card_type: str | None = None) -> list[dict[str, Any]]:
         return self.repository.list_templates(card_type)
 
