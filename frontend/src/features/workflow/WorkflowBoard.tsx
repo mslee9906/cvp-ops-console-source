@@ -98,8 +98,6 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
   const draggedColumnRef = useRef<DraggedColumn | null>(null)
   const pendingFocusPhaseIdRef = useRef<string>('')
   const stageLaneRef = useRef<HTMLDivElement | null>(null)
-  const stageLaneScrollTargetRef = useRef(0)
-  const stageLaneScrollFrameRef = useRef<number | null>(null)
 
   const [cards, setCards] = useState<KanbanCard[]>([])
   const [loadingCards, setLoadingCards] = useState(true)
@@ -243,28 +241,13 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       return
     }
 
-    stageLaneScrollTargetRef.current = container.scrollLeft
-
-    const animateScroll = () => {
-      const stageLane = stageLaneRef.current
-      if (!stageLane) {
-        stageLaneScrollFrameRef.current = null
-        return
-      }
-
-      const delta = stageLaneScrollTargetRef.current - stageLane.scrollLeft
-      if (Math.abs(delta) < 1) {
-        stageLane.scrollLeft = stageLaneScrollTargetRef.current
-        stageLaneScrollFrameRef.current = null
-        return
-      }
-
-      stageLane.scrollLeft += delta * 0.18
-      stageLaneScrollFrameRef.current = window.requestAnimationFrame(animateScroll)
-    }
-
     const handleWheel = (event: WheelEvent) => {
       if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+        return
+      }
+
+      const stageNodes = [...container.querySelectorAll<HTMLElement>('.workflow-stage-node')]
+      if (!stageNodes.length) {
         return
       }
 
@@ -273,39 +256,33 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
         return
       }
 
-      const firstNode = container.querySelector<HTMLElement>('.workflow-stage-node')
-      const laneStyle = window.getComputedStyle(container)
-      const laneGap = Number.parseFloat(laneStyle.columnGap || laneStyle.gap || '0') || 0
-      const scrollStep = Math.max((firstNode?.getBoundingClientRect().width ?? 248) + laneGap, 220)
       const direction = event.deltaY > 0 ? 1 : -1
+      const offsets = stageNodes.map((node) => Math.min(node.offsetLeft, maxScrollLeft))
+      const currentOffset = container.scrollLeft
+      let nearestIndex = 0
+
+      offsets.forEach((offset, index) => {
+        if (Math.abs(offset - currentOffset) < Math.abs(offsets[nearestIndex] - currentOffset)) {
+          nearestIndex = index
+        }
+      })
+
+      const nextIndex = clamp(nearestIndex + direction, 0, offsets.length - 1)
+      if (nextIndex === nearestIndex && Math.abs(offsets[nextIndex] - currentOffset) < 1) {
+        return
+      }
 
       event.preventDefault()
-      stageLaneScrollTargetRef.current = Math.max(
-        0,
-        Math.min(maxScrollLeft, stageLaneScrollTargetRef.current + direction * scrollStep),
-      )
-
-      if (stageLaneScrollFrameRef.current === null) {
-        stageLaneScrollFrameRef.current = window.requestAnimationFrame(animateScroll)
-      }
-    }
-
-    const handleScroll = () => {
-      if (stageLaneScrollFrameRef.current === null) {
-        stageLaneScrollTargetRef.current = container.scrollLeft
-      }
+      container.scrollTo({
+        left: offsets[nextIndex],
+        behavior: 'smooth',
+      })
     }
 
     container.addEventListener('wheel', handleWheel, { passive: false })
-    container.addEventListener('scroll', handleScroll)
 
     return () => {
       container.removeEventListener('wheel', handleWheel)
-      container.removeEventListener('scroll', handleScroll)
-      if (stageLaneScrollFrameRef.current !== null) {
-        window.cancelAnimationFrame(stageLaneScrollFrameRef.current)
-        stageLaneScrollFrameRef.current = null
-      }
     }
   }, [workflow?.phases.length])
 
@@ -391,7 +368,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
     return getPhaseAssigneeName(phase)
   }
 
-  function buildPhaseAssignee(userId: number | null, fallback = '誘몄젙') {
+  function buildPhaseAssignee(userId: number | null, fallback = '미정') {
     if (!userId) {
       return { assigneeUserId: null, assigneeName: fallback }
     }
@@ -420,7 +397,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       const loadedCards = await api.getKanbanCards()
       setCards(loadedCards)
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '?묒뾽 移대뱶瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??')
+      setError(loadError instanceof Error ? loadError.message : '작업 카드를 불러오지 못했습니다.')
     } finally {
       setLoadingCards(false)
     }
@@ -457,9 +434,9 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       setWorkflow(null)
       setTemplates([])
       if (loadError instanceof ApiError && loadError.status === 404) {
-        setError('?뚰겕?뚮줈??臾몄꽌瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??')
+        setError('워크플로우 문서를 불러오지 못했습니다.')
       } else {
-        setError(loadError instanceof Error ? loadError.message : '?뚰겕?뚮줈?곕? 遺덈윭?ㅼ? 紐삵뻽?듬땲??')
+        setError(loadError instanceof Error ? loadError.message : '워크플로우를 불러오지 못했습니다.')
       }
       setSaveState('error')
       setSaveMessage('자동 저장 중')
@@ -483,7 +460,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
     } catch (saveError) {
       setSaveState('error')
       setSaveMessage('자동 저장 중')
-      setError(saveError instanceof Error ? saveError.message : '?뚰겕?뚮줈?곕? ??ν븯吏 紐삵뻽?듬땲??')
+      setError(saveError instanceof Error ? saveError.message : '워크플로우를 저장하지 못했습니다.')
     }
   }
 
@@ -628,7 +605,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       completedAt: '',
       completedByUserId: null,
       completedByName: '',
-      blocks: [createNoteBlock('硫붾え 釉붾줉', '???④퀎??湲곕낯 硫붾え', '')],
+      blocks: [createNoteBlock('메모 블록', '새 단계의 기본 메모', '')],
     }
 
     mutateWorkflow((draft) => {
@@ -670,12 +647,12 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       setWorkflow(normalized)
       if (response.notification_recipient && response.notification_title) {
         setCompletionFeedback(
-          `?뚮┝ 諛쒖넚: ${response.notification_recipient} / ${response.notification_title} / ${response.notification_body}`,
+          `알림 발송: ${response.notification_recipient} / ${response.notification_title} / ${response.notification_body}`,
         )
       } else if (response.notified_phase_title) {
-        setCompletionFeedback(`?ㅼ쓬 ?④퀎 "${response.notified_phase_title}"??以鍮꾨릺?덉?留??먮룞 ?뚮┝ ??곸? ?놁뒿?덈떎.`)
+        setCompletionFeedback(`다음 단계 "${response.notified_phase_title}"는 준비되었지만 자동 알림 대상이 없습니다.`)
       } else {
-        setCompletionFeedback('?ㅼ쓬 ?대떦?먭? ?놁뼱 ?먮룞 ?뚮┝? 諛쒖넚?섏? ?딆븯?듬땲??')
+        setCompletionFeedback('다음 담당자가 없어 자동 알림은 발송되지 않았습니다.')
       }
       if (response.notified_phase_id && normalized.phases.some((phase) => phase.id === response.notified_phase_id)) {
         setSelectedPhaseId(response.notified_phase_id)
@@ -684,7 +661,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       }
       setEditingPhase(false)
     } catch (completeError) {
-      setError(completeError instanceof Error ? completeError.message : '?④퀎瑜??꾨즺 泥섎━?섏? 紐삵뻽?듬땲??')
+      setError(completeError instanceof Error ? completeError.message : '단계를 완료 처리하지 못했습니다.')
     } finally {
       setCompletingPhase(false)
     }
@@ -718,7 +695,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       setTemplateName('')
       setTemplateDescription('')
     } catch (templateError) {
-      setError(templateError instanceof Error ? templateError.message : '?쒗뵆由우쓣 ??ν븯吏 紐삵뻽?듬땲??')
+      setError(templateError instanceof Error ? templateError.message : '템플릿을 저장하지 못했습니다.')
     }
   }
 
@@ -739,7 +716,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
           : current,
       )
     } catch (templateError) {
-      setError(templateError instanceof Error ? templateError.message : '?쒗뵆由우쓣 ?섏젙?섏? 紐삵뻽?듬땲??')
+      setError(templateError instanceof Error ? templateError.message : '템플릿을 수정하지 못했습니다.')
     }
   }
 
@@ -747,11 +724,11 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
     if (!canEdit) {
       return
     }
-    const name = window.prompt('?쒗뵆由??대쫫???낅젰?섏꽭??', template.name)
+    const name = window.prompt('템플릿 이름을 입력하세요.', template.name)
     if (!name) {
       return
     }
-    const description = window.prompt('?쒗뵆由??ㅻ챸???낅젰?섏꽭??', template.description || '') ?? ''
+    const description = window.prompt('템플릿 설명을 입력하세요.', template.description || '') ?? ''
     try {
       const updated = await api.updateWorkflowTemplate(template.id, { name, description })
       setTemplates((current) => current.map((item) => (item.id === updated.id ? updated : item)))
@@ -759,7 +736,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
         current && current.templateId === updated.id ? { ...current, templateName: updated.name } : current,
       )
     } catch (templateError) {
-      setError(templateError instanceof Error ? templateError.message : '?쒗뵆由??대쫫???섏젙?섏? 紐삵뻽?듬땲??')
+      setError(templateError instanceof Error ? templateError.message : '템플릿 이름을 수정하지 못했습니다.')
     }
   }
 
@@ -774,7 +751,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
         current && current.templateId === template.id ? { ...current, templateId: null, templateName: '' } : current,
       )
     } catch (templateError) {
-      setError(templateError instanceof Error ? templateError.message : '?쒗뵆由우쓣 ??젣?섏? 紐삵뻽?듬땲??')
+      setError(templateError instanceof Error ? templateError.message : '템플릿을 삭제하지 못했습니다.')
     }
   }
 
@@ -835,8 +812,8 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
 
   function handleCopyTable(block: WorkflowTableBlock) {
     void copyPlainText(buildTableCopyText(block)).then(
-      () => setCopyFeedback('?쒕? 蹂듭궗?덉뒿?덈떎.'),
-      (copyError: unknown) => setError(copyError instanceof Error ? copyError.message : '?쒕? 蹂듭궗?섏? 紐삵뻽?듬땲??'),
+      () => setCopyFeedback('표가 복사되었습니다.'),
+      (copyError: unknown) => setError(copyError instanceof Error ? copyError.message : '표를 복사하지 못했습니다.'),
     )
   }
 
@@ -910,7 +887,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       const key = uid('col')
       block.columns.push({
         key,
-        label: `而щ읆 ${block.columns.length + 1}`,
+        label: `컬럼 ${block.columns.length + 1}`,
         type: 'text',
         width: getDefaultColumnWidth({ key, type: 'text' }),
       })
@@ -1028,7 +1005,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       if (!block || block.type !== 'checklist') {
         return
       }
-      block.items.push({ text: '??泥댄겕 ??ぉ', done: false, assignee: draft.owner })
+      block.items.push({ text: '새 체크 항목', done: false, assignee: draft.owner })
     })
   }
 
@@ -1272,14 +1249,15 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
           <div className="workflow-block-toolbar">
             <div className="workflow-toolbar-group">
               <button className="workflow-soft-btn" type="button" onClick={() => handleAddRow(phase.id, block.id)}>
-                ??異붽?
+                행 추가
               </button>
               <button className="workflow-soft-btn" type="button" onClick={() => handleAddColumn(phase.id, block.id)}>
-                而щ읆 異붽?
+                컬럼 추가
               </button>
               {block.mode === 'target' ? (
                 <button className="workflow-soft-btn" type="button" onClick={() => handleReloadTargets(phase.id, block.id)}>
-                  ?λ퉬 紐⑸줉 ?ㅼ떆 媛?몄삤湲?                </button>
+                  장비 목록 다시 가져오기
+                </button>
               ) : null}
             </div>
           </div>
@@ -1337,10 +1315,11 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                               type="button"
                               onClick={() => handleRemoveColumn(phase.id, block.id, column.key)}
                               disabled={!canDelete}
-                              aria-label={`${column.label} 而щ읆 ??젣`}
-                              title={`${column.label} 而щ읆 ??젣`}
+                              aria-label={`${column.label} 컬럼 삭제`}
+                              title={`${column.label} 컬럼 삭제`}
                             >
-                              ??                            </button>
+                              x
+                            </button>
                           </div>
                           <div
                             className="workflow-column-resize"
@@ -1417,10 +1396,11 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                         className="workflow-mini-icon-button"
                         type="button"
                         onClick={() => handleRemoveRow(phase.id, block.id, rowIndex)}
-                        aria-label={`??${rowIndex + 1} ??젣`}
-                        title={`??${rowIndex + 1} ??젣`}
+                        aria-label={`행 ${rowIndex + 1} 삭제`}
+                        title={`행 ${rowIndex + 1} 삭제`}
                       >
-                        ??                      </button>
+                        x
+                      </button>
                     </td>
                   ) : null}
                 </tr>
@@ -1444,7 +1424,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       )
     }
 
-    return <div className="workflow-note-sheet">{block.content || '硫붾え媛 ?놁뒿?덈떎.'}</div>
+    return <div className="workflow-note-sheet">{block.content || '메모가 없습니다.'}</div>
   }
 
   function renderChecklistBlock(phase: WorkflowPhase, block: WorkflowChecklistBlock) {
@@ -1454,7 +1434,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
           <div className="workflow-block-toolbar">
             <div className="workflow-toolbar-group">
               <button className="workflow-soft-btn" type="button" onClick={() => handleAddChecklistItem(phase.id, block.id)}>
-                ??ぉ 異붽?
+                항목 추가
               </button>
             </div>
           </div>
@@ -1484,10 +1464,11 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                     className="workflow-mini-icon-button"
                     type="button"
                     onClick={() => handleRemoveChecklistItem(phase.id, block.id, index)}
-                    aria-label={`泥댄겕 ??ぉ ${index + 1} ??젣`}
-                    title={`泥댄겕 ??ぉ ${index + 1} ??젣`}
+                    aria-label={`체크 항목 ${index + 1} 삭제`}
+                    title={`체크 항목 ${index + 1} 삭제`}
                   >
-                    ??                  </button>
+                    x
+                  </button>
                 </>
               ) : (
                 <>
@@ -1495,7 +1476,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                     <strong>{item.text}</strong>
                     <span>{item.done ? '완료됨' : '미완료'}</span>
                   </div>
-                  <div className="workflow-check-assignee">{item.assignee || '誘몄젙'}</div>
+                  <div className="workflow-check-assignee">{item.assignee || '미정'}</div>
                 </>
               )}
             </div>
@@ -1510,7 +1491,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       <section className="workflow-shell">
         <div className="workflow-state-panel">
           <strong>전체 진행률</strong>
-          <p>?뚰겕?뚮줈?곕? ?곌껐???묒뾽 移대뱶瑜?以鍮꾪븯怨??덉뒿?덈떎.</p>
+          <p>워크플로우를 연결할 작업 카드를 준비하고 있습니다.</p>
         </div>
       </section>
     )
@@ -1521,7 +1502,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       <section className="workflow-shell">
         <div className="workflow-state-panel">
           <strong>전체 진행률</strong>
-          <p>癒쇱? ?묒뾽 蹂대뱶?먯꽌 移대뱶瑜??앹꽦?????뚰겕?뚮줈?곕? ?곌껐?????덉뒿?덈떎.</p>
+          <p>먼저 작업 보드에서 카드를 생성해야 워크플로우를 연결할 수 있습니다.</p>
         </div>
       </section>
     )
@@ -1535,7 +1516,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       {loadingWorkflow || !workflow || !selectedCard ? (
         <div className="workflow-state-panel">
           <strong>전체 진행률</strong>
-          <p>?좏깮???묒뾽 移대뱶???④퀎, 釉붾줉, ?쒗뵆由우쓣 以鍮꾪븯怨??덉뒿?덈떎.</p>
+          <p>선택한 작업 카드의 단계, 블록, 템플릿을 준비하고 있습니다.</p>
         </div>
       ) : (
         <>
@@ -1555,7 +1536,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                       onClick={() => setShowCardPicker((current) => !current)}
                     >
                       <div>
-                        <strong>{selectedCard?.title || '카드를 선택하세요'}</strong>
+                        <strong>{selectedCard?.title || '카드를 선택하세요.'}</strong>
                         <span>
                           {selectedCard
                             ? `${selectedCard.card_code} · ${selectedCard.assignee || '담당자 미지정'} · ${(selectedCard.targets ?? []).length} targets`
@@ -1584,19 +1565,19 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                               onClick={() => void handleSelectCard(card.id)}
                             >
                               <div>
-                                <strong>전체 진행률</strong>
-                                <span>템플릿</span>
+                                <strong>{card.title}</strong>
+                                <span>{card.assignee || '담당자 미지정'}</span>
                               </div>
                               <div className="workflow-card-option-meta">
-                                <span>템플릿</span>
-                                <span>템플릿</span>
+                                <span>{card.card_code}</span>
+                                <span>{(card.targets ?? []).length} targets</span>
                               </div>
                             </button>
                           ))}
                           {!filteredCards.length ? (
                             <div className="workflow-card-option empty">
-                              <strong>전체 진행률</strong>
-                              <span>템플릿</span>
+                              <strong>검색 결과가 없습니다.</strong>
+                              <span>다른 검색어로 다시 시도해 주세요.</span>
                             </div>
                           ) : null}
                         </div>
@@ -1608,28 +1589,28 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
 
               <div className="workflow-meta-sheet">
                 <div className="workflow-meta-row">
-                  <span>템플릿</span>
-                  <strong>전체 진행률</strong>
+                  <span>작업 코드</span>
+                  <strong>{workflow.ticketId}</strong>
                 </div>
                 <div className="workflow-meta-row">
-                  <span>템플릿</span>
-                  <strong>전체 진행률</strong>
+                  <span>프로젝트명</span>
+                  <strong>{workflow.projectName}</strong>
                 </div>
                 <div className="workflow-meta-row">
-                  <span>템플릿</span>
-                  <strong>전체 진행률</strong>
+                  <span>생성자</span>
+                  <strong>{workflow.createdBy}</strong>
                 </div>
                 <div className="workflow-meta-row">
-                  <span>템플릿</span>
-                  <strong>전체 진행률</strong>
+                  <span>마지막 갱신</span>
+                  <strong>{workflow.lastUpdated}</strong>
                 </div>
                 <div className="workflow-meta-row">
-                  <span>템플릿</span>
-                  <strong>전체 진행률</strong>
+                  <span>실 담당자</span>
+                  <strong>{workflow.owner}</strong>
                 </div>
                 <div className="workflow-meta-row">
-                  <span>템플릿</span>
-                  <strong>전체 진행률</strong>
+                  <span>작업 대상</span>
+                  <strong>{targetSummary}</strong>
                 </div>
               </div>
             </article>
@@ -1655,12 +1636,12 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                       />
                     </svg>
                     <div className="workflow-progress-ring-value">
-                      <strong>전체 진행률</strong>
+                      <strong>{workflowProgress.percent}%</strong>
                     </div>
                   </div>
                   <div className="workflow-progress-caption">전체 진행률</div>
                   <div className="workflow-progress-meta">
-                    {workflowProgress.done}媛??꾨즺 / {workflowProgress.total}媛??꾩껜 ??ぉ
+                    {workflowProgress.done}개 완료 / {workflowProgress.total}개 전체 단계
                   </div>
                 </div>
 
@@ -1679,11 +1660,11 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                                 {index + 1}. {phase.title}
                               </strong>
                               <span className="workflow-phase-progress-subcopy">
-                                ?대떦: {phaseAssigneeLabel}
-                                {phaseIncludedInProgress ? ' 쨌 吏꾪뻾瑜?諛섏쁺' : ' 쨌 吏꾪뻾瑜??쒖쇅'}
+                                담당: {phaseAssigneeLabel}
+                                {phaseIncludedInProgress ? ' · 진행률 반영' : ' · 진행률 제외'}
                               </span>
                             </div>
-                            <span>템플릿</span>
+                            <span>{progress}%</span>
                           </div>
                           <div className="workflow-phase-progress-bar">
                             <span style={{ width: `${progress}%`, background: getProgressColor(progress) }} />
@@ -1708,8 +1689,8 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                     />
                   </div>
                   <div className="workflow-progress-summary-meta">
-                    {workflowProgress.done}媛??꾨즺 / {workflowProgress.total}媛??꾩껜 ??ぉ
-                    {hasExcludedPhases ? ' 쨌 吏꾪뻾瑜?諛섏쁺 ?④퀎留?吏묎퀎' : ''}
+                    {workflowProgress.done}개 완료 / {workflowProgress.total}개 전체 단계
+                    {hasExcludedPhases ? ' · 진행률 반영 단계만 집계' : ''}
                   </div>
                 </div>
               </div>
@@ -1824,14 +1805,14 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                           onChange={(event) => handleUpdatePhaseAssignee(event.target.value)}
                           disabled={!canEdit}
                         >
-                          <option value="">誘몄젙</option>
+                          <option value="">미정</option>
                           {selectedPhase.assigneeUserId && !userDirectory.has(selectedPhase.assigneeUserId) ? (
                             <option value={String(selectedPhase.assigneeUserId)}>{getPhaseAssigneeName(selectedPhase)}</option>
                           ) : null}
                           {phaseAssigneeOptions.map((user) => (
                             <option key={user.id} value={String(user.id)}>
                               {user.display_name || user.username}
-                              {user.is_active ? '' : ' (鍮꾪솢??'}
+                              {user.is_active ? '' : ' (비활성)'}
                             </option>
                           ))}
                         </select>
@@ -1843,7 +1824,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                           onChange={(event) => handleUpdatePhaseIncludeInProgress(event.target.checked)}
                           disabled={!canEdit}
                         />
-                        <span>템플릿</span>
+                        <span>진행률 반영</span>
                       </label>
                     </div>
                   ) : null}
@@ -1855,12 +1836,12 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                       disabled={completingPhase || !canCompleteSelectedPhase}
                       title={
                         selectedPhase.isCompleted
-                          ? '?대? ?꾨즺???④퀎?낅땲??'
+                          ? '이 단계는 이미 완료된 상태입니다.'
                           : canCompleteSelectedPhase
-                            ? '?④퀎瑜??꾨즺 泥섎━?⑸땲??'
+                            ? '단계를 완료 처리합니다.'
                             : selectedPhaseProgress < 100
-                            ? '吏꾪뻾瑜?100%媛 ?섎㈃ ?꾨즺?????덉뒿?덈떎.'
-                            : '?대떦???먮뒗 admin留??꾨즺?????덉뒿?덈떎.'
+                            ? '진행률이 100%가 되면 완료할 수 있습니다.'
+                            : '담당자 또는 admin만 완료할 수 있습니다.'
                       }
                     >
                       <Check size={15} />
@@ -1868,9 +1849,9 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                     </button>
                     <button className="workflow-ghost-button" type="button" onClick={() => setShowAddOverlay(true)} disabled={!canEdit}>
                       <Plus size={15} />
-                      <span>템플릿</span>
+                      <span>블록 추가</span>
                     </button>
-                    <button className="workflow-icon-button" type="button" onClick={togglePhaseEditing} disabled={!canEdit} aria-label="?④퀎 ?섏젙">
+                    <button className="workflow-icon-button" type="button" onClick={togglePhaseEditing} disabled={!canEdit} aria-label="단계 수정">
                       {editingPhase ? <Check size={15} /> : <Pencil size={15} />}
                     </button>
                     <button
@@ -1878,7 +1859,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                       type="button"
                       onClick={handleDeletePhase}
                       disabled={!canEdit || workflow.phases.length <= 1}
-                      aria-label="?④퀎 ??젣"
+                      aria-label="단계 삭제"
                     >
                       <Trash2 size={15} />
                     </button>
@@ -1949,21 +1930,21 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                               className="workflow-copy-button"
                               type="button"
                               onClick={() => handleCopyTable(block)}
-                              aria-label={`${block.title} ??蹂듭궗`}
-                              title={`${block.title} ??蹂듭궗`}
+                              aria-label={`${block.title} 표 복사`}
+                              title={`${block.title} 표 복사`}
                             >
                               <Copy size={14} />
                             </button>
                           ) : null}
                           <span className={`workflow-block-type type-${block.type}`}>
-                            {block.type === 'table' ? '??釉붾줉' : block.type === 'note' ? '硫붾え 釉붾줉' : '泥댄겕由ъ뒪??釉붾줉'}
+                            {block.type === 'table' ? '표 블록' : block.type === 'note' ? '메모 블록' : '체크리스트 블록'}
                           </span>
                           <button
                             className="workflow-icon-button"
                             type="button"
                             onClick={() => handleToggleBlockEditing(selectedPhase.id, block.id, !block.editing)}
                             disabled={!canEdit}
-                            aria-label={block.editing ? '釉붾줉 ?몄쭛 ?꾨즺' : '釉붾줉 ?몄쭛'}
+                            aria-label={block.editing ? '블록 편집 완료' : '블록 편집'}
                           >
                             {block.editing ? <Check size={15} /> : <Pencil size={15} />}
                           </button>
@@ -1972,7 +1953,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                             type="button"
                             onClick={() => handleDeleteBlock(selectedPhase.id, block.id)}
                             disabled={!canEdit || selectedPhase.blocks.length <= 1}
-                            aria-label="釉붾줉 ??젣"
+                            aria-label="블록 삭제"
                           >
                             <Trash2 size={15} />
                           </button>
@@ -2000,9 +1981,9 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
             <div className="workflow-overlay-head">
               <div>
                 <p className="workflow-kicker">Add Block</p>
-                <h3>?뚰겕?ㅽ럹?댁뒪??異붽???釉붾줉???좏깮?⑸땲??</h3>
+                <h3>워크스페이스에 추가할 블록을 선택합니다.</h3>
               </div>
-              <button className="workflow-icon-button" type="button" onClick={() => setShowAddOverlay(false)} aria-label="異붽? ?ㅻ쾭?덉씠 ?リ린">
+              <button className="workflow-icon-button" type="button" onClick={() => setShowAddOverlay(false)} aria-label="추가 오버레이 닫기">
                 <X size={15} />
               </button>
             </div>
@@ -2039,9 +2020,9 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
             <div className="workflow-overlay-head">
               <div>
                 <p className="workflow-kicker">Template</p>
-                <h3>?꾩옱 ?뚰겕?뚮줈?곕? ?쒗뵆由우쑝濡???ν븯怨??곸슜?⑸땲??</h3>
+                <h3>현재 워크플로우를 템플릿으로 저장하고 적용합니다.</h3>
               </div>
-              <button className="workflow-icon-button" type="button" onClick={() => setShowTemplateOverlay(false)} aria-label="?쒗뵆由??ㅻ쾭?덉씠 ?リ린">
+              <button className="workflow-icon-button" type="button" onClick={() => setShowTemplateOverlay(false)} aria-label="템플릿 오버레이 닫기">
                 <X size={15} />
               </button>
             </div>
@@ -2049,24 +2030,25 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
             <div className="workflow-template-create">
               <div className="workflow-template-create-fields">
                 <label className="workflow-field">
-                  <span>템플릿</span>
+                  <span>템플릿 이름</span>
                   <input
                     value={templateName}
                     onChange={(event) => setTemplateName(event.target.value)}
-                    placeholder="카드 제목, 코드, 담당자 검색"
+                    placeholder="예: 기존 장비 BGP 변경 표준"
                   />
                 </label>
                 <label className="workflow-field">
-                  <span>템플릿</span>
+                  <span>설명</span>
                   <input
                     value={templateDescription}
                     onChange={(event) => setTemplateDescription(event.target.value)}
-                    placeholder="카드 제목, 코드, 담당자 검색"
+                    placeholder="템플릿 설명"
                   />
                 </label>
               </div>
               <button className="workflow-primary-button" type="button" onClick={() => void handleCreateTemplate()} disabled={!canEdit}>
-                ?쒗뵆由????              </button>
+                템플릿 저장
+              </button>
             </div>
 
             <div className="workflow-template-list">
@@ -2081,20 +2063,21 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                         {template.is_system ? ' · 시스템 템플릿' : ' · 사용자 템플릿'}
                       </span>
                     </div>
-                    {workflow?.templateId === template.id ? <span className="workflow-inline-chip">?꾩옱 ?곸슜</span> : null}
+                    {workflow?.templateId === template.id ? <span className="workflow-inline-chip">현재 적용</span> : null}
                   </div>
                   <div className="workflow-template-card-actions">
                     <button className="workflow-soft-btn" type="button" onClick={() => handleApplyTemplate(template)} disabled={!canEdit}>
-                      ?곸슜
+                      적용
                     </button>
                     <button className="workflow-soft-btn" type="button" onClick={() => void handleOverwriteTemplate(template.id)} disabled={!canEdit}>
-                      ?꾩옱 ?먮쫫 ???                    </button>
+                      현재 흐름 저장
+                    </button>
                     <button className="workflow-soft-btn" type="button" onClick={() => void handleRenameTemplate(template)} disabled={!canEdit}>
-                      ?대쫫 ?섏젙
+                      이름 수정
                     </button>
                     {!template.is_system ? (
                       <button className="workflow-soft-btn danger" type="button" onClick={() => void handleDeleteTemplate(template)} disabled={!canEdit}>
-                        ??젣
+                        삭제
                       </button>
                     ) : null}
                   </div>
@@ -2112,20 +2095,20 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
             <div className="workflow-overlay-head">
               <div>
                 <p className="workflow-kicker">Add Phase</p>
-                <h3>???④퀎 ?뺣낫瑜??낅젰?⑸땲??</h3>
+                <h3>새 단계 정보를 입력합니다.</h3>
               </div>
-              <button className="workflow-icon-button" type="button" onClick={() => setShowPhaseOverlay(false)} aria-label="?④퀎 異붽? ?ㅻ쾭?덉씠 ?リ린">
+              <button className="workflow-icon-button" type="button" onClick={() => setShowPhaseOverlay(false)} aria-label="단계 추가 오버레이 닫기">
                 <X size={15} />
               </button>
             </div>
 
             <div className="workflow-phase-create-fields">
               <label className="workflow-field">
-                <span>템플릿</span>
+                <span>대제목</span>
                 <input
                   value={newPhaseTitle}
                   onChange={(event) => setNewPhaseTitle(event.target.value)}
-                  placeholder="카드 제목, 코드, 담당자 검색"
+                  placeholder="예: 특이사항"
                 />
               </label>
               <label className="workflow-field">
@@ -2133,7 +2116,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                 <input
                   value={newPhaseSubtitle}
                   onChange={(event) => setNewPhaseSubtitle(event.target.value)}
-                  placeholder="카드 제목, 코드, 담당자 검색"
+                  placeholder="예: 고객 특이 절차나 별도 승인 흐름을 적습니다."
                 />
               </label>
               <label className="workflow-field">
@@ -2143,11 +2126,11 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                   value={newPhaseAssigneeUserId}
                   onChange={(event) => setNewPhaseAssigneeUserId(event.target.value)}
                 >
-                  <option value="">誘몄젙</option>
+                  <option value="">미정</option>
                   {phaseAssigneeOptions.map((user) => (
                     <option key={user.id} value={String(user.id)}>
                       {user.display_name || user.username}
-                      {user.is_active ? '' : ' (鍮꾪솢??'}
+                      {user.is_active ? '' : ' (비활성)'}
                     </option>
                   ))}
                 </select>
@@ -2158,16 +2141,16 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                   checked={newPhaseIncludeInProgress}
                   onChange={(event) => setNewPhaseIncludeInProgress(event.target.checked)}
                 />
-                <span>템플릿</span>
+                <span>진행률 반영</span>
               </label>
             </div>
 
             <div className="workflow-overlay-actions">
               <button className="workflow-ghost-button" type="button" onClick={() => setShowPhaseOverlay(false)}>
-                痍⑥냼
+                취소
               </button>
               <button className="workflow-primary-button" type="button" onClick={handleAddPhase} disabled={!newPhaseTitle.trim()}>
-                ?④퀎 ?앹꽦
+                단계 생성
               </button>
             </div>
           </div>
@@ -2194,7 +2177,7 @@ function clamp(value: number, min: number, max: number) {
 function summarizeTargets(targets: string[]) {
   const cleaned = targets.map((target) => target.trim()).filter(Boolean)
   if (!cleaned.length) {
-    return '誘몄젙'
+    return '미정'
   }
   if (cleaned.length <= 2) {
     return cleaned.join(', ')

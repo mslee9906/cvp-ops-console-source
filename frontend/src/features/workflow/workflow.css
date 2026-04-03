@@ -870,8 +870,7 @@
   margin: 0 0 4px;
 }
 
-.workflow-shell.compact .workflow-stage-description,
-.workflow-shell.compact .workflow-stage-text {
+.workflow-shell.compact .workflow-stage-description {
   max-height: 0;
   opacity: 0;
   margin: 0;
@@ -881,6 +880,11 @@
 
 .workflow-shell.compact .workflow-stage-meta {
   gap: 4px;
+}
+
+.workflow-shell.compact .workflow-stage-text,
+.workflow-shell.compact .workflow-stage-progress-value {
+  font-size: 10px;
 }
 
 .workflow-shell.compact .workflow-mini-progress {
