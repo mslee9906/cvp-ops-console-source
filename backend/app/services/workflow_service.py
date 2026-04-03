@@ -165,7 +165,7 @@ class WorkflowService:
             return None
 
         current_user_id = int(current_user["id"])
-        document = self.repository.get_document_by_card_id(card_id)
+        document = self.repository.get_document(card_id)
         if not document:
             document = self._create_document_from_card(card)
         workflow = self._normalize_workflow_document(document.get("workflow") or {}, card)
