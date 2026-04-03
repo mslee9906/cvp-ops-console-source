@@ -298,9 +298,6 @@ export function normalizeWorkflowDocument(workflow: WorkflowDocument, card: Kanb
     completedByName: String(phase.completedByName ?? ''),
     blocks: (phase.blocks ?? []).map((block) => {
       const normalizedBlock = ensureStatusColumn(block)
-      if (normalizedBlock.type === 'table' && normalizedBlock.mode === 'target') {
-        return replaceTargetRows(normalizedBlock, targets.length > 0 ? targets : ['미정'], owner)
-      }
       return normalizedBlock
     }),
   })).map((phase) => reconcilePhaseCompletion(phase))

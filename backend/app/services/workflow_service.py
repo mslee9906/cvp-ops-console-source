@@ -450,9 +450,7 @@ class WorkflowService:
             columns.insert(min(2, len(columns)), {"key": self._uid("status"), "label": "상태", "type": "status", "width": 96})
 
         rows = [self._hydrate_table_row(row, columns, owner) for row in block.get("rows") or []]
-        if mode == "target":
-            rows = self._merge_target_rows(rows, columns, targets, owner)
-        elif not rows:
+        if not rows:
             rows = [self._empty_row(columns)]
 
         return {
