@@ -354,6 +354,8 @@ export interface WorkflowBaseBlock {
   size: WorkflowBlockSize
   widthUnits: number
   heightPx: number
+  layoutColumn?: number
+  layoutRow?: number
 }
 
 export interface WorkflowTableBlock extends WorkflowBaseBlock {

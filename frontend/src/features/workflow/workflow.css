@@ -961,12 +961,15 @@
 }
 
 .workflow-block-board {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 10px;
   grid-auto-rows: 4px;
-  grid-auto-flow: dense;
+  grid-auto-flow: row dense;
   align-items: start;
+  isolation: isolate;
+  overflow: visible;
 }
 
 .workflow-block-card {
@@ -1002,19 +1005,34 @@
     0 10px 22px rgba(15, 23, 42, 0.04);
 }
 
-.workflow-block-card.is-dragging {
-  z-index: 2;
-  opacity: 0.94;
-  transform: translateY(-2px) scale(1.01);
-  box-shadow: 0 20px 38px rgba(15, 23, 42, 0.16);
+.workflow-block-card.is-floating,
+.workflow-block-card.is-resizing {
+  transition: none;
+  box-shadow: 0 22px 42px rgba(15, 23, 42, 0.2);
 }
 
-.workflow-block-card.is-drop-target {
-  border-color: rgba(53, 99, 233, 0.34);
-  transform: translateY(-2px);
+.workflow-block-card.is-floating {
+  opacity: 0.98;
+}
+
+.workflow-block-card.layout-overlap {
   box-shadow:
-    0 0 0 1px rgba(53, 99, 233, 0.2),
-    0 16px 30px rgba(53, 99, 233, 0.14);
+    0 0 0 2px rgba(239, 68, 68, 0.4),
+    0 18px 34px rgba(239, 68, 68, 0.16);
+}
+
+.workflow-block-placeholder {
+  pointer-events: none;
+  border: 1px dashed rgba(53, 99, 233, 0.38);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(224, 232, 255, 0.48) 0%, rgba(240, 244, 255, 0.26) 100%),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(53, 99, 233, 0.06) 0 8px,
+      rgba(53, 99, 233, 0.12) 8px 16px
+    );
+  box-shadow: inset 0 0 0 1px rgba(53, 99, 233, 0.12);
 }
 
 .workflow-block-head {
@@ -1049,6 +1067,11 @@
   color: var(--ink-500);
   cursor: grab;
   transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease;
+}
+
+.workflow-block-card.is-floating .workflow-drag-handle,
+.workflow-block-card.is-resizing .workflow-drag-handle {
+  cursor: grabbing;
 }
 
 .workflow-block-title-wrap {
@@ -1305,7 +1328,18 @@
 .workflow-note-textarea {
   min-height: 96px;
   padding: 10px 12px;
-  background: linear-gradient(180deg, rgba(255, 253, 250, 0.92) 0%, rgba(255, 248, 238, 0.92) 100%);
+  background: linear-gradient(180deg, rgba(244, 246, 248, 0.98) 0%, rgba(236, 240, 244, 0.98) 100%);
+  color: var(--ink-950);
+  box-shadow: inset 0 0 0 1px rgba(203, 213, 225, 0.72);
+}
+
+.workflow-note-textarea:focus {
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.99) 0%, rgba(241, 245, 249, 0.99) 100%);
+  color: var(--ink-950);
+  border-color: rgba(147, 197, 253, 0.24);
+  box-shadow:
+    inset 0 0 0 1px rgba(147, 197, 253, 0.22),
+    0 0 0 3px rgba(147, 197, 253, 0.1);
 }
 
 .workflow-table-value {
@@ -1363,9 +1397,9 @@
 .workflow-note-sheet {
   min-height: 92px;
   padding: 12px 13px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid rgba(203, 213, 225, 0.88);
   border-radius: 16px;
-  background: linear-gradient(180deg, #fffdfa 0%, #fff8ee 100%);
+  background: linear-gradient(180deg, #f1f4f7 0%, #e8edf2 100%);
   color: var(--ink-950);
   line-height: 1.72;
   white-space: pre-wrap;

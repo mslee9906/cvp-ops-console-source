@@ -1,5 +1,5 @@
 ﻿import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import {
   Check,
   Copy,
@@ -74,7 +74,32 @@ type DraggedColumn = {
   columnKey: string
 }
 
-const BLOCK_GRID_GAP = 8
+type BlockLayoutRect = {
+  id: string
+  column: number
+  row: number
+  widthUnits: number
+  rowSpan: number
+}
+
+type BlockPointerDragState = {
+  blockId: string
+  originColumn: number
+  originRow: number
+  targetColumn: number
+  targetRow: number
+  widthUnits: number
+  heightPx: number
+  startLeft: number
+  startTop: number
+  translateX: number
+  translateY: number
+  offsetX: number
+  offsetY: number
+}
+
+const BLOCK_GRID_COLUMNS = 12
+const BLOCK_GRID_GAP = 10
 const BLOCK_GRID_ROW_HEIGHT = 4
 
 function getBlockHeightPx(heightPx?: number) {
@@ -83,6 +108,87 @@ function getBlockHeightPx(heightPx?: number) {
 
 function getBlockRowSpan(heightPx?: number) {
   return Math.max(1, Math.ceil((getBlockHeightPx(heightPx) + BLOCK_GRID_GAP) / (BLOCK_GRID_ROW_HEIGHT + BLOCK_GRID_GAP)))
+}
+
+function getBlockLayoutColumn(block: WorkflowBlock) {
+  const widthUnits = clamp(block.widthUnits ?? 6, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)
+  const rawColumn = typeof block.layoutColumn === 'number' ? Math.round(block.layoutColumn) : 1
+  return clamp(rawColumn, 1, BLOCK_GRID_COLUMNS - widthUnits + 1)
+}
+
+function getBlockLayoutRow(block: WorkflowBlock) {
+  const rawRow = typeof block.layoutRow === 'number' ? Math.round(block.layoutRow) : 1
+  return Math.max(1, rawRow)
+}
+
+function buildBlockLayoutRect(block: WorkflowBlock): BlockLayoutRect {
+  return {
+    id: block.id,
+    column: getBlockLayoutColumn(block),
+    row: getBlockLayoutRow(block),
+    widthUnits: clamp(block.widthUnits ?? 6, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN),
+    rowSpan: getBlockRowSpan(block.heightPx),
+  }
+}
+
+function rectanglesOverlap(left: BlockLayoutRect, right: BlockLayoutRect) {
+  const leftEndColumn = left.column + left.widthUnits
+  const rightEndColumn = right.column + right.widthUnits
+  const leftEndRow = left.row + left.rowSpan
+  const rightEndRow = right.row + right.rowSpan
+  return !(leftEndColumn <= right.column || rightEndColumn <= left.column || leftEndRow <= right.row || rightEndRow <= left.row)
+}
+
+function hasLayoutOverlap(rect: BlockLayoutRect, others: BlockLayoutRect[]) {
+  return others.some((other) => rectanglesOverlap(rect, other))
+}
+
+function clampLayoutRect(rect: BlockLayoutRect): BlockLayoutRect {
+  const widthUnits = clamp(rect.widthUnits, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)
+  return {
+    ...rect,
+    widthUnits,
+    rowSpan: Math.max(1, rect.rowSpan),
+    column: clamp(rect.column, 1, BLOCK_GRID_COLUMNS - widthUnits + 1),
+    row: Math.max(1, rect.row),
+  }
+}
+
+function findNearestFreeLayout(baseRect: BlockLayoutRect, others: BlockLayoutRect[]) {
+  const base = clampLayoutRect(baseRect)
+  if (!hasLayoutOverlap(base, others)) {
+    return base
+  }
+
+  const maxRadius = 120
+  for (let radius = 1; radius <= maxRadius; radius += 1) {
+    for (let dx = -radius; dx <= radius; dx += 1) {
+      for (const dy of [-radius, radius]) {
+        const candidate = clampLayoutRect({
+          ...base,
+          column: base.column + dx,
+          row: base.row + dy,
+        })
+        if (!hasLayoutOverlap(candidate, others)) {
+          return candidate
+        }
+      }
+    }
+    for (let dy = -radius + 1; dy <= radius - 1; dy += 1) {
+      for (const dx of [-radius, radius]) {
+        const candidate = clampLayoutRect({
+          ...base,
+          column: base.column + dx,
+          row: base.row + dy,
+        })
+        if (!hasLayoutOverlap(candidate, others)) {
+          return candidate
+        }
+      }
+    }
+  }
+
+  return base
 }
 
 export function WorkflowBoard({ currentUser, users, focusRequest = null }: WorkflowBoardProps) {
@@ -94,7 +200,6 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
   const saveTimerRef = useRef<number | null>(null)
   const saveFingerprintRef = useRef('')
   const draggedPhaseIdRef = useRef<string | null>(null)
-  const draggedBlockIdRef = useRef<string | null>(null)
   const draggedColumnRef = useRef<DraggedColumn | null>(null)
   const pendingFocusPhaseIdRef = useRef<string>('')
   const stageLaneRef = useRef<HTMLDivElement | null>(null)
@@ -126,8 +231,8 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
   const [, setCopyFeedback] = useState('')
   const [completingPhase, setCompletingPhase] = useState(false)
   const [completionFeedback, setCompletionFeedback] = useState('')
-  const [draggingBlockId, setDraggingBlockId] = useState('')
-  const [dropTargetBlockId, setDropTargetBlockId] = useState('')
+  const [blockDragState, setBlockDragState] = useState<BlockPointerDragState | null>(null)
+  const [resizingBlockId, setResizingBlockId] = useState('')
 
   const selectedCard = useMemo(
     () => cards.find((card) => card.id === selectedCardId) ?? null,
@@ -146,6 +251,20 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
     () => workflow?.phases.find((phase) => phase.id === selectedPhaseId) ?? workflow?.phases[0] ?? null,
     [selectedPhaseId, workflow],
   )
+  const selectedPhaseLayoutMap = useMemo(() => {
+    const layouts = new Map<string, BlockLayoutRect>()
+    if (!selectedPhase) {
+      return layouts
+    }
+
+    const placedLayouts: BlockLayoutRect[] = []
+    selectedPhase.blocks.forEach((block) => {
+      const placedRect = findNearestFreeLayout(buildBlockLayoutRect(block), placedLayouts)
+      placedLayouts.push(placedRect)
+      layouts.set(block.id, placedRect)
+    })
+    return layouts
+  }, [selectedPhase])
   const selectedPhaseProgress = useMemo(() => (selectedPhase ? computePhaseProgress(selectedPhase) : 0), [selectedPhase])
   const workflowProgress = useMemo(
     () => (workflow ? computeWorkflowProgress(workflow) : { percent: 0, done: 0, total: 0 }),
@@ -294,17 +413,19 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
   }, [workflow?.phases.length])
 
   useEffect(() => {
-    if (!selectedPhase || !blockBoardRef.current) {
+    if (!selectedPhase || !blockBoardRef.current || blockDragState) {
       return
     }
 
-    const syncBlockHeights = () => {
+    const syncBlockMeasurements = () => {
       const board = blockBoardRef.current
       if (!board) {
         return
       }
 
-      const pendingHeights = selectedPhase.blocks
+      const boardRect = board.getBoundingClientRect()
+      const columnWidth = (boardRect.width - BLOCK_GRID_GAP * (BLOCK_GRID_COLUMNS - 1)) / BLOCK_GRID_COLUMNS
+      const pendingUpdates = selectedPhase.blocks
         .map((block) => {
           const card = board.querySelector<HTMLElement>(`[data-block-card-id="${block.id}"]`)
           if (!card) {
@@ -318,15 +439,32 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
 
           const measuredHeight = Math.ceil(head.offsetHeight + body.scrollHeight + 2)
           const currentHeight = getBlockHeightPx(block.heightPx)
-          if (measuredHeight <= currentHeight + 6) {
+          let nextHeight = currentHeight
+          if (measuredHeight > currentHeight + 6) {
+            nextHeight = Math.max(measuredHeight, MIN_BLOCK_HEIGHT)
+          }
+
+          let nextWidthUnits = clamp(block.widthUnits ?? 6, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)
+          if (block.type === 'table') {
+            const table = card.querySelector<HTMLElement>('.workflow-table')
+            if (table) {
+              const overflowWidth = table.scrollWidth - body.clientWidth
+              if (overflowWidth > 10) {
+                const columnDelta = Math.ceil(overflowWidth / Math.max(columnWidth + BLOCK_GRID_GAP, 1))
+                nextWidthUnits = clamp(nextWidthUnits + columnDelta, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)
+              }
+            }
+          }
+
+          if (nextHeight === currentHeight && nextWidthUnits === clamp(block.widthUnits ?? 6, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)) {
             return null
           }
 
-          return { id: block.id, heightPx: Math.max(measuredHeight, MIN_BLOCK_HEIGHT) }
+          return { id: block.id, heightPx: nextHeight, widthUnits: nextWidthUnits }
         })
-        .filter((item): item is { id: string; heightPx: number } => item !== null)
+        .filter((item): item is { id: string; heightPx: number; widthUnits: number } => item !== null)
 
-      if (!pendingHeights.length) {
+      if (!pendingUpdates.length) {
         return
       }
 
@@ -337,10 +475,11 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
             return
           }
 
-          pendingHeights.forEach(({ id, heightPx }) => {
+          pendingUpdates.forEach(({ id, heightPx, widthUnits }) => {
             const block = phase.blocks.find((item) => item.id === id)
             if (block) {
               block.heightPx = heightPx
+              block.widthUnits = widthUnits
             }
           })
         },
@@ -348,15 +487,15 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       )
     }
 
-    const frameId = window.requestAnimationFrame(syncBlockHeights)
-    const handleResize = () => window.requestAnimationFrame(syncBlockHeights)
+    const frameId = window.requestAnimationFrame(syncBlockMeasurements)
+    const handleResize = () => window.requestAnimationFrame(syncBlockMeasurements)
     window.addEventListener('resize', handleResize)
 
     return () => {
       window.cancelAnimationFrame(frameId)
       window.removeEventListener('resize', handleResize)
     }
-  }, [selectedPhase])
+  }, [blockDragState, selectedPhase])
 
   useEffect(() => {
     if (!focusRequest?.cardId) {
@@ -1145,43 +1284,114 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
     })
   }
 
-  function handleBlockDragStart(blockId: string) {
-    draggedBlockIdRef.current = blockId
-    setDraggingBlockId(blockId)
-    setDropTargetBlockId('')
-  }
-
-  function handleBlockDragEnd() {
-    draggedBlockIdRef.current = null
-    setDraggingBlockId('')
-    setDropTargetBlockId('')
-  }
-
-  function handleBlockDrop(targetBlockId: string) {
-    if (!canEdit || !workflow || !selectedPhase) {
+  function handleBlockPointerDragStart(blockId: string, event: ReactPointerEvent<HTMLDivElement>) {
+    if (!canEdit || !selectedPhase || !blockBoardRef.current) {
       return
     }
-    const draggedBlockId = draggedBlockIdRef.current
-    if (!draggedBlockId || draggedBlockId === targetBlockId) {
-      setDropTargetBlockId('')
+    if ((event.target as HTMLElement).closest('button,input,textarea,select,label')) {
       return
     }
-    mutateWorkflow((draft) => {
-      const phase = draft.phases.find((item) => item.id === selectedPhase.id)
-      if (!phase) {
+
+    const block = selectedPhase.blocks.find((item) => item.id === blockId)
+    const header = event.currentTarget
+    const card = header.closest('.workflow-block-card') as HTMLElement | null
+    const board = blockBoardRef.current
+    if (!block || !card || !board) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    const blockRect = card.getBoundingClientRect()
+    const offsetX = event.clientX - blockRect.left
+    const offsetY = event.clientY - blockRect.top
+    const others = selectedPhase.blocks
+      .filter((item) => item.id !== blockId)
+      .map((item) => selectedPhaseLayoutMap.get(item.id) ?? buildBlockLayoutRect(item))
+    const widthUnits = clamp(block.widthUnits ?? 6, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)
+    const heightPx = getBlockHeightPx(block.heightPx)
+    const rowSpan = getBlockRowSpan(heightPx)
+    const currentLayout = selectedPhaseLayoutMap.get(block.id) ?? buildBlockLayoutRect(block)
+    const originColumn = currentLayout.column
+    const originRow = currentLayout.row
+
+    const applyPreview = (clientX: number, clientY: number) => {
+      const boardRect = board.getBoundingClientRect()
+      const columnWidth = (boardRect.width - BLOCK_GRID_GAP * (BLOCK_GRID_COLUMNS - 1)) / BLOCK_GRID_COLUMNS
+      const cellWidth = columnWidth + BLOCK_GRID_GAP
+      const cellHeight = BLOCK_GRID_ROW_HEIGHT + BLOCK_GRID_GAP
+      const relativeLeft = clientX - boardRect.left - offsetX
+      const relativeTop = clientY - boardRect.top - offsetY
+      const targetColumn = clamp(Math.round(relativeLeft / cellWidth) + 1, 1, BLOCK_GRID_COLUMNS - widthUnits + 1)
+      const targetRow = Math.max(1, Math.round(relativeTop / cellHeight) + 1)
+      const snapped = findNearestFreeLayout(
+        {
+          id: blockId,
+          column: targetColumn,
+          row: targetRow,
+          widthUnits,
+          rowSpan,
+        },
+        others,
+      )
+
+      setBlockDragState({
+        blockId,
+        originColumn,
+        originRow,
+        targetColumn: snapped.column,
+        targetRow: snapped.row,
+        widthUnits,
+        heightPx,
+        startLeft: blockRect.left,
+        startTop: blockRect.top,
+        translateX: clientX - offsetX - blockRect.left,
+        translateY: clientY - offsetY - blockRect.top,
+        offsetX,
+        offsetY,
+      })
+    }
+
+    applyPreview(event.clientX, event.clientY)
+    document.body.style.userSelect = 'none'
+
+    const onMove = (moveEvent: PointerEvent) => {
+      applyPreview(moveEvent.clientX, moveEvent.clientY)
+    }
+
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup', onUp)
+      document.removeEventListener('pointercancel', onUp)
+      document.body.style.userSelect = ''
+
+      setBlockDragState((currentState) => {
+        if (!currentState || currentState.blockId !== blockId) {
+          return null
+        }
+        mutateWorkflow((draft) => {
+          const currentBlock = findBlock(selectedPhase.id, blockId, draft)
+          if (!currentBlock) {
+            return
+          }
+          currentBlock.layoutColumn = currentState.targetColumn
+          currentBlock.layoutRow = currentState.targetRow
+        })
+        return null
+      })
+
+      try {
+        header.releasePointerCapture(event.pointerId)
+      } catch {
         return
       }
-      const from = phase.blocks.findIndex((block) => block.id === draggedBlockId)
-      const to = phase.blocks.findIndex((block) => block.id === targetBlockId)
-      if (from === -1 || to === -1) {
-        return
-      }
-      const [moved] = phase.blocks.splice(from, 1)
-      phase.blocks.splice(to, 0, moved)
-    })
-    draggedBlockIdRef.current = null
-    setDraggingBlockId('')
-    setDropTargetBlockId('')
+    }
+
+    header.setPointerCapture(event.pointerId)
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup', onUp, { once: true })
+    document.addEventListener('pointercancel', onUp, { once: true })
   }
 
   function handleColumnDragStart(blockId: string, columnKey: string) {
@@ -1229,40 +1439,78 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
     }
 
     const boardRect = blockBoardRef.current.getBoundingClientRect()
-    const colWidth = (boardRect.width - BLOCK_GRID_GAP * 11) / 12
+    const colWidth = (boardRect.width - BLOCK_GRID_GAP * (BLOCK_GRID_COLUMNS - 1)) / BLOCK_GRID_COLUMNS
     const startX = event.clientX
     const startY = event.clientY
-    const startSpan = block.widthUnits ?? 6
-    const startHeight = block.heightPx ?? DEFAULT_BLOCK_HEIGHT
+    const startSpan = clamp(block.widthUnits ?? 6, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)
+    const startHeight = getBlockHeightPx(block.heightPx)
+    const currentLayout = selectedPhaseLayoutMap.get(block.id) ?? buildBlockLayoutRect(block)
+    const startColumn = currentLayout.column
+    const startRow = currentLayout.row
+    const others = selectedPhase.blocks
+      .filter((item) => item.id !== blockId)
+      .map((item) => selectedPhaseLayoutMap.get(item.id) ?? buildBlockLayoutRect(item))
+    const tableElement = card.querySelector<HTMLElement>('.workflow-table')
+    const minSpanFromContent = tableElement
+      ? clamp(Math.ceil((tableElement.scrollWidth + 28) / Math.max(colWidth + BLOCK_GRID_GAP, 1)), MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)
+      : MIN_BLOCK_SPAN
     let nextSpan = startSpan
     let nextHeight = startHeight
+    let lastGoodSpan = startSpan
+    let lastGoodHeight = startHeight
+    setResizingBlockId(blockId)
 
     const onMove = (moveEvent: PointerEvent) => {
       const dx = moveEvent.clientX - startX
       const dy = moveEvent.clientY - startY
       const spanDelta = Math.round(dx / (colWidth + BLOCK_GRID_GAP))
-      nextSpan = clamp(startSpan + spanDelta, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)
+      nextSpan = clamp(startSpan + spanDelta, minSpanFromContent, MAX_BLOCK_SPAN)
       nextHeight = Math.max(startHeight + dy, MIN_BLOCK_HEIGHT)
-      card.style.gridColumn = `span ${nextSpan}`
-      card.style.gridRow = `span ${getBlockRowSpan(nextHeight)}`
+      const candidate = findNearestFreeLayout(
+        {
+          id: blockId,
+          column: startColumn,
+          row: startRow,
+          widthUnits: nextSpan,
+          rowSpan: getBlockRowSpan(nextHeight),
+        },
+        others,
+      )
+
+      if (candidate.column !== startColumn || candidate.row !== startRow) {
+        card.classList.add('layout-overlap')
+        nextSpan = lastGoodSpan
+        nextHeight = lastGoodHeight
+        return
+      }
+
+      lastGoodSpan = nextSpan
+      lastGoodHeight = nextHeight
+      card.classList.remove('layout-overlap')
+      card.style.gridColumn = `${startColumn} / span ${nextSpan}`
+      card.style.gridRow = `${startRow} / span ${getBlockRowSpan(nextHeight)}`
       card.style.height = `${nextHeight}px`
     }
 
     const onUp = () => {
       document.removeEventListener('pointermove', onMove)
       document.removeEventListener('pointerup', onUp)
+      document.removeEventListener('pointercancel', onUp)
+      card.classList.remove('layout-overlap')
+      setResizingBlockId('')
       mutateWorkflow((draft) => {
         const currentBlock = findBlock(selectedPhase.id, blockId, draft)
         if (!currentBlock) {
           return
         }
-        currentBlock.widthUnits = nextSpan
-        currentBlock.heightPx = nextHeight
+        currentBlock.widthUnits = lastGoodSpan
+        currentBlock.heightPx = lastGoodHeight
       })
     }
 
     document.addEventListener('pointermove', onMove)
     document.addEventListener('pointerup', onUp, { once: true })
+    document.addEventListener('pointercancel', onUp, { once: true })
   }
 
   function startColumnResize(blockId: string, columnKey: string, event: ReactPointerEvent<HTMLDivElement>) {
@@ -1970,39 +2218,30 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
               <div className="workflow-block-board" ref={blockBoardRef}>
                 {selectedPhase.blocks.map((block) => {
                   const blockHeightPx = getBlockHeightPx(block.heightPx)
+                  const layout = selectedPhaseLayoutMap.get(block.id) ?? buildBlockLayoutRect(block)
+                  const blockColumn = layout.column
+                  const blockRow = layout.row
+                  const isFloating = blockDragState?.blockId === block.id
                   return (
                     <article
                       key={block.id}
                       data-block-card-id={block.id}
-                      className={`workflow-block-card type-${block.type} ${
-                        draggingBlockId === block.id ? 'is-dragging' : ''
-                      } ${dropTargetBlockId === block.id ? 'is-drop-target' : ''}`}
+                      className={`workflow-block-card type-${block.type} ${isFloating ? 'is-floating' : ''} ${
+                        resizingBlockId === block.id ? 'is-resizing' : ''
+                      }`}
                       style={{
-                        gridColumn: `span ${clamp(block.widthUnits ?? 6, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)}`,
-                        gridRow: `span ${getBlockRowSpan(blockHeightPx)}`,
+                        gridColumn: `${blockColumn} / span ${clamp(block.widthUnits ?? 6, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)}`,
+                        gridRow: `${blockRow} / span ${getBlockRowSpan(blockHeightPx)}`,
                         height: `${blockHeightPx}px`,
+                        transform: isFloating
+                          ? `translate3d(${blockDragState?.translateX ?? 0}px, ${blockDragState?.translateY ?? 0}px, 0)`
+                          : undefined,
+                        zIndex: isFloating ? 30 : undefined,
                       }}
-                      onDragOver={(event) => {
-                        if (canEdit) {
-                          event.preventDefault()
-                          if (draggedBlockIdRef.current && draggedBlockIdRef.current !== block.id) {
-                            setDropTargetBlockId(block.id)
-                          }
-                        }
-                      }}
-                      onDrop={() => handleBlockDrop(block.id)}
                     >
                       <div
                         className="workflow-block-head"
-                        draggable={canEdit}
-                        onDragStart={(event: ReactDragEvent<HTMLDivElement>) => {
-                          if ((event.target as HTMLElement).closest('button,input,textarea')) {
-                            event.preventDefault()
-                            return
-                          }
-                          handleBlockDragStart(block.id)
-                        }}
-                        onDragEnd={handleBlockDragEnd}
+                        onPointerDown={(event) => handleBlockPointerDragStart(block.id, event)}
                       >
                         <div className="workflow-block-head-left">
                           <span className="workflow-drag-handle">
@@ -2074,6 +2313,18 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                     </article>
                   )
                 })}
+                {blockDragState &&
+                (blockDragState.targetColumn !== blockDragState.originColumn ||
+                  blockDragState.targetRow !== blockDragState.originRow) ? (
+                  <div
+                    className="workflow-block-placeholder"
+                    style={{
+                      gridColumn: `${blockDragState.targetColumn} / span ${blockDragState.widthUnits}`,
+                      gridRow: `${blockDragState.targetRow} / span ${getBlockRowSpan(blockDragState.heightPx)}`,
+                      height: `${blockDragState.heightPx}px`,
+                    }}
+                  />
+                ) : null}
               </div>
             </section>
           ) : null}

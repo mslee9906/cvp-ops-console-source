@@ -390,6 +390,8 @@ class WorkflowService:
                 "size": str(block.get("size") or "regular"),
                 "widthUnits": int(block.get("widthUnits") or 6),
                 "heightPx": int(block.get("heightPx") or 220),
+                "layoutColumn": self._coerce_optional_int(block.get("layoutColumn")),
+                "layoutRow": self._coerce_optional_int(block.get("layoutRow")),
                 "items": items,
             }
         return {
@@ -401,6 +403,8 @@ class WorkflowService:
             "size": str(block.get("size") or "regular"),
             "widthUnits": int(block.get("widthUnits") or 6),
             "heightPx": int(block.get("heightPx") or 230),
+            "layoutColumn": self._coerce_optional_int(block.get("layoutColumn")),
+            "layoutRow": self._coerce_optional_int(block.get("layoutRow")),
             "content": str(block.get("content") or ""),
         }
 
@@ -436,6 +440,8 @@ class WorkflowService:
             "size": str(block.get("size") or ("full" if mode == "target" else "wide")),
             "widthUnits": int(block.get("widthUnits") or (12 if mode == "target" else 8)),
             "heightPx": int(block.get("heightPx") or (240 if mode == "target" else 220)),
+            "layoutColumn": self._coerce_optional_int(block.get("layoutColumn")),
+            "layoutRow": self._coerce_optional_int(block.get("layoutRow")),
             "columns": columns,
             "rows": rows,
         }
