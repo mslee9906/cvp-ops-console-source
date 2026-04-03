@@ -1169,11 +1169,11 @@ function App() {
               </div>
             </div>
             <div className="user-panel-head">
-              <span className={`user-role-chip ${currentUser.role}`}>{currentUser.role}</span>
               <div className="user-panel-copy">
                 <strong>{currentUser.display_name}</strong>
                 <span>@{currentUser.username}</span>
               </div>
+              <span className={`user-role-chip ${currentUser.role}`}>{currentUser.role}</span>
             </div>
             <div className="user-panel-actions">
               <div className="user-panel-action-group">
