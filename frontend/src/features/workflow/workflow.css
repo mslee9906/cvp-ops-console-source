@@ -609,11 +609,13 @@
   display: flex;
   align-items: stretch;
   gap: 8px;
+  box-sizing: border-box;
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
-  padding-bottom: 2px;
+  padding: 0 20px 2px;
+  scroll-padding-inline: 20px;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
   overscroll-behavior-x: contain;
