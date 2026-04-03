@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS kanban_cards (
     card_code TEXT NOT NULL UNIQUE,
     title TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
+    due_at TEXT NOT NULL DEFAULT '',
     assignee TEXT NOT NULL DEFAULT '',
     assignee_user_id INTEGER,
     created_by_user_id INTEGER,
@@ -92,6 +93,7 @@ class KanbanRepository:
                     c.card_code,
                     c.title,
                     c.description,
+                    c.due_at,
                     COALESCE(assignee_user.display_name, c.assignee, '') AS assignee,
                     c.assignee_user_id,
                     c.created_by_user_id,
@@ -151,8 +153,8 @@ class KanbanRepository:
                 """
                 INSERT INTO kanban_cards (
                     card_code, title, description, assignee, assignee_user_id, created_by_user_id, updated_by_user_id,
-                    column_key, card_type, priority, sort_order, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    column_key, card_type, priority, sort_order, created_at, updated_at, due_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card_code,
@@ -168,6 +170,7 @@ class KanbanRepository:
                     int(next_order),
                     timestamp,
                     timestamp,
+                    str(payload.get("due_at", "") or "").strip(),
                 ),
             )
             card_id = int(cursor.lastrowid)
@@ -220,6 +223,7 @@ class KanbanRepository:
         allowed_fields = {
             "title",
             "description",
+            "due_at",
             "assignee",
             "assignee_user_id",
             "updated_by_user_id",
@@ -264,6 +268,9 @@ class KanbanRepository:
                     str(updates.get("assignee", "") or ""),
                 )
 
+            if "due_at" in updates:
+                updates["due_at"] = str(updates.get("due_at", "") or "").strip()
+
             if "updated_by_user_id" in updates:
                 updates["updated_by_user_id"] = _normalize_optional_int(updates.get("updated_by_user_id"))
 
@@ -288,6 +295,36 @@ class KanbanRepository:
 
             if len(affected_columns) > 1:
                 self._normalize_column_orders(connection, affected_columns)
+            connection.commit()
+            return self._get_card(connection, card_id)
+
+    def touch_card(
+        self,
+        card_id: int,
+        updated_by_user_id: int | None = None,
+        timestamp: str | None = None,
+    ) -> dict[str, Any] | None:
+        resolved_timestamp = str(timestamp or _now_iso())
+        normalized_user_id = _normalize_optional_int(updated_by_user_id) if updated_by_user_id is not None else None
+
+        with self._connect() as connection:
+            existing = connection.execute(
+                "SELECT id FROM kanban_cards WHERE id = ?",
+                (card_id,),
+            ).fetchone()
+            if not existing:
+                return None
+
+            if normalized_user_id is None:
+                connection.execute(
+                    "UPDATE kanban_cards SET updated_at = ? WHERE id = ?",
+                    (resolved_timestamp, card_id),
+                )
+            else:
+                connection.execute(
+                    "UPDATE kanban_cards SET updated_at = ?, updated_by_user_id = ? WHERE id = ?",
+                    (resolved_timestamp, normalized_user_id, card_id),
+                )
             connection.commit()
             return self._get_card(connection, card_id)
 
@@ -355,6 +392,7 @@ class KanbanRepository:
                 c.card_code,
                 c.title,
                 c.description,
+                c.due_at,
                 COALESCE(assignee_user.display_name, c.assignee, '') AS assignee,
                 c.assignee_user_id,
                 c.created_by_user_id,
@@ -476,6 +514,7 @@ class KanbanRepository:
         completed = sum(1 for item in checklist_items if item["is_completed"])
         total = len(checklist_items)
         progress_percent = int(round((completed / total) * 100)) if total else 0
+        card["due_at"] = str(card.get("due_at", "") or "").strip()
         card["assignee"] = card.get("assignee", "") or ""
         card["assignee_user_id"] = _normalize_optional_int(card.get("assignee_user_id"))
         card["created_by_user_id"] = _normalize_optional_int(card.get("created_by_user_id"))
@@ -850,6 +889,8 @@ class KanbanRepository:
             connection.execute(
                 "ALTER TABLE kanban_cards ADD COLUMN assignee TEXT NOT NULL DEFAULT ''",
             )
+        if "due_at" not in card_columns:
+            connection.execute("ALTER TABLE kanban_cards ADD COLUMN due_at TEXT NOT NULL DEFAULT ''")
         if "assignee_user_id" not in card_columns:
             connection.execute("ALTER TABLE kanban_cards ADD COLUMN assignee_user_id INTEGER")
         if "created_by_user_id" not in card_columns:

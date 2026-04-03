@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent } from 'react'
 import {
   Check,
@@ -48,7 +48,10 @@ import {
   createNoteBlock,
   createTargetTableBlock,
   getDefaultColumnWidth,
+  getPhaseAssigneeName,
+  isPhaseIncludedInProgress,
   normalizeWorkflowDocument,
+  reconcilePhaseCompletion,
   replaceTargetRows,
   uid,
 } from './workflowUtils'
@@ -56,6 +59,12 @@ import './workflow.css'
 
 type WorkflowBoardProps = {
   currentUser: UserSummary | null
+  users: UserSummary[]
+  focusRequest?: {
+    cardId: number
+    phaseId?: string | null
+    token: number
+  } | null
 }
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
@@ -65,13 +74,21 @@ type DraggedColumn = {
   columnKey: string
 }
 
-export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
+const BLOCK_GRID_GAP = 8
+const BLOCK_GRID_ROW_HEIGHT = 4
+
+function getBlockHeightPx(heightPx?: number) {
+  return Math.max(heightPx ?? DEFAULT_BLOCK_HEIGHT, MIN_BLOCK_HEIGHT)
+}
+
+function getBlockRowSpan(heightPx?: number) {
+  return Math.max(1, Math.ceil((getBlockHeightPx(heightPx) + BLOCK_GRID_GAP) / (BLOCK_GRID_ROW_HEIGHT + BLOCK_GRID_GAP)))
+}
+
+export function WorkflowBoard({ currentUser, users, focusRequest = null }: WorkflowBoardProps) {
   const canEdit = currentUser?.role !== 'viewer'
   const cardPickerRef = useRef<HTMLDivElement | null>(null)
   const blockBoardRef = useRef<HTMLDivElement | null>(null)
-  const stageLaneRef = useRef<HTMLDivElement | null>(null)
-  const stageLaneScrollTargetRef = useRef(0)
-  const stageLaneScrollFrameRef = useRef<number | null>(null)
   const workflowRef = useRef<WorkflowDocument | null>(null)
   const selectedCardIdRef = useRef<number | null>(null)
   const saveTimerRef = useRef<number | null>(null)
@@ -79,6 +96,10 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
   const draggedPhaseIdRef = useRef<string | null>(null)
   const draggedBlockIdRef = useRef<string | null>(null)
   const draggedColumnRef = useRef<DraggedColumn | null>(null)
+  const pendingFocusPhaseIdRef = useRef<string>('')
+  const stageLaneRef = useRef<HTMLDivElement | null>(null)
+  const stageLaneScrollTargetRef = useRef(0)
+  const stageLaneScrollFrameRef = useRef<number | null>(null)
 
   const [cards, setCards] = useState<KanbanCard[]>([])
   const [loadingCards, setLoadingCards] = useState(true)
@@ -98,11 +119,15 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
   const [showPhaseOverlay, setShowPhaseOverlay] = useState(false)
   const [newPhaseTitle, setNewPhaseTitle] = useState('')
   const [newPhaseSubtitle, setNewPhaseSubtitle] = useState('')
+  const [newPhaseAssigneeUserId, setNewPhaseAssigneeUserId] = useState('')
+  const [newPhaseIncludeInProgress, setNewPhaseIncludeInProgress] = useState(true)
   const [templateName, setTemplateName] = useState('')
   const [templateDescription, setTemplateDescription] = useState('')
   const [, setSaveState] = useState<SaveState>('idle')
   const [, setSaveMessage] = useState('')
   const [, setCopyFeedback] = useState('')
+  const [completingPhase, setCompletingPhase] = useState(false)
+  const [completionFeedback, setCompletionFeedback] = useState('')
 
   const selectedCard = useMemo(
     () => cards.find((card) => card.id === selectedCardId) ?? null,
@@ -121,12 +146,40 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
     () => workflow?.phases.find((phase) => phase.id === selectedPhaseId) ?? workflow?.phases[0] ?? null,
     [selectedPhaseId, workflow],
   )
+  const selectedPhaseProgress = useMemo(() => (selectedPhase ? computePhaseProgress(selectedPhase) : 0), [selectedPhase])
   const workflowProgress = useMemo(
     () => (workflow ? computeWorkflowProgress(workflow) : { percent: 0, done: 0, total: 0 }),
     [workflow],
   )
+  const hasExcludedPhases = useMemo(
+    () => workflow?.phases.some((phase) => !isPhaseIncludedInProgress(phase)) ?? false,
+    [workflow],
+  )
   const workflowFingerprint = useMemo(() => (workflow ? JSON.stringify(workflow) : ''), [workflow])
   const targetSummary = useMemo(() => summarizeTargets(workflow?.targets ?? []), [workflow?.targets])
+  const userDirectory = useMemo(() => {
+    return new Map(users.map((user) => [user.id, user]))
+  }, [users])
+  const phaseAssigneeOptions = useMemo(() => {
+    return [...users].sort((left, right) => {
+      if (left.is_active !== right.is_active) {
+        return left.is_active ? -1 : 1
+      }
+      return `${left.display_name}${left.username}`.localeCompare(`${right.display_name}${right.username}`, 'ko')
+    })
+  }, [users])
+  const canCompleteSelectedPhase = useMemo(() => {
+    if (!selectedPhase || !currentUser) {
+      return false
+    }
+    if (selectedPhase.isCompleted || selectedPhaseProgress < 100) {
+      return false
+    }
+    if (currentUser.role === 'admin') {
+      return true
+    }
+    return selectedPhase.assigneeUserId === currentUser.id
+  }, [currentUser, selectedPhase, selectedPhaseProgress])
 
   useEffect(() => {
     void bootstrap()
@@ -171,6 +224,109 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
   }, [selectedCardId])
 
   useEffect(() => {
+    if (!selectedCardId) {
+      return
+    }
+    if (!cards.some((card) => card.id === selectedCardId)) {
+      return
+    }
+    if (workflowRef.current?.ticketId === cards.find((card) => card.id === selectedCardId)?.card_code) {
+      return
+    }
+    void loadCardWorkflow(selectedCardId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cards, selectedCardId])
+
+  useEffect(() => {
+    const container = stageLaneRef.current
+    if (!container) {
+      return
+    }
+
+    stageLaneScrollTargetRef.current = container.scrollLeft
+
+    const animateScroll = () => {
+      const stageLane = stageLaneRef.current
+      if (!stageLane) {
+        stageLaneScrollFrameRef.current = null
+        return
+      }
+
+      const delta = stageLaneScrollTargetRef.current - stageLane.scrollLeft
+      if (Math.abs(delta) < 1) {
+        stageLane.scrollLeft = stageLaneScrollTargetRef.current
+        stageLaneScrollFrameRef.current = null
+        return
+      }
+
+      stageLane.scrollLeft += delta * 0.18
+      stageLaneScrollFrameRef.current = window.requestAnimationFrame(animateScroll)
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+        return
+      }
+
+      const maxScrollLeft = container.scrollWidth - container.clientWidth
+      if (maxScrollLeft <= 0) {
+        return
+      }
+
+      const firstNode = container.querySelector<HTMLElement>('.workflow-stage-node')
+      const laneStyle = window.getComputedStyle(container)
+      const laneGap = Number.parseFloat(laneStyle.columnGap || laneStyle.gap || '0') || 0
+      const scrollStep = Math.max((firstNode?.getBoundingClientRect().width ?? 248) + laneGap, 220)
+      const direction = event.deltaY > 0 ? 1 : -1
+
+      event.preventDefault()
+      stageLaneScrollTargetRef.current = Math.max(
+        0,
+        Math.min(maxScrollLeft, stageLaneScrollTargetRef.current + direction * scrollStep),
+      )
+
+      if (stageLaneScrollFrameRef.current === null) {
+        stageLaneScrollFrameRef.current = window.requestAnimationFrame(animateScroll)
+      }
+    }
+
+    const handleScroll = () => {
+      if (stageLaneScrollFrameRef.current === null) {
+        stageLaneScrollTargetRef.current = container.scrollLeft
+      }
+    }
+
+    container.addEventListener('wheel', handleWheel, { passive: false })
+    container.addEventListener('scroll', handleScroll)
+
+    return () => {
+      container.removeEventListener('wheel', handleWheel)
+      container.removeEventListener('scroll', handleScroll)
+      if (stageLaneScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(stageLaneScrollFrameRef.current)
+        stageLaneScrollFrameRef.current = null
+      }
+    }
+  }, [workflow?.phases.length])
+
+  useEffect(() => {
+    if (!focusRequest?.cardId) {
+      return
+    }
+    pendingFocusPhaseIdRef.current = focusRequest.phaseId ?? ''
+    void (async () => {
+      if (selectedCardIdRef.current !== focusRequest.cardId) {
+        await handleSelectCard(focusRequest.cardId)
+        return
+      }
+      if (pendingFocusPhaseIdRef.current) {
+        setSelectedPhaseId(pendingFocusPhaseIdRef.current)
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusRequest?.token])
+
+  useEffect(() => {
     if (!showCardPicker) {
       return
     }
@@ -184,54 +340,6 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
     window.addEventListener('mousedown', handleOutsidePointer)
     return () => window.removeEventListener('mousedown', handleOutsidePointer)
   }, [showCardPicker])
-
-  useEffect(() => {
-    const lane = stageLaneRef.current
-    if (!lane) {
-      return
-    }
-
-    stageLaneScrollTargetRef.current = lane.scrollLeft
-
-    const animateScroll = () => {
-      const current = lane.scrollLeft
-      const target = stageLaneScrollTargetRef.current
-      const delta = target - current
-
-      if (Math.abs(delta) < 0.5) {
-        lane.scrollLeft = target
-        stageLaneScrollFrameRef.current = null
-        return
-      }
-
-      lane.scrollLeft = current + delta * 0.18
-      stageLaneScrollFrameRef.current = window.requestAnimationFrame(animateScroll)
-    }
-
-    const handleWheel = (event: WheelEvent) => {
-      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
-        return
-      }
-      if (lane.scrollWidth <= lane.clientWidth) {
-        return
-      }
-      event.preventDefault()
-      const maxScroll = Math.max(0, lane.scrollWidth - lane.clientWidth)
-      stageLaneScrollTargetRef.current = clamp(stageLaneScrollTargetRef.current + event.deltaY, 0, maxScroll)
-      if (stageLaneScrollFrameRef.current === null) {
-        stageLaneScrollFrameRef.current = window.requestAnimationFrame(animateScroll)
-      }
-    }
-
-    lane.addEventListener('wheel', handleWheel, { passive: false })
-    return () => {
-      lane.removeEventListener('wheel', handleWheel)
-      if (stageLaneScrollFrameRef.current !== null) {
-        window.cancelAnimationFrame(stageLaneScrollFrameRef.current)
-        stageLaneScrollFrameRef.current = null
-      }
-    }
-  }, [workflow?.phases.length])
 
   useEffect(() => {
     if (!workflow || !selectedCardId || !canEdit) {
@@ -248,7 +356,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
     setSaveState('saving')
     setSaveMessage('자동 저장 중')
     saveTimerRef.current = window.setTimeout(() => {
-      void persistWorkflow(workflow, selectedCardId, workflowFingerprint)
+      void persistWorkflow(workflow, selectedCardId)
     }, 650)
 
     return () => {
@@ -268,6 +376,43 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  function parseOptionalUserId(value: string) {
+    const parsed = Number(value)
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+  }
+
+  function getPhaseAssigneeLabel(phase: WorkflowPhase) {
+    if (phase.assigneeUserId) {
+      const matchedUser = userDirectory.get(phase.assigneeUserId)
+      if (matchedUser) {
+        return matchedUser.display_name || matchedUser.username
+      }
+    }
+    return getPhaseAssigneeName(phase)
+  }
+
+  function buildPhaseAssignee(userId: number | null, fallback = '誘몄젙') {
+    if (!userId) {
+      return { assigneeUserId: null, assigneeName: fallback }
+    }
+    const matchedUser = userDirectory.get(userId)
+    if (!matchedUser) {
+      return { assigneeUserId: userId, assigneeName: fallback }
+    }
+    return {
+      assigneeUserId: matchedUser.id,
+      assigneeName: matchedUser.display_name || matchedUser.username || fallback,
+    }
+  }
+
+  function openPhaseOverlay() {
+    setNewPhaseTitle('')
+    setNewPhaseSubtitle('')
+    setNewPhaseAssigneeUserId('')
+    setNewPhaseIncludeInProgress(true)
+    setShowPhaseOverlay(true)
+  }
+
   async function bootstrap() {
     try {
       setLoadingCards(true)
@@ -275,7 +420,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
       const loadedCards = await api.getKanbanCards()
       setCards(loadedCards)
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '작업 카드를 불러오지 못했습니다.')
+      setError(loadError instanceof Error ? loadError.message : '?묒뾽 移대뱶瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??')
     } finally {
       setLoadingCards(false)
     }
@@ -290,6 +435,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
     try {
       setLoadingWorkflow(true)
       setError('')
+      setCompletionFeedback('')
       const [workflowResponse, templateResponse] = await Promise.all([
         api.getWorkflow(cardId),
         api.getWorkflowTemplates(card.card_type),
@@ -298,35 +444,46 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
       saveFingerprintRef.current = JSON.stringify(normalized)
       setWorkflow(normalized)
       setTemplates(templateResponse)
-      setSelectedPhaseId(normalized.phases[0]?.id ?? '')
+      const focusedPhaseId =
+        pendingFocusPhaseIdRef.current && normalized.phases.some((phase) => phase.id === pendingFocusPhaseIdRef.current)
+          ? pendingFocusPhaseIdRef.current
+          : normalized.phases[0]?.id ?? ''
+      setSelectedPhaseId(focusedPhaseId)
+      pendingFocusPhaseIdRef.current = ''
       setEditingPhase(false)
       setSaveState('saved')
-      setSaveMessage('저장됨')
+      setSaveMessage('자동 저장 중')
     } catch (loadError) {
       setWorkflow(null)
       setTemplates([])
       if (loadError instanceof ApiError && loadError.status === 404) {
-        setError('워크플로우 문서를 불러오지 못했습니다.')
+        setError('?뚰겕?뚮줈??臾몄꽌瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??')
       } else {
-        setError(loadError instanceof Error ? loadError.message : '워크플로우를 불러오지 못했습니다.')
+        setError(loadError instanceof Error ? loadError.message : '?뚰겕?뚮줈?곕? 遺덈윭?ㅼ? 紐삵뻽?듬땲??')
       }
       setSaveState('error')
-      setSaveMessage('불러오기 실패')
+      setSaveMessage('자동 저장 중')
     } finally {
       setLoadingWorkflow(false)
     }
   }
 
-  async function persistWorkflow(document: WorkflowDocument, cardId: number, fingerprint: string) {
+  async function persistWorkflow(document: WorkflowDocument, cardId: number) {
     try {
-      await api.saveWorkflow(cardId, document)
-      saveFingerprintRef.current = fingerprint
+      const response = await api.saveWorkflow(cardId, document)
+      const matchedCard = cards.find((card) => card.id === cardId)
+      const normalized = matchedCard ? normalizeWorkflowDocument(response.workflow, matchedCard) : response.workflow
+      const nextFingerprint = JSON.stringify(normalized)
+      if (selectedCardIdRef.current === cardId) {
+        setWorkflow(normalized)
+      }
+      saveFingerprintRef.current = nextFingerprint
       setSaveState('saved')
-      setSaveMessage('저장됨')
+      setSaveMessage('자동 저장 중')
     } catch (saveError) {
       setSaveState('error')
-      setSaveMessage('저장 실패')
-      setError(saveError instanceof Error ? saveError.message : '워크플로우를 저장하지 못했습니다.')
+      setSaveMessage('자동 저장 중')
+      setError(saveError instanceof Error ? saveError.message : '?뚰겕?뚮줈?곕? ??ν븯吏 紐삵뻽?듬땲??')
     }
   }
 
@@ -347,7 +504,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
       window.clearTimeout(saveTimerRef.current)
       saveTimerRef.current = null
     }
-    await persistWorkflow(current, cardId, fingerprint)
+    await persistWorkflow(current, cardId)
   }
 
   async function handleSelectCard(cardId: number) {
@@ -364,6 +521,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
       }
       const next = cloneValue(current)
       mutator(next)
+      next.phases = next.phases.map((phase) => reconcilePhaseCompletion(phase))
       if (options?.touch !== false) {
         next.lastUpdated = formatWorkflowTimestamp(new Date())
         next.lastUpdatedBy = currentUser?.display_name || currentUser?.username || next.lastUpdatedBy || ''
@@ -400,6 +558,32 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
     })
   }
 
+  function handleUpdatePhaseAssignee(value: string) {
+    if (!canEdit || !selectedPhase) {
+      return
+    }
+    const nextAssignee = buildPhaseAssignee(parseOptionalUserId(value), getPhaseAssigneeName(selectedPhase))
+    mutateWorkflow((draft) => {
+      const phase = draft.phases.find((item) => item.id === selectedPhase.id)
+      if (phase) {
+        phase.assigneeUserId = nextAssignee.assigneeUserId
+        phase.assigneeName = nextAssignee.assigneeName
+      }
+    })
+  }
+
+  function handleUpdatePhaseIncludeInProgress(includeInProgress: boolean) {
+    if (!canEdit || !selectedPhase) {
+      return
+    }
+    mutateWorkflow((draft) => {
+      const phase = draft.phases.find((item) => item.id === selectedPhase.id)
+      if (phase) {
+        phase.includeInProgress = includeInProgress
+      }
+    })
+  }
+
   function togglePhaseEditing() {
     if (!canEdit) {
       return
@@ -432,11 +616,19 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
       return
     }
     const subtitle = newPhaseSubtitle.trim()
+    const newPhaseAssignee = buildPhaseAssignee(parseOptionalUserId(newPhaseAssigneeUserId))
     const newPhase: WorkflowPhase = {
       id: uid('phase'),
       title,
       subtitle,
-      blocks: [createNoteBlock('메모 블록', '새 단계의 기본 메모', '')],
+      assigneeUserId: newPhaseAssignee.assigneeUserId,
+      assigneeName: newPhaseAssignee.assigneeName,
+      includeInProgress: newPhaseIncludeInProgress,
+      isCompleted: false,
+      completedAt: '',
+      completedByUserId: null,
+      completedByName: '',
+      blocks: [createNoteBlock('硫붾え 釉붾줉', '???④퀎??湲곕낯 硫붾え', '')],
     }
 
     mutateWorkflow((draft) => {
@@ -447,6 +639,8 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
     setShowPhaseOverlay(false)
     setNewPhaseTitle('')
     setNewPhaseSubtitle('')
+    setNewPhaseAssigneeUserId('')
+    setNewPhaseIncludeInProgress(true)
   }
 
   function handleApplyTemplate(template: WorkflowTemplate) {
@@ -460,6 +654,40 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
     })
     setEditingPhase(false)
     setShowTemplateOverlay(false)
+  }
+
+  async function handleCompleteSelectedPhase() {
+    if (!selectedCard || !selectedPhase || !canCompleteSelectedPhase) {
+      return
+    }
+    try {
+      setCompletingPhase(true)
+      setError('')
+      await flushPendingSave()
+      const response = await api.completeWorkflowPhase(selectedCard.id, selectedPhase.id)
+      const normalized = normalizeWorkflowDocument(response.workflow, selectedCard)
+      saveFingerprintRef.current = JSON.stringify(normalized)
+      setWorkflow(normalized)
+      if (response.notification_recipient && response.notification_title) {
+        setCompletionFeedback(
+          `?뚮┝ 諛쒖넚: ${response.notification_recipient} / ${response.notification_title} / ${response.notification_body}`,
+        )
+      } else if (response.notified_phase_title) {
+        setCompletionFeedback(`?ㅼ쓬 ?④퀎 "${response.notified_phase_title}"??以鍮꾨릺?덉?留??먮룞 ?뚮┝ ??곸? ?놁뒿?덈떎.`)
+      } else {
+        setCompletionFeedback('?ㅼ쓬 ?대떦?먭? ?놁뼱 ?먮룞 ?뚮┝? 諛쒖넚?섏? ?딆븯?듬땲??')
+      }
+      if (response.notified_phase_id && normalized.phases.some((phase) => phase.id === response.notified_phase_id)) {
+        setSelectedPhaseId(response.notified_phase_id)
+      } else if (normalized.phases.some((phase) => phase.id === selectedPhase.id)) {
+        setSelectedPhaseId(selectedPhase.id)
+      }
+      setEditingPhase(false)
+    } catch (completeError) {
+      setError(completeError instanceof Error ? completeError.message : '?④퀎瑜??꾨즺 泥섎━?섏? 紐삵뻽?듬땲??')
+    } finally {
+      setCompletingPhase(false)
+    }
   }
 
   async function handleCreateTemplate() {
@@ -490,7 +718,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
       setTemplateName('')
       setTemplateDescription('')
     } catch (templateError) {
-      setError(templateError instanceof Error ? templateError.message : '템플릿을 저장하지 못했습니다.')
+      setError(templateError instanceof Error ? templateError.message : '?쒗뵆由우쓣 ??ν븯吏 紐삵뻽?듬땲??')
     }
   }
 
@@ -511,7 +739,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
           : current,
       )
     } catch (templateError) {
-      setError(templateError instanceof Error ? templateError.message : '템플릿을 수정하지 못했습니다.')
+      setError(templateError instanceof Error ? templateError.message : '?쒗뵆由우쓣 ?섏젙?섏? 紐삵뻽?듬땲??')
     }
   }
 
@@ -519,11 +747,11 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
     if (!canEdit) {
       return
     }
-    const name = window.prompt('템플릿 이름을 입력하세요.', template.name)
+    const name = window.prompt('?쒗뵆由??대쫫???낅젰?섏꽭??', template.name)
     if (!name) {
       return
     }
-    const description = window.prompt('템플릿 설명을 입력하세요.', template.description || '') ?? ''
+    const description = window.prompt('?쒗뵆由??ㅻ챸???낅젰?섏꽭??', template.description || '') ?? ''
     try {
       const updated = await api.updateWorkflowTemplate(template.id, { name, description })
       setTemplates((current) => current.map((item) => (item.id === updated.id ? updated : item)))
@@ -531,7 +759,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
         current && current.templateId === updated.id ? { ...current, templateName: updated.name } : current,
       )
     } catch (templateError) {
-      setError(templateError instanceof Error ? templateError.message : '템플릿 이름을 수정하지 못했습니다.')
+      setError(templateError instanceof Error ? templateError.message : '?쒗뵆由??대쫫???섏젙?섏? 紐삵뻽?듬땲??')
     }
   }
 
@@ -546,7 +774,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
         current && current.templateId === template.id ? { ...current, templateId: null, templateName: '' } : current,
       )
     } catch (templateError) {
-      setError(templateError instanceof Error ? templateError.message : '템플릿을 삭제하지 못했습니다.')
+      setError(templateError instanceof Error ? templateError.message : '?쒗뵆由우쓣 ??젣?섏? 紐삵뻽?듬땲??')
     }
   }
 
@@ -607,8 +835,8 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
 
   function handleCopyTable(block: WorkflowTableBlock) {
     void copyPlainText(buildTableCopyText(block)).then(
-      () => setCopyFeedback('표를 복사했습니다.'),
-      (copyError: unknown) => setError(copyError instanceof Error ? copyError.message : '표를 복사하지 못했습니다.'),
+      () => setCopyFeedback('?쒕? 蹂듭궗?덉뒿?덈떎.'),
+      (copyError: unknown) => setError(copyError instanceof Error ? copyError.message : '?쒕? 蹂듭궗?섏? 紐삵뻽?듬땲??'),
     )
   }
 
@@ -682,7 +910,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
       const key = uid('col')
       block.columns.push({
         key,
-        label: `컬럼 ${block.columns.length + 1}`,
+        label: `而щ읆 ${block.columns.length + 1}`,
         type: 'text',
         width: getDefaultColumnWidth({ key, type: 'text' }),
       })
@@ -800,7 +1028,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
       if (!block || block.type !== 'checklist') {
         return
       }
-      block.items.push({ text: '새 체크 항목', done: false, assignee: draft.owner })
+      block.items.push({ text: '??泥댄겕 ??ぉ', done: false, assignee: draft.owner })
     })
   }
 
@@ -940,7 +1168,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
     }
 
     const boardRect = blockBoardRef.current.getBoundingClientRect()
-    const colWidth = (boardRect.width - 10 * 11) / 12
+    const colWidth = (boardRect.width - BLOCK_GRID_GAP * 11) / 12
     const startX = event.clientX
     const startY = event.clientY
     const startSpan = block.widthUnits ?? 6
@@ -951,11 +1179,12 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
     const onMove = (moveEvent: PointerEvent) => {
       const dx = moveEvent.clientX - startX
       const dy = moveEvent.clientY - startY
-      const spanDelta = Math.round(dx / (colWidth + 10))
+      const spanDelta = Math.round(dx / (colWidth + BLOCK_GRID_GAP))
       nextSpan = clamp(startSpan + spanDelta, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)
       nextHeight = Math.max(startHeight + dy, MIN_BLOCK_HEIGHT)
       card.style.gridColumn = `span ${nextSpan}`
-      card.style.minHeight = `${nextHeight}px`
+      card.style.gridRow = `span ${getBlockRowSpan(nextHeight)}`
+      card.style.height = `${nextHeight}px`
     }
 
     const onUp = () => {
@@ -1043,15 +1272,14 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
           <div className="workflow-block-toolbar">
             <div className="workflow-toolbar-group">
               <button className="workflow-soft-btn" type="button" onClick={() => handleAddRow(phase.id, block.id)}>
-                행 추가
+                ??異붽?
               </button>
               <button className="workflow-soft-btn" type="button" onClick={() => handleAddColumn(phase.id, block.id)}>
-                컬럼 추가
+                而щ읆 異붽?
               </button>
               {block.mode === 'target' ? (
                 <button className="workflow-soft-btn" type="button" onClick={() => handleReloadTargets(phase.id, block.id)}>
-                  장비 목록 다시 가져오기
-                </button>
+                  ?λ퉬 紐⑸줉 ?ㅼ떆 媛?몄삤湲?                </button>
               ) : null}
             </div>
           </div>
@@ -1109,11 +1337,10 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                               type="button"
                               onClick={() => handleRemoveColumn(phase.id, block.id, column.key)}
                               disabled={!canDelete}
-                              aria-label={`${column.label} 컬럼 삭제`}
-                              title={`${column.label} 컬럼 삭제`}
+                              aria-label={`${column.label} 而щ읆 ??젣`}
+                              title={`${column.label} 而щ읆 ??젣`}
                             >
-                              −
-                            </button>
+                              ??                            </button>
                           </div>
                           <div
                             className="workflow-column-resize"
@@ -1190,11 +1417,10 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                         className="workflow-mini-icon-button"
                         type="button"
                         onClick={() => handleRemoveRow(phase.id, block.id, rowIndex)}
-                        aria-label={`행 ${rowIndex + 1} 삭제`}
-                        title={`행 ${rowIndex + 1} 삭제`}
+                        aria-label={`??${rowIndex + 1} ??젣`}
+                        title={`??${rowIndex + 1} ??젣`}
                       >
-                        −
-                      </button>
+                        ??                      </button>
                     </td>
                   ) : null}
                 </tr>
@@ -1218,7 +1444,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
       )
     }
 
-    return <div className="workflow-note-sheet">{block.content || '메모가 없습니다.'}</div>
+    return <div className="workflow-note-sheet">{block.content || '硫붾え媛 ?놁뒿?덈떎.'}</div>
   }
 
   function renderChecklistBlock(phase: WorkflowPhase, block: WorkflowChecklistBlock) {
@@ -1228,7 +1454,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
           <div className="workflow-block-toolbar">
             <div className="workflow-toolbar-group">
               <button className="workflow-soft-btn" type="button" onClick={() => handleAddChecklistItem(phase.id, block.id)}>
-                항목 추가
+                ??ぉ 異붽?
               </button>
             </div>
           </div>
@@ -1258,11 +1484,10 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                     className="workflow-mini-icon-button"
                     type="button"
                     onClick={() => handleRemoveChecklistItem(phase.id, block.id, index)}
-                    aria-label={`체크 항목 ${index + 1} 삭제`}
-                    title={`체크 항목 ${index + 1} 삭제`}
+                    aria-label={`泥댄겕 ??ぉ ${index + 1} ??젣`}
+                    title={`泥댄겕 ??ぉ ${index + 1} ??젣`}
                   >
-                    −
-                  </button>
+                    ??                  </button>
                 </>
               ) : (
                 <>
@@ -1270,7 +1495,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                     <strong>{item.text}</strong>
                     <span>{item.done ? '완료됨' : '미완료'}</span>
                   </div>
-                  <div className="workflow-check-assignee">{item.assignee || '미정'}</div>
+                  <div className="workflow-check-assignee">{item.assignee || '誘몄젙'}</div>
                 </>
               )}
             </div>
@@ -1284,8 +1509,8 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
     return (
       <section className="workflow-shell">
         <div className="workflow-state-panel">
-          <strong>작업 카드를 불러오는 중입니다.</strong>
-          <p>워크플로우를 연결할 작업 카드를 준비하고 있습니다.</p>
+          <strong>전체 진행률</strong>
+          <p>?뚰겕?뚮줈?곕? ?곌껐???묒뾽 移대뱶瑜?以鍮꾪븯怨??덉뒿?덈떎.</p>
         </div>
       </section>
     )
@@ -1295,8 +1520,8 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
     return (
       <section className="workflow-shell">
         <div className="workflow-state-panel">
-          <strong>등록된 작업 카드가 없습니다.</strong>
-          <p>먼저 작업 보드에서 카드를 생성한 뒤 워크플로우를 연결할 수 있습니다.</p>
+          <strong>전체 진행률</strong>
+          <p>癒쇱? ?묒뾽 蹂대뱶?먯꽌 移대뱶瑜??앹꽦?????뚰겕?뚮줈?곕? ?곌껐?????덉뒿?덈떎.</p>
         </div>
       </section>
     )
@@ -1305,11 +1530,12 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
   return (
     <section className={`workflow-shell ${compactMode ? 'compact' : ''}`}>
       {error ? <div className="workflow-message error">{error}</div> : null}
+      {completionFeedback ? <div className="workflow-message success">{completionFeedback}</div> : null}
 
       {loadingWorkflow || !workflow || !selectedCard ? (
         <div className="workflow-state-panel">
-          <strong>워크플로우를 불러오는 중입니다.</strong>
-          <p>선택한 작업 카드의 단계, 블록, 템플릿을 준비하고 있습니다.</p>
+          <strong>전체 진행률</strong>
+          <p>?좏깮???묒뾽 移대뱶???④퀎, 釉붾줉, ?쒗뵆由우쓣 以鍮꾪븯怨??덉뒿?덈떎.</p>
         </div>
       ) : (
         <>
@@ -1329,7 +1555,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                       onClick={() => setShowCardPicker((current) => !current)}
                     >
                       <div>
-                        <strong>{selectedCard?.title || '카드를 선택하세요.'}</strong>
+                        <strong>{selectedCard?.title || '카드를 선택하세요'}</strong>
                         <span>
                           {selectedCard
                             ? `${selectedCard.card_code} · ${selectedCard.assignee || '담당자 미지정'} · ${(selectedCard.targets ?? []).length} targets`
@@ -1358,19 +1584,19 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                               onClick={() => void handleSelectCard(card.id)}
                             >
                               <div>
-                                <strong>{card.title}</strong>
-                                <span>{card.assignee || '담당자 미지정'}</span>
+                                <strong>전체 진행률</strong>
+                                <span>템플릿</span>
                               </div>
                               <div className="workflow-card-option-meta">
-                                <span>{card.card_code}</span>
-                                <span>{(card.targets ?? []).length} targets</span>
+                                <span>템플릿</span>
+                                <span>템플릿</span>
                               </div>
                             </button>
                           ))}
                           {!filteredCards.length ? (
                             <div className="workflow-card-option empty">
-                              <strong>검색 결과가 없습니다.</strong>
-                              <span>제목, 카드 코드, 담당자 기준으로 다시 검색하세요.</span>
+                              <strong>전체 진행률</strong>
+                              <span>템플릿</span>
                             </div>
                           ) : null}
                         </div>
@@ -1382,28 +1608,28 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
 
               <div className="workflow-meta-sheet">
                 <div className="workflow-meta-row">
-                  <span>작업 코드</span>
-                  <strong>{workflow.ticketId}</strong>
+                  <span>템플릿</span>
+                  <strong>전체 진행률</strong>
                 </div>
                 <div className="workflow-meta-row">
-                  <span>프로젝트명</span>
-                  <strong>{workflow.projectName}</strong>
+                  <span>템플릿</span>
+                  <strong>전체 진행률</strong>
                 </div>
                 <div className="workflow-meta-row">
-                  <span>생성자</span>
-                  <strong>{workflow.createdBy}</strong>
+                  <span>템플릿</span>
+                  <strong>전체 진행률</strong>
                 </div>
                 <div className="workflow-meta-row">
-                  <span>마지막 갱신</span>
-                  <strong>{workflow.lastUpdated}</strong>
+                  <span>템플릿</span>
+                  <strong>전체 진행률</strong>
                 </div>
                 <div className="workflow-meta-row">
-                  <span>실 담당자</span>
-                  <strong>{workflow.owner}</strong>
+                  <span>템플릿</span>
+                  <strong>전체 진행률</strong>
                 </div>
                 <div className="workflow-meta-row">
-                  <span>작업 대상</span>
-                  <strong>{targetSummary}</strong>
+                  <span>템플릿</span>
+                  <strong>전체 진행률</strong>
                 </div>
               </div>
             </article>
@@ -1429,12 +1655,12 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                       />
                     </svg>
                     <div className="workflow-progress-ring-value">
-                      <strong>{workflowProgress.percent}%</strong>
+                      <strong>전체 진행률</strong>
                     </div>
                   </div>
                   <div className="workflow-progress-caption">전체 진행률</div>
                   <div className="workflow-progress-meta">
-                    {workflowProgress.done}개 완료 / {workflowProgress.total}개 전체 항목
+                    {workflowProgress.done}媛??꾨즺 / {workflowProgress.total}媛??꾩껜 ??ぉ
                   </div>
                 </div>
 
@@ -1443,13 +1669,21 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                   <div className="workflow-phase-progress-list">
                     {workflow.phases.map((phase, index) => {
                       const progress = computePhaseProgress(phase)
+                      const phaseAssigneeLabel = getPhaseAssigneeLabel(phase)
+                      const phaseIncludedInProgress = isPhaseIncludedInProgress(phase)
                       return (
                         <div key={phase.id} className="workflow-phase-progress-item">
                           <div className="workflow-phase-progress-copy">
-                            <strong>
-                              {index + 1}. {phase.title}
-                            </strong>
-                            <span>{progress}%</span>
+                            <div className="workflow-phase-progress-copy-main">
+                              <strong>
+                                {index + 1}. {phase.title}
+                              </strong>
+                              <span className="workflow-phase-progress-subcopy">
+                                ?대떦: {phaseAssigneeLabel}
+                                {phaseIncludedInProgress ? ' 쨌 吏꾪뻾瑜?諛섏쁺' : ' 쨌 吏꾪뻾瑜??쒖쇅'}
+                              </span>
+                            </div>
+                            <span>템플릿</span>
                           </div>
                           <div className="workflow-phase-progress-bar">
                             <span style={{ width: `${progress}%`, background: getProgressColor(progress) }} />
@@ -1474,7 +1708,8 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                     />
                   </div>
                   <div className="workflow-progress-summary-meta">
-                    {workflowProgress.done}개 완료 / {workflowProgress.total}개 전체 항목
+                    {workflowProgress.done}媛??꾨즺 / {workflowProgress.total}媛??꾩껜 ??ぉ
+                    {hasExcludedPhases ? ' 쨌 吏꾪뻾瑜?諛섏쁺 ?④퀎留?吏묎퀎' : ''}
                   </div>
                 </div>
               </div>
@@ -1504,16 +1739,17 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                 >
                   <span>{compactMode ? '기본 보기' : '간소화'}</span>
                 </button>
-                <button className="workflow-primary-button" type="button" onClick={() => setShowPhaseOverlay(true)} disabled={!canEdit}>
+                <button className="workflow-primary-button" type="button" onClick={openPhaseOverlay} disabled={!canEdit}>
                   <Plus size={15} />
                   <span>단계 추가</span>
                 </button>
               </div>
             </div>
 
-            <div className="workflow-stage-lane" ref={stageLaneRef}>
+            <div ref={stageLaneRef} className="workflow-stage-lane">
               {workflow.phases.map((phase, index) => {
                 const progress = computePhaseProgress(phase)
+                const phaseAssigneeLabel = getPhaseAssigneeLabel(phase)
                 return (
                   <div key={phase.id} className="workflow-stage-node">
                     <article
@@ -1534,7 +1770,10 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                       <h4>{phase.title}</h4>
                       <p className="workflow-stage-description">{phase.subtitle}</p>
                       <div className="workflow-stage-meta">
-                        <span className="workflow-stage-text">블록 {phase.blocks.length}개 · {progress}%</span>
+                        <div className="workflow-stage-meta-head">
+                          <span className="workflow-stage-text">담당 {phaseAssigneeLabel}</span>
+                          <span className="workflow-stage-progress-value">{progress}%</span>
+                        </div>
                         <span className="workflow-mini-progress">
                           <span style={{ width: `${progress}%`, background: getProgressColor(progress) }} />
                         </span>
@@ -1574,123 +1813,180 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                   )}
                 </div>
 
-                <div className="workflow-head-actions">
-                  <button className="workflow-ghost-button" type="button" onClick={() => setShowAddOverlay(true)} disabled={!canEdit}>
-                    <Plus size={15} />
-                    <span>추가</span>
-                  </button>
-                  <button className="workflow-icon-button" type="button" onClick={togglePhaseEditing} disabled={!canEdit} aria-label="단계 수정">
-                    {editingPhase ? <Check size={15} /> : <Pencil size={15} />}
-                  </button>
-                  <button
-                    className="workflow-icon-button danger"
-                    type="button"
-                    onClick={handleDeletePhase}
-                    disabled={!canEdit || workflow.phases.length <= 1}
-                    aria-label="단계 삭제"
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                <div className="workflow-head-actions workflow-detail-head-actions">
+                  {editingPhase ? (
+                    <div className="workflow-head-phase-settings">
+                      <label className="workflow-field">
+                        <span>담당자</span>
+                        <select
+                          className="workflow-field-select"
+                          value={selectedPhase.assigneeUserId ? String(selectedPhase.assigneeUserId) : ''}
+                          onChange={(event) => handleUpdatePhaseAssignee(event.target.value)}
+                          disabled={!canEdit}
+                        >
+                          <option value="">誘몄젙</option>
+                          {selectedPhase.assigneeUserId && !userDirectory.has(selectedPhase.assigneeUserId) ? (
+                            <option value={String(selectedPhase.assigneeUserId)}>{getPhaseAssigneeName(selectedPhase)}</option>
+                          ) : null}
+                          {phaseAssigneeOptions.map((user) => (
+                            <option key={user.id} value={String(user.id)}>
+                              {user.display_name || user.username}
+                              {user.is_active ? '' : ' (鍮꾪솢??'}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="workflow-phase-toggle">
+                        <input
+                          type="checkbox"
+                          checked={isPhaseIncludedInProgress(selectedPhase)}
+                          onChange={(event) => handleUpdatePhaseIncludeInProgress(event.target.checked)}
+                          disabled={!canEdit}
+                        />
+                        <span>템플릿</span>
+                      </label>
+                    </div>
+                  ) : null}
+                  <div className="workflow-head-action-buttons">
+                    <button
+                      className={`workflow-primary-button workflow-complete-button ${selectedPhase.isCompleted ? 'is-complete' : ''}`}
+                      type="button"
+                      onClick={() => void handleCompleteSelectedPhase()}
+                      disabled={completingPhase || !canCompleteSelectedPhase}
+                      title={
+                        selectedPhase.isCompleted
+                          ? '?대? ?꾨즺???④퀎?낅땲??'
+                          : canCompleteSelectedPhase
+                            ? '?④퀎瑜??꾨즺 泥섎━?⑸땲??'
+                            : selectedPhaseProgress < 100
+                            ? '吏꾪뻾瑜?100%媛 ?섎㈃ ?꾨즺?????덉뒿?덈떎.'
+                            : '?대떦???먮뒗 admin留??꾨즺?????덉뒿?덈떎.'
+                      }
+                    >
+                      <Check size={15} />
+                      <span>{selectedPhase.isCompleted ? '완료됨' : completingPhase ? '완료 처리 중...' : '단계 완료'}</span>
+                    </button>
+                    <button className="workflow-ghost-button" type="button" onClick={() => setShowAddOverlay(true)} disabled={!canEdit}>
+                      <Plus size={15} />
+                      <span>템플릿</span>
+                    </button>
+                    <button className="workflow-icon-button" type="button" onClick={togglePhaseEditing} disabled={!canEdit} aria-label="?④퀎 ?섏젙">
+                      {editingPhase ? <Check size={15} /> : <Pencil size={15} />}
+                    </button>
+                    <button
+                      className="workflow-icon-button danger"
+                      type="button"
+                      onClick={handleDeletePhase}
+                      disabled={!canEdit || workflow.phases.length <= 1}
+                      aria-label="?④퀎 ??젣"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </div>
               </div>
 
               <div className="workflow-block-board" ref={blockBoardRef}>
-                {selectedPhase.blocks.map((block) => (
-                  <article
-                    key={block.id}
-                    className="workflow-block-card"
-                    style={{
-                      gridColumn: `span ${clamp(block.widthUnits ?? 6, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)}`,
-                      minHeight: `${Math.max(block.heightPx ?? DEFAULT_BLOCK_HEIGHT, MIN_BLOCK_HEIGHT)}px`,
-                    }}
-                    onDragOver={(event) => {
-                      if (canEdit) {
-                        event.preventDefault()
-                      }
-                    }}
-                    onDrop={() => handleBlockDrop(block.id)}
-                  >
-                    <div
-                      className="workflow-block-head"
-                      draggable={canEdit}
-                      onDragStart={(event: ReactDragEvent<HTMLDivElement>) => {
-                        if ((event.target as HTMLElement).closest('button,input,textarea')) {
-                          event.preventDefault()
-                          return
-                        }
-                        handleBlockDragStart(block.id)
+                {selectedPhase.blocks.map((block) => {
+                  const blockHeightPx = getBlockHeightPx(block.heightPx)
+                  return (
+                    <article
+                      key={block.id}
+                      className="workflow-block-card"
+                      style={{
+                        gridColumn: `span ${clamp(block.widthUnits ?? 6, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)}`,
+                        gridRow: `span ${getBlockRowSpan(blockHeightPx)}`,
+                        height: `${blockHeightPx}px`,
                       }}
+                      onDragOver={(event) => {
+                        if (canEdit) {
+                          event.preventDefault()
+                        }
+                      }}
+                      onDrop={() => handleBlockDrop(block.id)}
                     >
-                      <div className="workflow-block-head-left">
-                        <span className="workflow-drag-handle">
-                          <GripVertical size={16} />
-                        </span>
-                        <div className="workflow-block-title-wrap">
-                          {block.editing ? (
-                            <>
-                              <input
-                                className="workflow-block-title-input"
-                                value={block.title}
-                                onChange={(event) => handleUpdateBlockField(selectedPhase.id, block.id, 'title', event.target.value)}
-                              />
-                              <input
-                                className="workflow-block-subtitle-input"
-                                value={block.subtitle}
-                                onChange={(event) => handleUpdateBlockField(selectedPhase.id, block.id, 'subtitle', event.target.value)}
-                              />
-                            </>
-                          ) : (
-                            <div className="workflow-block-title-view">
-                              <strong>{block.title}</strong>
-                              <span>{block.subtitle}</span>
-                            </div>
-                          )}
+                      <div
+                        className="workflow-block-head"
+                        draggable={canEdit}
+                        onDragStart={(event: ReactDragEvent<HTMLDivElement>) => {
+                          if ((event.target as HTMLElement).closest('button,input,textarea')) {
+                            event.preventDefault()
+                            return
+                          }
+                          handleBlockDragStart(block.id)
+                        }}
+                      >
+                        <div className="workflow-block-head-left">
+                          <span className="workflow-drag-handle">
+                            <GripVertical size={16} />
+                          </span>
+                          <div className="workflow-block-title-wrap">
+                            {block.editing ? (
+                              <>
+                                <input
+                                  className="workflow-block-title-input"
+                                  value={block.title}
+                                  onChange={(event) => handleUpdateBlockField(selectedPhase.id, block.id, 'title', event.target.value)}
+                                />
+                                <input
+                                  className="workflow-block-subtitle-input"
+                                  value={block.subtitle}
+                                  onChange={(event) => handleUpdateBlockField(selectedPhase.id, block.id, 'subtitle', event.target.value)}
+                                />
+                              </>
+                            ) : (
+                              <div className="workflow-block-title-view">
+                                <strong>전체 진행률</strong>
+                                <span>템플릿</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="workflow-block-tools">
+                          {block.type === 'table' ? (
+                            <button
+                              className="workflow-copy-button"
+                              type="button"
+                              onClick={() => handleCopyTable(block)}
+                              aria-label={`${block.title} ??蹂듭궗`}
+                              title={`${block.title} ??蹂듭궗`}
+                            >
+                              <Copy size={14} />
+                            </button>
+                          ) : null}
+                          <span className={`workflow-block-type type-${block.type}`}>
+                            {block.type === 'table' ? '??釉붾줉' : block.type === 'note' ? '硫붾え 釉붾줉' : '泥댄겕由ъ뒪??釉붾줉'}
+                          </span>
+                          <button
+                            className="workflow-icon-button"
+                            type="button"
+                            onClick={() => handleToggleBlockEditing(selectedPhase.id, block.id, !block.editing)}
+                            disabled={!canEdit}
+                            aria-label={block.editing ? '釉붾줉 ?몄쭛 ?꾨즺' : '釉붾줉 ?몄쭛'}
+                          >
+                            {block.editing ? <Check size={15} /> : <Pencil size={15} />}
+                          </button>
+                          <button
+                            className="workflow-icon-button danger"
+                            type="button"
+                            onClick={() => handleDeleteBlock(selectedPhase.id, block.id)}
+                            disabled={!canEdit || selectedPhase.blocks.length <= 1}
+                            aria-label="釉붾줉 ??젣"
+                          >
+                            <Trash2 size={15} />
+                          </button>
                         </div>
                       </div>
 
-                      <div className="workflow-block-tools">
-                        {block.type === 'table' ? (
-                          <button
-                            className="workflow-copy-button"
-                            type="button"
-                            onClick={() => handleCopyTable(block)}
-                            aria-label={`${block.title} 표 복사`}
-                            title={`${block.title} 표 복사`}
-                          >
-                            <Copy size={14} />
-                          </button>
-                        ) : null}
-                        <span className={`workflow-block-type type-${block.type}`}>
-                          {block.type === 'table' ? '표 블록' : block.type === 'note' ? '메모 블록' : '체크리스트 블록'}
-                        </span>
-                        <button
-                          className="workflow-icon-button"
-                          type="button"
-                          onClick={() => handleToggleBlockEditing(selectedPhase.id, block.id, !block.editing)}
-                          disabled={!canEdit}
-                          aria-label={block.editing ? '블록 편집 완료' : '블록 편집'}
-                        >
-                          {block.editing ? <Check size={15} /> : <Pencil size={15} />}
-                        </button>
-                        <button
-                          className="workflow-icon-button danger"
-                          type="button"
-                          onClick={() => handleDeleteBlock(selectedPhase.id, block.id)}
-                          disabled={!canEdit || selectedPhase.blocks.length <= 1}
-                          aria-label="블록 삭제"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </div>
+                      <div className="workflow-block-body">{renderBlockBody(selectedPhase, block)}</div>
 
-                    <div className="workflow-block-body">{renderBlockBody(selectedPhase, block)}</div>
-
-                    {canEdit ? (
-                      <div className="workflow-resize-handle" onPointerDown={(event) => startBlockResize(block.id, event)} />
-                    ) : null}
-                  </article>
-                ))}
+                      {canEdit ? (
+                        <div className="workflow-resize-handle" onPointerDown={(event) => startBlockResize(block.id, event)} />
+                      ) : null}
+                    </article>
+                  )
+                })}
               </div>
             </section>
           ) : null}
@@ -1704,9 +2000,9 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
             <div className="workflow-overlay-head">
               <div>
                 <p className="workflow-kicker">Add Block</p>
-                <h3>워크스페이스에 추가할 블록을 선택합니다.</h3>
+                <h3>?뚰겕?ㅽ럹?댁뒪??異붽???釉붾줉???좏깮?⑸땲??</h3>
               </div>
-              <button className="workflow-icon-button" type="button" onClick={() => setShowAddOverlay(false)} aria-label="추가 오버레이 닫기">
+              <button className="workflow-icon-button" type="button" onClick={() => setShowAddOverlay(false)} aria-label="異붽? ?ㅻ쾭?덉씠 ?リ린">
                 <X size={15} />
               </button>
             </div>
@@ -1743,9 +2039,9 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
             <div className="workflow-overlay-head">
               <div>
                 <p className="workflow-kicker">Template</p>
-                <h3>현재 워크플로우를 템플릿으로 저장하고 적용합니다.</h3>
+                <h3>?꾩옱 ?뚰겕?뚮줈?곕? ?쒗뵆由우쑝濡???ν븯怨??곸슜?⑸땲??</h3>
               </div>
-              <button className="workflow-icon-button" type="button" onClick={() => setShowTemplateOverlay(false)} aria-label="템플릿 오버레이 닫기">
+              <button className="workflow-icon-button" type="button" onClick={() => setShowTemplateOverlay(false)} aria-label="?쒗뵆由??ㅻ쾭?덉씠 ?リ린">
                 <X size={15} />
               </button>
             </div>
@@ -1753,25 +2049,24 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
             <div className="workflow-template-create">
               <div className="workflow-template-create-fields">
                 <label className="workflow-field">
-                  <span>템플릿 이름</span>
+                  <span>템플릿</span>
                   <input
                     value={templateName}
                     onChange={(event) => setTemplateName(event.target.value)}
-                    placeholder="예: 기존 장비 BGP 변경 표준"
+                    placeholder="카드 제목, 코드, 담당자 검색"
                   />
                 </label>
                 <label className="workflow-field">
-                  <span>설명</span>
+                  <span>템플릿</span>
                   <input
                     value={templateDescription}
                     onChange={(event) => setTemplateDescription(event.target.value)}
-                    placeholder="템플릿 설명"
+                    placeholder="카드 제목, 코드, 담당자 검색"
                   />
                 </label>
               </div>
               <button className="workflow-primary-button" type="button" onClick={() => void handleCreateTemplate()} disabled={!canEdit}>
-                템플릿 저장
-              </button>
+                ?쒗뵆由????              </button>
             </div>
 
             <div className="workflow-template-list">
@@ -1786,21 +2081,20 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                         {template.is_system ? ' · 시스템 템플릿' : ' · 사용자 템플릿'}
                       </span>
                     </div>
-                    {workflow?.templateId === template.id ? <span className="workflow-inline-chip">현재 적용</span> : null}
+                    {workflow?.templateId === template.id ? <span className="workflow-inline-chip">?꾩옱 ?곸슜</span> : null}
                   </div>
                   <div className="workflow-template-card-actions">
                     <button className="workflow-soft-btn" type="button" onClick={() => handleApplyTemplate(template)} disabled={!canEdit}>
-                      적용
+                      ?곸슜
                     </button>
                     <button className="workflow-soft-btn" type="button" onClick={() => void handleOverwriteTemplate(template.id)} disabled={!canEdit}>
-                      현재 흐름 저장
-                    </button>
+                      ?꾩옱 ?먮쫫 ???                    </button>
                     <button className="workflow-soft-btn" type="button" onClick={() => void handleRenameTemplate(template)} disabled={!canEdit}>
-                      이름 수정
+                      ?대쫫 ?섏젙
                     </button>
                     {!template.is_system ? (
                       <button className="workflow-soft-btn danger" type="button" onClick={() => void handleDeleteTemplate(template)} disabled={!canEdit}>
-                        삭제
+                        ??젣
                       </button>
                     ) : null}
                   </div>
@@ -1818,20 +2112,20 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
             <div className="workflow-overlay-head">
               <div>
                 <p className="workflow-kicker">Add Phase</p>
-                <h3>새 단계 정보를 입력합니다.</h3>
+                <h3>???④퀎 ?뺣낫瑜??낅젰?⑸땲??</h3>
               </div>
-              <button className="workflow-icon-button" type="button" onClick={() => setShowPhaseOverlay(false)} aria-label="단계 추가 오버레이 닫기">
+              <button className="workflow-icon-button" type="button" onClick={() => setShowPhaseOverlay(false)} aria-label="?④퀎 異붽? ?ㅻ쾭?덉씠 ?リ린">
                 <X size={15} />
               </button>
             </div>
 
             <div className="workflow-phase-create-fields">
               <label className="workflow-field">
-                <span>대제목</span>
+                <span>템플릿</span>
                 <input
                   value={newPhaseTitle}
                   onChange={(event) => setNewPhaseTitle(event.target.value)}
-                  placeholder="예: 특이사항"
+                  placeholder="카드 제목, 코드, 담당자 검색"
                 />
               </label>
               <label className="workflow-field">
@@ -1839,17 +2133,41 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                 <input
                   value={newPhaseSubtitle}
                   onChange={(event) => setNewPhaseSubtitle(event.target.value)}
-                  placeholder="예: 고객 특이 절차나 별도 승인 흐름을 적습니다."
+                  placeholder="카드 제목, 코드, 담당자 검색"
                 />
+              </label>
+              <label className="workflow-field">
+                <span>담당자</span>
+                <select
+                  className="workflow-field-select"
+                  value={newPhaseAssigneeUserId}
+                  onChange={(event) => setNewPhaseAssigneeUserId(event.target.value)}
+                >
+                  <option value="">誘몄젙</option>
+                  {phaseAssigneeOptions.map((user) => (
+                    <option key={user.id} value={String(user.id)}>
+                      {user.display_name || user.username}
+                      {user.is_active ? '' : ' (鍮꾪솢??'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="workflow-phase-toggle">
+                <input
+                  type="checkbox"
+                  checked={newPhaseIncludeInProgress}
+                  onChange={(event) => setNewPhaseIncludeInProgress(event.target.checked)}
+                />
+                <span>템플릿</span>
               </label>
             </div>
 
             <div className="workflow-overlay-actions">
               <button className="workflow-ghost-button" type="button" onClick={() => setShowPhaseOverlay(false)}>
-                취소
+                痍⑥냼
               </button>
               <button className="workflow-primary-button" type="button" onClick={handleAddPhase} disabled={!newPhaseTitle.trim()}>
-                단계 생성
+                ?④퀎 ?앹꽦
               </button>
             </div>
           </div>
@@ -1876,7 +2194,7 @@ function clamp(value: number, min: number, max: number) {
 function summarizeTargets(targets: string[]) {
   const cleaned = targets.map((target) => target.trim()).filter(Boolean)
   if (!cleaned.length) {
-    return '미정'
+    return '誘몄젙'
   }
   if (cleaned.length <= 2) {
     return cleaned.join(', ')
@@ -1910,3 +2228,6 @@ async function copyPlainText(text: string) {
   document.execCommand('copy')
   document.body.removeChild(textarea)
 }
+
+
+

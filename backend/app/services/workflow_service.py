@@ -1,20 +1,28 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Any
 import uuid
 
 from app.repositories.kanban_repository import KanbanRepository
 from app.repositories.workflow_repository import WorkflowRepository
+from app.services.notification_service import NotificationService
 
 
 STATUS_DEFAULT = "not_started"
 
 
 class WorkflowService:
-    def __init__(self, repository: WorkflowRepository, kanban_repository: KanbanRepository) -> None:
+    def __init__(
+        self,
+        repository: WorkflowRepository,
+        kanban_repository: KanbanRepository,
+        notification_service: NotificationService,
+    ) -> None:
         self.repository = repository
         self.kanban_repository = kanban_repository
+        self.notification_service = notification_service
 
     def initialize(self) -> None:
         self.repository.initialize()
@@ -29,12 +37,15 @@ class WorkflowService:
         if existing:
             workflow = self._synchronize_workflow(existing["workflow"], card)
             if workflow != existing["workflow"]:
-                return self.repository.save_document(card_id, workflow)
+                timestamp = str(card.get("updated_at") or card.get("created_at") or self._now_iso())
+                workflow["lastUpdated"] = timestamp
+                workflow["lastUpdatedBy"] = str(card.get("updated_by_name") or card.get("created_by_name") or "")
+                return self.repository.save_document(card_id, workflow, timestamp=timestamp)
             return existing
 
         template = self._get_default_template_for_card(card)
         workflow = self._build_workflow_from_card(card, template)
-        return self.repository.save_document(card_id, workflow)
+        return self.repository.save_document(card_id, workflow, timestamp=str(workflow.get("lastUpdated") or self._now_iso()))
 
     def save_card_workflow(
         self,
@@ -46,10 +57,102 @@ class WorkflowService:
         if not card:
             return None
 
+        existing = self.repository.get_document(card_id)
         synchronized = self._synchronize_workflow(workflow, card)
+        timestamp = self._now_iso()
+        synchronized["lastUpdated"] = timestamp
         if current_user:
             synchronized["lastUpdatedBy"] = str(current_user.get("display_name") or current_user.get("username") or "")
-        return self.repository.save_document(card_id, synchronized)
+        saved = self.repository.save_document(card_id, synchronized, timestamp=timestamp)
+        self.kanban_repository.touch_card(
+            card_id,
+            updated_by_user_id=self._coerce_optional_int((current_user or {}).get("id")),
+            timestamp=timestamp,
+        )
+        self._notify_phase_assignments(
+            existing["workflow"] if existing else None,
+            saved["workflow"],
+            card,
+            current_user,
+        )
+        return saved
+
+    def complete_phase(
+        self,
+        card_id: int,
+        phase_id: str,
+        current_user: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        card = self.kanban_repository.get_card(card_id)
+        if not card:
+            return None
+
+        document = self.get_card_workflow(card_id)
+        if not document:
+            return None
+
+        workflow = deepcopy(document["workflow"])
+        phases = workflow.get("phases") or []
+        phase_index = next((index for index, phase in enumerate(phases) if str(phase.get("id")) == phase_id), -1)
+        if phase_index < 0:
+            raise LookupError("Workflow phase not found")
+
+        phase = phases[phase_index]
+        current_user_id = int(current_user["id"])
+        current_role = str(current_user.get("role") or "")
+        phase_assignee_id = self._coerce_optional_int(phase.get("assigneeUserId"))
+        if current_role != "admin" and phase_assignee_id != current_user_id:
+            raise PermissionError("Only the phase assignee or admin can complete this phase")
+
+        if phase.get("isCompleted"):
+            return {
+                **document,
+                "completed_phase_id": str(phase.get("id") or ""),
+                "notified_phase_id": "",
+                "notified_phase_title": "",
+                "notification_recipient": "",
+                "notification_title": "",
+                "notification_body": "",
+            }
+
+        progress = self._calculate_phase_progress(phase)
+        if progress < 100:
+            raise ValueError("The selected phase is not ready to complete")
+
+        timestamp = self._now_iso()
+        phase["isCompleted"] = True
+        phase["completedAt"] = timestamp
+        phase["completedByUserId"] = current_user_id
+        phase["completedByName"] = self._user_label(current_user)
+        workflow["lastUpdated"] = timestamp
+        workflow["lastUpdatedBy"] = self._user_label(current_user)
+
+        saved = self.repository.save_document(card_id, workflow, timestamp=timestamp)
+        self.kanban_repository.touch_card(card_id, updated_by_user_id=current_user_id, timestamp=timestamp)
+
+        notified_phase_id = ""
+        notified_phase_title = ""
+        notification_recipient = ""
+        notification_title = ""
+        notification_body = ""
+        next_phase = self._find_next_pending_phase(saved["workflow"].get("phases") or [], phase_index + 1)
+        if next_phase:
+            notified_phase_id = str(next_phase.get("id") or "")
+            notification_result = self._notify_next_phase_ready(card, next_phase, phase, current_user)
+            notified_phase_title = str(next_phase.get("title") or "")
+            notification_recipient = str(notification_result.get("recipient") or "")
+            notification_title = str(notification_result.get("title") or "")
+            notification_body = str(notification_result.get("body") or "")
+
+        return {
+            **saved,
+            "completed_phase_id": str(phase.get("id") or ""),
+            "notified_phase_id": notified_phase_id,
+            "notified_phase_title": notified_phase_title,
+            "notification_recipient": notification_recipient,
+            "notification_title": notification_title,
+            "notification_body": notification_body,
+        }
 
     def list_templates(self, card_type: str | None = None) -> list[dict[str, Any]]:
         return self.repository.list_templates(card_type)
@@ -216,6 +319,9 @@ class WorkflowService:
             "id": prefix,
             "title": title,
             "subtitle": subtitle,
+            "assigneeUserId": None,
+            "assigneeName": "미정",
+            "includeInProgress": True,
             "blocks": [
                 self._make_target_table_block(f"{prefix}-table", f"{title} 실행표", "작업 대상 장비 기준 기본 행", []),
                 self._make_note_block(f"{prefix}-note", "메모 블록", "단계 특이사항이나 추가 메모를 기록합니다.", ""),
@@ -234,10 +340,20 @@ class WorkflowService:
     def _hydrate_template_phases(self, phases: list[dict[str, Any]], targets: list[str], owner: str) -> list[dict[str, Any]]:
         hydrated: list[dict[str, Any]] = []
         for phase in phases:
+            assignee_user_id = phase.get("assigneeUserId")
+            if not isinstance(assignee_user_id, int):
+                assignee_user_id = None
             next_phase = {
                 "id": str(phase.get("id") or self._uid("phase")),
                 "title": str(phase.get("title") or "새 단계"),
                 "subtitle": str(phase.get("subtitle") or ""),
+                "assigneeUserId": assignee_user_id,
+                "assigneeName": str(phase.get("assigneeName") or "미정"),
+                "includeInProgress": self._coerce_bool(phase.get("includeInProgress"), True),
+                "isCompleted": self._coerce_bool(phase.get("isCompleted"), False),
+                "completedAt": str(phase.get("completedAt") or ""),
+                "completedByUserId": self._coerce_optional_int(phase.get("completedByUserId")),
+                "completedByName": str(phase.get("completedByName") or ""),
                 "blocks": [],
             }
             blocks = phase.get("blocks") or []
@@ -245,6 +361,7 @@ class WorkflowService:
                 next_phase["blocks"].append(self._hydrate_block(block, targets, owner))
             if not next_phase["blocks"]:
                 next_phase["blocks"].append(self._make_note_block(self._uid("note"), "메모 블록", "새 단계의 기본 메모", ""))
+            self._reconcile_phase_completion(next_phase)
             hydrated.append(next_phase)
         return hydrated
 
@@ -478,6 +595,149 @@ class WorkflowService:
         if fallback_key == "hostname":
             return str(columns[0]["key"])
         return fallback_key
+
+    def _notify_phase_assignments(
+        self,
+        previous_workflow: dict[str, Any] | None,
+        current_workflow: dict[str, Any],
+        card: dict[str, Any],
+        current_user: dict[str, Any] | None,
+    ) -> None:
+        previous_phase_map = {
+            str(phase.get("id") or ""): phase
+            for phase in (previous_workflow or {}).get("phases") or []
+            if str(phase.get("id") or "")
+        }
+        actor_id = self._coerce_optional_int((current_user or {}).get("id"))
+
+        for phase in current_workflow.get("phases") or []:
+            phase_id = str(phase.get("id") or "")
+            new_assignee_id = self._coerce_optional_int(phase.get("assigneeUserId"))
+            if not new_assignee_id or new_assignee_id == actor_id:
+                continue
+            previous_phase = previous_phase_map.get(phase_id) or {}
+            old_assignee_id = self._coerce_optional_int(previous_phase.get("assigneeUserId"))
+            if new_assignee_id == old_assignee_id:
+                continue
+            self.notification_service.notify(
+                user_id=new_assignee_id,
+                kind="assignment",
+                title=f'"{phase.get("title") or "새 단계"}" 단계 담당자로 지정되었습니다.',
+                body=f'{card.get("card_code") or ""} {card.get("title") or ""} 작업의 단계 담당자입니다.',
+                link_view="work_plan",
+                link_card_id=int(card["id"]),
+                link_phase_id=phase_id,
+                created_by_user_id=actor_id,
+            )
+
+    def _notify_next_phase_ready(
+        self,
+        card: dict[str, Any],
+        next_phase: dict[str, Any],
+        completed_phase: dict[str, Any],
+        current_user: dict[str, Any] | None,
+    ) -> dict[str, str]:
+        next_assignee_id = self._coerce_optional_int(next_phase.get("assigneeUserId"))
+        actor_id = self._coerce_optional_int((current_user or {}).get("id"))
+        recipient = str(next_phase.get("assigneeName") or "미정")
+        title = f'"{next_phase.get("title") or "다음 단계"}" 단계 진행 알림'
+        body = (
+            f'{card.get("card_code") or ""} {card.get("title") or ""} 작업에서 '
+            f'"{completed_phase.get("title") or "이전 단계"}" 단계가 완료되었습니다.'
+        )
+        if not next_assignee_id or next_assignee_id == actor_id:
+            return {
+                "recipient": "",
+                "title": "",
+                "body": "",
+            }
+        self.notification_service.notify(
+            user_id=next_assignee_id,
+            kind="workflow_ready",
+            title=title,
+            body=body,
+            link_view="work_plan",
+            link_card_id=int(card["id"]),
+            link_phase_id=str(next_phase.get("id") or ""),
+            created_by_user_id=actor_id,
+        )
+        return {
+            "recipient": recipient,
+            "title": title,
+            "body": body,
+        }
+
+    def _find_next_pending_phase(self, phases: list[dict[str, Any]], start_index: int) -> dict[str, Any] | None:
+        for phase in phases[start_index:]:
+            if not self._coerce_bool(phase.get("isCompleted"), False):
+                return phase
+        return None
+
+    def _reconcile_phase_completion(self, phase: dict[str, Any]) -> None:
+        if self._calculate_phase_progress(phase) >= 100:
+            if not phase.get("isCompleted"):
+                phase["completedAt"] = str(phase.get("completedAt") or "")
+                phase["completedByUserId"] = self._coerce_optional_int(phase.get("completedByUserId"))
+                phase["completedByName"] = str(phase.get("completedByName") or "")
+            return
+
+        phase["isCompleted"] = False
+        phase["completedAt"] = ""
+        phase["completedByUserId"] = None
+        phase["completedByName"] = ""
+
+    def _calculate_phase_progress(self, phase: dict[str, Any]) -> int:
+        done = 0
+        total = 0
+        for block in phase.get("blocks") or []:
+            block_type = str(block.get("type") or "")
+            if block_type == "table":
+                status_key = self._find_status_key(block.get("columns") or [])
+                rows = block.get("rows") or []
+                total += len(rows)
+                done += sum(
+                    1
+                    for row in rows
+                    if str((row or {}).get(status_key) or STATUS_DEFAULT) in {"done", "n_a"}
+                )
+                continue
+            if block_type == "checklist":
+                items = block.get("items") or []
+                total += len(items)
+                done += sum(1 for item in items if bool((item or {}).get("done", False)))
+        if total <= 0:
+            return 0
+        return int(round((done / total) * 100))
+
+    def _coerce_optional_int(self, value: Any) -> int | None:
+        if value in (None, ""):
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed > 0 else None
+
+    def _user_label(self, current_user: dict[str, Any] | None) -> str:
+        if not current_user:
+            return ""
+        return str(current_user.get("display_name") or current_user.get("username") or "").strip()
+
+    def _now_iso(self) -> str:
+        return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+    def _coerce_bool(self, value: Any, default: bool) -> bool:
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "1", "yes", "y", "on"}:
+                return True
+            if normalized in {"false", "0", "no", "n", "off"}:
+                return False
+        return bool(value)
 
     def _uid(self, prefix: str) -> str:
         return f"{prefix}-{uuid.uuid4().hex[:10]}"

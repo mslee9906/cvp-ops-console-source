@@ -99,6 +99,7 @@ class KanbanCardResponse(BaseModel):
     card_code: str
     title: str
     description: str = ""
+    due_at: str = ""
     assignee: str = ""
     assignee_user_id: int | None = None
     created_by_user_id: int | None = None
@@ -122,6 +123,7 @@ class KanbanCardResponse(BaseModel):
 class KanbanCardCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: str = Field(default="", max_length=5000)
+    due_at: str = Field(default="", max_length=40)
     assignee: str = Field(default="", max_length=120)
     assignee_user_id: int | None = Field(default=None, ge=1)
     column_key: KanbanColumnKey = KanbanColumnKey.planned
@@ -134,6 +136,7 @@ class KanbanCardCreate(BaseModel):
 class KanbanCardUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
+    due_at: str | None = Field(default=None, max_length=40)
     assignee: str | None = Field(default=None, max_length=120)
     assignee_user_id: int | None = Field(default=None, ge=1)
     column_key: KanbanColumnKey | None = None

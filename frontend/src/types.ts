@@ -239,6 +239,7 @@ export interface KanbanCard {
   card_code: string
   title: string
   description: string
+  due_at: string
   assignee: string
   assignee_user_id?: number | null
   created_by_user_id?: number | null
@@ -262,6 +263,7 @@ export interface KanbanCard {
 export interface KanbanCardInput {
   title: string
   description: string
+  due_at: string
   assignee: string
   assignee_user_id?: number | null
   column_key: KanbanColumnKey
@@ -478,6 +480,13 @@ export interface WorkflowPhase {
   id: string
   title: string
   subtitle: string
+  assigneeUserId?: number | null
+  assigneeName: string
+  includeInProgress: boolean
+  isCompleted: boolean
+  completedAt: string
+  completedByUserId?: number | null
+  completedByName: string
   blocks: WorkflowBlock[]
 }
 
@@ -504,6 +513,15 @@ export interface WorkflowDocumentResponse {
   updated_at: string
 }
 
+export interface WorkflowPhaseCompleteResponse extends WorkflowDocumentResponse {
+  completed_phase_id: string
+  notified_phase_id: string
+  notified_phase_title: string
+  notification_recipient: string
+  notification_title: string
+  notification_body: string
+}
+
 export interface WorkflowTemplate {
   id: number
   name: string
@@ -515,4 +533,26 @@ export interface WorkflowTemplate {
   updated_by_user_id?: number | null
   created_at: string
   updated_at: string
+}
+
+export type NotificationKind = 'info' | 'assignment' | 'workflow_ready' | 'workflow_completed'
+
+export interface NotificationItem {
+  id: number
+  user_id: number
+  kind: NotificationKind
+  title: string
+  body: string
+  link_view: string
+  link_card_id?: number | null
+  link_phase_id: string
+  is_read: boolean
+  created_by_user_id?: number | null
+  created_at: string
+  read_at: string
+}
+
+export interface NotificationListResponse {
+  items: NotificationItem[]
+  unread_count: number
 }

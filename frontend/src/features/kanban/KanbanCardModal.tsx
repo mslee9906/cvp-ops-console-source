@@ -142,6 +142,15 @@ export function KanbanCardModal({ mode, initialValues, card, users, submitting, 
                 ))}
               </select>
             </label>
+
+            <label className="kanban-field">
+              <span>완료 예정 일시</span>
+              <input
+                type="datetime-local"
+                value={values.due_at}
+                onChange={(event) => setValues((current) => ({ ...current, due_at: event.target.value }))}
+              />
+            </label>
           </div>
 
           <label className="kanban-field wide">
@@ -191,6 +200,7 @@ function normalizeCardInput(values: KanbanCardInput): KanbanCardInput {
     ...values,
     title: values.title.trim(),
     description: values.description.trim(),
+    due_at: values.due_at.trim(),
     assignee: values.assignee.trim(),
     assignee_user_id: values.assignee_user_id ?? null,
     checklist_items: normalizedChecklistItems,

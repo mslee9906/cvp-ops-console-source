@@ -62,8 +62,8 @@ class WorkflowRepository:
             return None
         return self._serialize_document(row)
 
-    def save_document(self, card_id: int, workflow: dict[str, Any]) -> dict[str, Any]:
-        timestamp = _now_iso()
+    def save_document(self, card_id: int, workflow: dict[str, Any], timestamp: str | None = None) -> dict[str, Any]:
+        timestamp = str(timestamp or _now_iso())
         workflow_json = json.dumps(workflow, ensure_ascii=False)
         with self._connect() as connection:
             exists = connection.execute(

@@ -20,6 +20,8 @@ import type {
   KanbanTargetSnapshotResponse,
   KanbanValidationResponse,
   LoginResponse,
+  NotificationItem,
+  NotificationListResponse,
   LookupResponse,
   OverviewResponse,
   RecordListResponse,
@@ -30,6 +32,7 @@ import type {
   VrfGroupListResponse,
   WorkflowDocument,
   WorkflowDocumentResponse,
+  WorkflowPhaseCompleteResponse,
   WorkflowTemplate,
 } from './types'
 
@@ -178,11 +181,24 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ target_id: targetId, config_text: configText }),
     }),
+  getNotifications: (limit = 20) => request<NotificationListResponse>(`/api/notifications?limit=${limit}`),
+  markNotificationRead: (notificationId: number) =>
+    request<NotificationItem>(`/api/notifications/${notificationId}/read`, {
+      method: 'POST',
+    }),
+  markAllNotificationsRead: () =>
+    request<{ ok: boolean; updated: number }>('/api/notifications/read-all', {
+      method: 'POST',
+    }),
   getWorkflow: (cardId: number) => request<WorkflowDocumentResponse>(`/api/workflows/cards/${cardId}`),
   saveWorkflow: (cardId: number, workflow: WorkflowDocument) =>
     request<WorkflowDocumentResponse>(`/api/workflows/cards/${cardId}`, {
       method: 'PUT',
       body: JSON.stringify({ workflow }),
+    }),
+  completeWorkflowPhase: (cardId: number, phaseId: string) =>
+    request<WorkflowPhaseCompleteResponse>(`/api/workflows/cards/${cardId}/phases/${encodeURIComponent(phaseId)}/complete`, {
+      method: 'POST',
     }),
   getWorkflowTemplates: (cardType?: string) =>
     request<WorkflowTemplate[]>(

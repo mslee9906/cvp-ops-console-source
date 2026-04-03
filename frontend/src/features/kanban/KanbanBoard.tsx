@@ -36,6 +36,7 @@ const DETAIL_STEP_META: Array<{ key: DetailStepKey; label: string; body: string 
 const EMPTY_CARD_INPUT: KanbanCardInput = {
   title: '',
   description: '',
+  due_at: '',
   assignee: '',
   assignee_user_id: null,
   column_key: 'planned',
@@ -559,7 +560,7 @@ export function KanbanBoard({ users }: Props) {
                   cardsInColumn.map((card, index) => (
                     <article
                       key={card.id}
-                      className={`kanban-card ${dragCardId === card.id ? 'dragging' : ''}`}
+                      className={`kanban-card priority-${card.priority} ${dragCardId === card.id ? 'dragging' : ''} ${isCardOverdue(card) ? 'is-overdue' : ''}`}
                       draggable
                       onDragStart={() => setDragCardId(card.id)}
                       onDragEnd={() => setDragCardId(null)}
@@ -575,14 +576,10 @@ export function KanbanBoard({ users }: Props) {
                       onDoubleClick={() => openEditModal(card)}
                     >
                       <div className="kanban-card-top">
-                        <div>
+                        <div className="kanban-card-title-block">
                           <span className="kanban-card-code">{card.card_code}</span>
                           <h4>{card.title}</h4>
                         </div>
-                        <div className={`kanban-priority-dot ${card.priority}`} />
-                      </div>
-
-                      <div className="kanban-card-badges">
                         <span className={`kanban-type-badge ${card.card_type}`}>
                           {card.card_type === 'new' ? '신규 장비 작업' : '기존 장비 작업'}
                         </span>
@@ -594,8 +591,7 @@ export function KanbanBoard({ users }: Props) {
                         <span>담당자 {card.assignee || '미지정'}</span>
                       </div>
                       <div className="kanban-card-meta">
-                        <span>{priorityLabel(card.priority)}</span>
-                        <span>{formatDateTime(card.updated_at)}</span>
+                        <span>{card.due_at ? `완료 예정 ${formatDueDateTime(card.due_at)}` : '완료 예정 미지정'}</span>
                       </div>
 
                       <div className="kanban-card-progress" aria-hidden="true">
@@ -694,6 +690,10 @@ export function KanbanBoard({ users }: Props) {
                 <div className="kanban-summary-row">
                   <span>우선순위</span>
                   <strong>{priorityLabel(detailDraft.priority)}</strong>
+                </div>
+                <div className="kanban-summary-row">
+                  <span>완료 예정</span>
+                  <strong>{detailDraft.due_at ? formatDueDateTime(detailDraft.due_at) : '미지정'}</strong>
                 </div>
                 <div className="kanban-summary-row">
                   <span>마지막 갱신</span>
@@ -805,6 +805,15 @@ export function KanbanBoard({ users }: Props) {
                           <option value="medium">중간</option>
                           <option value="low">낮음</option>
                         </select>
+                      </label>
+
+                      <label className="kanban-field">
+                        <span>완료 예정 일시</span>
+                        <input
+                          type="datetime-local"
+                          value={detailDraft.due_at}
+                          onChange={(event) => updateDetailDraft({ due_at: event.target.value })}
+                        />
                       </label>
                     </div>
 
@@ -1138,6 +1147,7 @@ function toCardInput(card: KanbanCard): KanbanCardInput {
   return {
     title: card.title,
     description: card.description,
+    due_at: card.due_at || '',
     assignee: card.assignee,
     assignee_user_id: card.assignee_user_id ?? null,
     column_key: card.column_key,
@@ -1183,6 +1193,30 @@ function formatDateTime(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function formatDueDateTime(value: string) {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return value
+  }
+  return parsed.toLocaleString('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function isCardOverdue(card: Pick<KanbanCard, 'due_at' | 'column_key'>) {
+  if (!card.due_at || card.column_key === 'done') {
+    return false
+  }
+  const parsed = new Date(card.due_at)
+  if (Number.isNaN(parsed.getTime())) {
+    return false
+  }
+  return parsed.getTime() < Date.now()
 }
 
 function detailStepSuccessMessage(step: DetailStepKey) {
@@ -1259,6 +1293,7 @@ function normalizeCardInput(values: KanbanCardInput): KanbanCardInput {
     ...values,
     title: values.title.trim(),
     description: values.description.trim(),
+    due_at: values.due_at.trim(),
     assignee: values.assignee.trim(),
     assignee_user_id: values.assignee_user_id ?? null,
     checklist_items: normalizedChecklistItems,

@@ -237,19 +237,48 @@ export function replaceTargetRows(block: WorkflowTableBlock, targets: string[], 
   }
 }
 
+export function getPhaseAssigneeName(phase: Partial<WorkflowPhase>, fallback = '미정') {
+  return String(phase.assigneeName ?? '').trim() || fallback
+}
+
+export function isPhaseIncludedInProgress(phase: Partial<WorkflowPhase>) {
+  return phase.includeInProgress !== false
+}
+
+export function reconcilePhaseCompletion(phase: WorkflowPhase): WorkflowPhase {
+  if (computePhaseProgress(phase) >= 100) {
+    phase.completedAt = String(phase.completedAt ?? '')
+    phase.completedByUserId = typeof phase.completedByUserId === 'number' ? phase.completedByUserId : null
+    phase.completedByName = String(phase.completedByName ?? '')
+    return phase
+  }
+  phase.isCompleted = false
+  phase.completedAt = ''
+  phase.completedByUserId = null
+  phase.completedByName = ''
+  return phase
+}
+
 export function normalizeWorkflowDocument(workflow: WorkflowDocument, card: KanbanCard): WorkflowDocument {
   const owner = workflow.owner || card.assignee || '미정'
   const targets = (card.targets ?? []).map((target) => target.display_name).filter(Boolean)
   const normalizedPhases = (workflow.phases ?? []).map((phase) => ({
     ...phase,
-    blocks: phase.blocks.map((block) => {
+    assigneeUserId: typeof phase.assigneeUserId === 'number' ? phase.assigneeUserId : null,
+    assigneeName: getPhaseAssigneeName(phase),
+    includeInProgress: isPhaseIncludedInProgress(phase),
+    isCompleted: phase.isCompleted === true,
+    completedAt: String(phase.completedAt ?? ''),
+    completedByUserId: typeof phase.completedByUserId === 'number' ? phase.completedByUserId : null,
+    completedByName: String(phase.completedByName ?? ''),
+    blocks: (phase.blocks ?? []).map((block) => {
       const normalizedBlock = ensureStatusColumn(block)
       if (normalizedBlock.type === 'table' && normalizedBlock.mode === 'target') {
         return replaceTargetRows(normalizedBlock, targets.length > 0 ? targets : ['미정'], owner)
       }
       return normalizedBlock
     }),
-  }))
+  })).map((phase) => reconcilePhaseCompletion(phase))
 
   return {
     ...workflow,
@@ -309,6 +338,9 @@ export function computePhaseProgress(phase: WorkflowPhase) {
 export function computeWorkflowProgress(workflow: WorkflowDocument) {
   const totals = workflow.phases.reduce(
     (acc, phase) => {
+      if (!isPhaseIncludedInProgress(phase)) {
+        return acc
+      }
       phase.blocks.forEach((block) => {
         acc.done += countDoneInBlock(block)
         acc.total += countTotalInBlock(block)

@@ -3,9 +3,11 @@ import type { FormEvent, ReactNode } from 'react'
 import { useRef } from 'react'
 import {
   Activity,
+  Bell,
   ClipboardList,
   ChevronDown,
   ChevronRight,
+  CheckCheck,
   Clock3,
   Database,
   FileSearch,
@@ -44,6 +46,7 @@ import type {
   LookupMatch,
   LookupResponse,
   LookupStatus,
+  NotificationItem,
   OverviewResponse,
   RecordListResponse,
   RecordScope,
@@ -82,6 +85,12 @@ type ConfigSearchOverlayState = {
   error: string
   match: ConfigSearchMatch | null
   preview: ConfigPreviewResponse | null
+}
+
+type WorkflowFocusRequest = {
+  cardId: number
+  phaseId?: string | null
+  token: number
 }
 
 const DEFAULT_PAGE_SIZE = 200
@@ -251,6 +260,12 @@ function App() {
   const [accountActionBusy, setAccountActionBusy] = useState(false)
   const [accountActionError, setAccountActionError] = useState('')
   const [accountActionSuccess, setAccountActionSuccess] = useState('')
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0)
+  const [notificationsLoading, setNotificationsLoading] = useState(false)
+  const [notificationsError, setNotificationsError] = useState('')
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
+  const [workflowFocusRequest, setWorkflowFocusRequest] = useState<WorkflowFocusRequest | null>(null)
   const [activeView, setActiveView] = useState<ViewId>('home')
   const [managementOpen, setManagementOpen] = useState(true)
   const [automationOpen, setAutomationOpen] = useState(true)
@@ -305,6 +320,7 @@ function App() {
   const [configSearchState, setConfigSearchState] = useState(initialConfigSearchState)
   const [configSearchOverlay, setConfigSearchOverlay] = useState(initialConfigSearchOverlayState)
   const [showConfigGuide, setShowConfigGuide] = useState(false)
+  const notificationPanelRef = useRef<HTMLDivElement | null>(null)
 
   const [ipQuery, setIpQuery] = useState('')
   const [ipVrf, setIpVrf] = useState('')
@@ -480,16 +496,50 @@ function App() {
     return () => window.removeEventListener('keydown', handleEscape)
   }, [configSearchOverlay.open, showConfigGuide])
 
+  useEffect(() => {
+    if (!currentUser) {
+      setNotifications([])
+      setNotificationUnreadCount(0)
+      setNotificationsError('')
+      setNotificationPanelOpen(false)
+      return
+    }
+
+    void loadNotifications()
+    const timer = window.setInterval(() => {
+      void loadNotifications(false)
+    }, 20000)
+
+    return () => window.clearInterval(timer)
+  }, [currentUser?.id])
+
+  useEffect(() => {
+    if (!notificationPanelOpen) {
+      return
+    }
+
+    const handleOutsidePointer = (event: MouseEvent) => {
+      if (!notificationPanelRef.current?.contains(event.target as Node)) {
+        setNotificationPanelOpen(false)
+      }
+    }
+
+    window.addEventListener('mousedown', handleOutsidePointer)
+    return () => window.removeEventListener('mousedown', handleOutsidePointer)
+  }, [notificationPanelOpen])
+
   async function initializeSession() {
     try {
       setAuthError('')
       const user = await api.getCurrentUser()
       setCurrentUser(user)
-      await Promise.all([loadUsers(), bootstrap()])
+      await Promise.all([loadUsers(), bootstrap(), loadNotifications()])
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         setCurrentUser(null)
         setUsers([])
+        setNotifications([])
+        setNotificationUnreadCount(0)
         return
       }
       setAuthError(error instanceof Error ? error.message : '세션을 확인하지 못했습니다.')
@@ -504,13 +554,69 @@ function App() {
     return loadedUsers
   }
 
+  async function loadNotifications(showLoading = true) {
+    try {
+      if (showLoading) {
+        setNotificationsLoading(true)
+      }
+      setNotificationsError('')
+      const response = await api.getNotifications(16)
+      setNotifications(response.items)
+      setNotificationUnreadCount(response.unread_count)
+    } catch (error) {
+      setNotificationsError(error instanceof Error ? error.message : '알림을 불러오지 못했습니다.')
+    } finally {
+      if (showLoading) {
+        setNotificationsLoading(false)
+      }
+    }
+  }
+
+  async function handleNotificationClick(item: NotificationItem) {
+    try {
+      if (!item.is_read) {
+        const updated = await api.markNotificationRead(item.id)
+        setNotifications((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)))
+        setNotificationUnreadCount((current) => Math.max(0, current - 1))
+      }
+    } catch (error) {
+      setNotificationsError(error instanceof Error ? error.message : '알림을 읽음 처리하지 못했습니다.')
+    }
+
+    setNotificationPanelOpen(false)
+
+    if (item.link_view === 'work_plan' && item.link_card_id) {
+      changeView('work_plan')
+      setWorkflowFocusRequest({
+        cardId: item.link_card_id,
+        phaseId: item.link_phase_id || null,
+        token: Date.now(),
+      })
+      return
+    }
+
+    if (item.link_view === 'kanban') {
+      changeView('kanban')
+    }
+  }
+
+  async function handleMarkAllNotificationsRead() {
+    try {
+      await api.markAllNotificationsRead()
+      setNotifications((current) => current.map((item) => ({ ...item, is_read: true, read_at: item.read_at || new Date().toISOString() })))
+      setNotificationUnreadCount(0)
+    } catch (error) {
+      setNotificationsError(error instanceof Error ? error.message : '알림을 모두 읽음 처리하지 못했습니다.')
+    }
+  }
+
   async function handleLogin(username: string, password: string) {
     try {
       setAuthSubmitting(true)
       setAuthError('')
       const response = await api.login(username, password)
       setCurrentUser(response.user)
-      await Promise.all([loadUsers(), bootstrap()])
+      await Promise.all([loadUsers(), bootstrap(), loadNotifications()])
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : '로그인하지 못했습니다.')
     } finally {
@@ -529,6 +635,11 @@ function App() {
       setUsers([])
       setAccountModalOpen(false)
       setAuthError('')
+      setNotifications([])
+      setNotificationUnreadCount(0)
+      setNotificationsError('')
+      setNotificationPanelOpen(false)
+      setWorkflowFocusRequest(null)
       setAutomationSources([])
       setAutomationSourcesError('')
       setSelectedIpAutomationSource('')
@@ -822,6 +933,9 @@ function App() {
   function changeView(view: ViewId) {
     startTransition(() => {
       setActiveView(view)
+      if (view !== 'work_plan') {
+        setWorkflowFocusRequest(null)
+      }
       setLookup(initialLookupState)
       setConfigError('')
       setShowConfigGuide(false)
@@ -997,7 +1111,7 @@ function App() {
 
         </nav>
 
-        <div className="rail-footer">
+        <div className={`rail-footer ${notificationPanelOpen ? 'has-notification-open' : ''}`}>
           <div className="user-panel">
             <div className="user-panel-head">
               <div className="user-panel-copy">
@@ -1007,22 +1121,77 @@ function App() {
               <span className={`user-role-chip ${currentUser.role}`}>{currentUser.role}</span>
             </div>
             <div className="user-panel-actions">
-              <button
-                className="user-panel-button"
-                type="button"
-                onClick={() => {
-                  setAccountActionError('')
-                  setAccountActionSuccess('')
-                  setAccountModalOpen(true)
-                }}
-              >
-                <UserCog size={14} />
-                <span>계정</span>
-              </button>
-              <button className="user-panel-button" type="button" onClick={() => void handleLogout()}>
-                <LogOut size={14} />
-                <span>로그아웃</span>
-              </button>
+              <div className="user-panel-action-group">
+                <button
+                  className="user-panel-button"
+                  type="button"
+                  onClick={() => {
+                    setAccountActionError('')
+                    setAccountActionSuccess('')
+                    setAccountModalOpen(true)
+                  }}
+                >
+                  <UserCog size={14} />
+                  <span>계정</span>
+                </button>
+                <button className="user-panel-button" type="button" onClick={() => void handleLogout()}>
+                  <LogOut size={14} />
+                  <span>로그아웃</span>
+                </button>
+              </div>
+              <div className={`notification-anchor ${notificationPanelOpen ? 'open' : ''}`} ref={notificationPanelRef}>
+                <button
+                  className="notification-button"
+                  type="button"
+                  onClick={() => setNotificationPanelOpen((current) => !current)}
+                  aria-label="알림 열기"
+                >
+                  <Bell size={16} />
+                  {notificationUnreadCount > 0 ? (
+                    <span className="notification-badge">{notificationUnreadCount > 9 ? '9+' : notificationUnreadCount}</span>
+                  ) : null}
+                </button>
+                {notificationPanelOpen ? (
+                  <div className="notification-popover">
+                    <div className="notification-popover-head">
+                      <div>
+                        <strong>알림</strong>
+                        <span>{notificationUnreadCount > 0 ? `안 읽음 ${notificationUnreadCount}건` : '새 알림 없음'}</span>
+                      </div>
+                      <button
+                        className="notification-clear-button"
+                        type="button"
+                        onClick={() => void handleMarkAllNotificationsRead()}
+                        disabled={notificationUnreadCount === 0}
+                      >
+                        <CheckCheck size={14} />
+                        <span>전체 읽음</span>
+                      </button>
+                    </div>
+                    {notificationsLoading ? <div className="notification-empty">알림을 불러오는 중입니다.</div> : null}
+                    {notificationsError ? <div className="notification-error">{notificationsError}</div> : null}
+                    {!notificationsLoading && !notifications.length ? (
+                      <div className="notification-empty">표시할 알림이 없습니다.</div>
+                    ) : null}
+                    <div className="notification-list">
+                      {notifications.map((item) => (
+                        <button
+                          key={item.id}
+                          className={`notification-item ${item.is_read ? 'read' : 'unread'} notification-${item.kind}`}
+                          type="button"
+                          onClick={() => void handleNotificationClick(item)}
+                        >
+                          <div className="notification-item-head">
+                            <strong>{item.title}</strong>
+                            <span>{formatDateTime(item.created_at)}</span>
+                          </div>
+                          <p>{item.body || '업무 알림이 도착했습니다.'}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
           <button className="refresh-button" onClick={() => void handleStartRefresh()} disabled={collectionProgress?.status === 'running'}>
@@ -1636,7 +1805,7 @@ function App() {
         ) : null}
 
         {activeView === 'work_plan' ? (
-          <WorkflowBoard currentUser={currentUser} />
+          <WorkflowBoard currentUser={currentUser} users={users} focusRequest={workflowFocusRequest} />
         ) : null}
 
         {showConfigGuide ? (

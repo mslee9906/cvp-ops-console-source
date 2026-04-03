@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from app.schemas.workflow import (
     WorkflowDocumentResponse,
     WorkflowDocumentUpdateRequest,
+    WorkflowPhaseCompleteResponse,
     WorkflowTemplateCreateRequest,
     WorkflowTemplateResponse,
     WorkflowTemplateUpdateRequest,
@@ -20,6 +21,13 @@ def _require_editor(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     if user.get("role") not in {"admin", "editor"}:
         raise HTTPException(status_code=403, detail="수정 권한이 없습니다.")
+    return user
+
+
+def _require_user(request: Request) -> dict:
+    user = getattr(request.state, "current_user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     return user
 
 
@@ -42,6 +50,25 @@ def save_card_workflow(
         payload.workflow,
         _require_editor(request),
     )
+    if not document:
+        raise HTTPException(status_code=404, detail="Workflow card not found")
+    return document
+
+
+@router.post("/cards/{card_id}/phases/{phase_id}/complete", response_model=WorkflowPhaseCompleteResponse)
+def complete_card_phase(request: Request, card_id: int, phase_id: str) -> WorkflowPhaseCompleteResponse:
+    try:
+        document = request.app.state.workflow_service.complete_phase(
+            card_id,
+            phase_id,
+            _require_user(request),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if not document:
         raise HTTPException(status_code=404, detail="Workflow card not found")
     return document

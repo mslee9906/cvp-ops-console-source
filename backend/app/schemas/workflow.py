@@ -12,6 +12,15 @@ class WorkflowDocumentResponse(BaseModel):
     updated_at: str
 
 
+class WorkflowPhaseCompleteResponse(WorkflowDocumentResponse):
+    completed_phase_id: str
+    notified_phase_id: str = ""
+    notified_phase_title: str = ""
+    notification_recipient: str = ""
+    notification_title: str = ""
+    notification_body: str = ""
+
+
 class WorkflowDocumentUpdateRequest(BaseModel):
     workflow: dict[str, Any] = Field(default_factory=dict)
 
