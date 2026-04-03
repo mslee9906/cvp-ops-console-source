@@ -1114,6 +1114,7 @@ function App() {
         <div className={`rail-footer ${notificationPanelOpen ? 'has-notification-open' : ''}`}>
           <div className="user-panel">
             <div className="user-panel-topbar">
+              <span className={`user-role-chip ${currentUser.role}`}>{currentUser.role}</span>
               <div className={`notification-anchor ${notificationPanelOpen ? 'open' : ''}`} ref={notificationPanelRef}>
                 <button
                   className="notification-button"
@@ -1173,7 +1174,6 @@ function App() {
                 <strong>{currentUser.display_name}</strong>
                 <span>@{currentUser.username}</span>
               </div>
-              <span className={`user-role-chip ${currentUser.role}`}>{currentUser.role}</span>
             </div>
             <div className="user-panel-actions">
               <div className="user-panel-action-group">
