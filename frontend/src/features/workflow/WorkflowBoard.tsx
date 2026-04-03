@@ -1989,29 +1989,11 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
         ) : null}
         <div className="workflow-link-items">
           {block.items.map((item, index) => (
-            <div key={`${block.id}-link-${index}`} className="workflow-link-item">
+            <div key={`${block.id}-link-${index}`} className={`workflow-link-item ${block.editing ? 'is-editing' : 'is-view'}`}>
               {block.editing ? (
                 <>
-                  <input
-                    className="workflow-check-text-input"
-                    value={item.label}
-                    onChange={(event) => handleLinkItemChange(phase.id, block.id, index, 'label', event.target.value)}
-                    placeholder="버튼 이름"
-                  />
-                  <input
-                    className="workflow-check-assignee-input"
-                    value={item.description}
-                    onChange={(event) => handleLinkItemChange(phase.id, block.id, index, 'description', event.target.value)}
-                    placeholder="링크 설명"
-                  />
-                  <input
-                    className="workflow-check-assignee-input workflow-link-url-input"
-                    value={item.url}
-                    onChange={(event) => handleLinkItemChange(phase.id, block.id, index, 'url', event.target.value)}
-                    placeholder="https://..."
-                  />
                   <button
-                    className="workflow-mini-icon-button"
+                    className="workflow-mini-icon-button workflow-link-delete-button"
                     type="button"
                     onClick={() => handleRemoveLinkItem(phase.id, block.id, index)}
                     aria-label={`링크 ${index + 1} 삭제`}
@@ -2019,9 +2001,31 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                   >
                     <X size={12} />
                   </button>
+                  <input
+                    className="workflow-link-input workflow-link-label-input"
+                    value={item.label}
+                    onChange={(event) => handleLinkItemChange(phase.id, block.id, index, 'label', event.target.value)}
+                    placeholder="버튼 이름"
+                  />
+                  <input
+                    className="workflow-link-input workflow-link-description-input"
+                    value={item.description}
+                    onChange={(event) => handleLinkItemChange(phase.id, block.id, index, 'description', event.target.value)}
+                    placeholder="링크 설명"
+                  />
+                  <input
+                    className="workflow-link-input workflow-link-url-input"
+                    value={item.url}
+                    onChange={(event) => handleLinkItemChange(phase.id, block.id, index, 'url', event.target.value)}
+                    placeholder="https://..."
+                  />
                 </>
               ) : (
                 <>
+                  <div className="workflow-link-view-copy">
+                    <strong>{item.label || `링크 ${index + 1}`}</strong>
+                    <p>{item.description || '설명이 없습니다.'}</p>
+                  </div>
                   <button
                     className="workflow-link-open-button"
                     type="button"
@@ -2029,10 +2033,9 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                     disabled={!item.url.trim()}
                   >
                     <Link2 size={15} />
-                    <span>{item.label || `링크 ${index + 1}`}</span>
+                    <span>열기</span>
                     <ExternalLink size={13} />
                   </button>
-                  <p>{item.description || '설명이 없습니다.'}</p>
                 </>
               )}
             </div>
