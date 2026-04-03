@@ -83,8 +83,12 @@ class CollectionService:
         )
 
         try:
-            suite = self._get_suite(source)
-            snapshot = suite.collect(progress_callback=self._set_progress)
+            failure_details: list[str] = []
+            if source == 'cvp':
+                snapshot, failure_details = self._collect_cvp_snapshot()
+            else:
+                suite = self._get_suite(source)
+                snapshot = suite.collect(progress_callback=self._set_progress)
             self._set_progress(
                 progress_percent=82,
                 step='config_files',
@@ -104,11 +108,11 @@ class CollectionService:
                 'status': 'success',
                 'start_time': started_at,
                 'end_time': finished_at,
-                'error_message': '',
+                'error_message': '; '.join(failure_details),
             }
             self.repository.replace_snapshot(snapshot, config_metadata, latest_job)
             logger.info(
-                "Snapshot refresh completed successfully. source=%s devices=%s bgp=%s vrfs=%s vlans=%s vnis=%s ip_records=%s configs=%s",
+                "Snapshot refresh completed successfully. source=%s devices=%s bgp=%s vrfs=%s vlans=%s vnis=%s ip_records=%s configs=%s source_failures=%s",
                 source,
                 len(snapshot.get('devices', [])),
                 len(snapshot.get('bgp', [])),
@@ -117,13 +121,14 @@ class CollectionService:
                 len(snapshot.get('vnis', [])),
                 len(snapshot.get('ip_records', [])),
                 len(snapshot.get('configs', [])),
+                len(failure_details),
             )
             self._set_progress(
                 source_mode=source,
                 status='success',
                 progress_percent=100,
                 step='completed',
-                detail='Snapshot refresh completed.',
+                detail='Snapshot refresh completed.' if not failure_details else f"Snapshot refresh completed with warnings. Failed sources: {len(failure_details)}.",
                 updated_at=finished_at,
                 latest_job=latest_job,
             )
@@ -188,8 +193,85 @@ class CollectionService:
 
     def _get_suite(self, source: str) -> Any:
         if source == 'cvp':
-            return CVPCollectorSuite(self.settings)
+            raise RuntimeError('CVP suite selection is handled by _collect_cvp_snapshot')
         return MockCollectorSuite(self.settings.sample_snapshot_path)
+
+    def _collect_cvp_snapshot(self) -> tuple[dict[str, Any], list[str]]:
+        sources = self.settings.cvp_sources
+        if not sources:
+            raise RuntimeError('No CVP hosts are configured.')
+
+        aggregated = self._empty_snapshot()
+        failures: list[str] = []
+        success_count = 0
+        total_sources = len(sources)
+
+        for index, endpoint in enumerate(sources, start=1):
+            range_start = 4 + int(((index - 1) / total_sources) * 74)
+            range_end = 4 + int((index / total_sources) * 74)
+            suite = CVPCollectorSuite(self.settings, endpoint)
+            try:
+                snapshot = suite.collect(
+                    progress_callback=self._build_source_progress_callback(
+                        endpoint.name,
+                        range_start,
+                        range_end,
+                    )
+                )
+                self._extend_snapshot(aggregated, snapshot)
+                success_count += 1
+            except Exception as exc:
+                message = f"{endpoint.name}: {exc}"
+                failures.append(message)
+                logger.exception("Snapshot source collection failed. source=%s error=%s", endpoint.name, exc)
+                self._set_progress(
+                    progress_percent=range_end,
+                    step='source_failed',
+                    detail=f"[{endpoint.name}] Collection failed: {exc}",
+                )
+
+        if success_count == 0:
+            raise RuntimeError("All CVP sources failed. " + "; ".join(failures))
+
+        return aggregated, failures
+
+    def _build_source_progress_callback(
+        self,
+        source_name: str,
+        range_start: int,
+        range_end: int,
+    ) -> Any:
+        spread = max(range_end - range_start, 1)
+
+        def relay(update: dict[str, Any]) -> None:
+            raw_percent = max(0, min(int(update.get('progress_percent', 0)), 100))
+            scaled_percent = range_start + int((raw_percent / 100) * spread)
+            detail = str(update.get('detail', '') or '')
+            if detail:
+                detail = f"[{source_name}] {detail}"
+            self._set_progress(
+                progress_percent=scaled_percent,
+                step=update.get('step', 'collect'),
+                detail=detail,
+            )
+
+        return relay
+
+    def _empty_snapshot(self) -> dict[str, list[dict[str, Any]]]:
+        return {
+            'devices': [],
+            'bgp': [],
+            'vrfs': [],
+            'vlans': [],
+            'vnis': [],
+            'ip_records': [],
+            'configs': [],
+        }
+
+    def _extend_snapshot(self, target: dict[str, Any], snapshot: dict[str, Any]) -> None:
+        for key in ('devices', 'bgp', 'vrfs', 'vlans', 'vnis', 'ip_records', 'configs'):
+            target.setdefault(key, [])
+            target[key].extend(snapshot.get(key, []))
 
     def _set_progress(self, *args: Any, **changes: Any) -> None:
         if args and isinstance(args[0], dict):

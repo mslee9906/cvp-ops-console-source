@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 from pathlib import Path
+import re
 from typing import Any
 
 
@@ -17,10 +18,12 @@ class ConfigFileManager:
             hostname = item["hostname"]
             collected_at = item["collected_at"]
             config_text = item["config_text"]
+            cvp_source = str(item.get("cvp_source", "default") or "default")
             config_hash = sha256(config_text.encode("utf-8")).hexdigest()
             line_count = len(config_text.splitlines())
 
-            device_dir = self.root_dir / device_id
+            source_dir = self.root_dir / self._safe_segment(cvp_source)
+            device_dir = source_dir / device_id
             device_dir.mkdir(parents=True, exist_ok=True)
 
             safe_timestamp = collected_at.replace(":", "-")
@@ -35,6 +38,7 @@ class ConfigFileManager:
                 {
                     "device_id": device_id,
                     "hostname": hostname,
+                    "cvp_source": cvp_source,
                     "config_hash": config_hash,
                     "file_path": str(latest_path),
                     "collected_at": collected_at,
@@ -42,3 +46,7 @@ class ConfigFileManager:
                 },
             )
         return metadata
+
+    def _safe_segment(self, value: str) -> str:
+        token = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip())
+        return token or "default"

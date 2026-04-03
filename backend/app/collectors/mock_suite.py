@@ -15,6 +15,9 @@ class MockCollectorSuite:
             progress_callback({'progress_percent': 15, 'step': 'load_sample', 'detail': 'Loading the local sample snapshot.'})
         with self.snapshot_path.open('r', encoding='utf-8') as handle:
             payload = json.load(handle)
+        for key in ('devices', 'bgp', 'vrfs', 'vlans', 'vnis', 'ip_records', 'configs'):
+            for item in payload.get(key, []):
+                item.setdefault('cvp_source', 'demo')
         if progress_callback:
             progress_callback({'progress_percent': 70, 'step': 'prepare_sample', 'detail': 'Preparing the sample snapshot payload.'})
         return payload

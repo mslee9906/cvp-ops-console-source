@@ -94,7 +94,7 @@ Write-Host "Copying CloudVision library..."
 Copy-Item -Path $cloudvisionDir -Destination (Join-Path $outputRoot "cloudvision-python-trunk") -Recurse -Force
 
 $liveEnv = @"
-CVP_HOST=192.168.237.78
+CVP_HOST=192.168.237.78,192.168.237.79
 CVP_PORT=443
 CVP_USERNAME=cvpadmin
 CVP_PASSWORD=change-me

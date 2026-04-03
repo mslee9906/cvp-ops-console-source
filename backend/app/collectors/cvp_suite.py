@@ -1,7 +1,7 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-from datetime import datetime, timezone
 from collections.abc import Callable
+from datetime import datetime, timezone
 import json
 import logging
 import re
@@ -9,7 +9,7 @@ from typing import Any
 
 from app.core.cvp_connector import CVPConnector
 from app.core.path_config import get_field_mapping, get_telemetry_paths
-from app.core.settings import Settings
+from app.core.settings import CVPSourceEndpoint, Settings
 from app.services.config_parser import extract_ip_records, reconstruct_config_lines
 
 
@@ -18,8 +18,9 @@ logger = logging.getLogger(__name__)
 
 
 class CVPCollectorSuite:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, source: CVPSourceEndpoint) -> None:
         self.settings = settings
+        self.source = source
         self.paths = get_telemetry_paths()
         self.fields = get_field_mapping()
 
@@ -27,10 +28,11 @@ class CVPCollectorSuite:
         timestamp = datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds')
         if progress_callback:
             progress_callback({'progress_percent': 5, 'step': 'connect', 'detail': 'Opening the CVP session.'})
+
         connector = CVPConnector(
             library_root=self.settings.cvp_library_root,
-            host=self.settings.cvp_hostname,
-            port=self.settings.cvp_resolved_port,
+            host=self.source.host,
+            port=self.source.port,
             token=self.settings.cvp_token,
             username=self.settings.cvp_username,
             password=self.settings.cvp_password,
@@ -42,12 +44,19 @@ class CVPCollectorSuite:
 
         with connector:
             if progress_callback:
-                progress_callback({'progress_percent': 10, 'step': 'device_inventory', 'detail': 'Loading the analytics device inventory.'})
+                progress_callback(
+                    {
+                        'progress_percent': 10,
+                        'step': 'device_inventory',
+                        'detail': 'Loading the analytics device inventory.',
+                    }
+                )
             devices = self._collect_devices(connector, timestamp)
             target_ids = self.settings.cvp_device_ids or list(devices)
             total_devices = max(len(target_ids), 1)
             logger.info(
-                "Device inventory loaded. discovered_devices=%s target_devices=%s filtered=%s",
+                "Device inventory loaded. source=%s discovered_devices=%s target_devices=%s filtered=%s",
+                self.source.name,
                 len(devices),
                 len(target_ids),
                 bool(self.settings.cvp_device_ids),
@@ -71,6 +80,7 @@ class CVPCollectorSuite:
                         'mgmt_ip': '',
                         'model': '',
                         'site': '',
+                        'cvp_source': self.source.name,
                         'tags': [],
                         'last_collected_at': timestamp,
                     },
@@ -86,9 +96,10 @@ class CVPCollectorSuite:
                         }
                     )
                 logger.info(
-                    "Collecting device %s/%s: hostname=%s device_id=%s",
+                    "Collecting device %s/%s: source=%s hostname=%s device_id=%s",
                     index,
                     total_devices,
+                    self.source.name,
                     device['hostname'],
                     device_id,
                 )
@@ -109,6 +120,7 @@ class CVPCollectorSuite:
                             'hostname': device['hostname'],
                             'vrf_name': 'default',
                             'vrf_id': '0',
+                            'cvp_source': self.source.name,
                         },
                     ]
                 vrfs.extend(device_vrfs)
@@ -122,6 +134,7 @@ class CVPCollectorSuite:
                         }
                     )
                 bgp.extend(self._collect_bgp(connector, device_id, device, device_vrfs))
+
                 if progress_callback:
                     progress_callback(
                         {
@@ -131,6 +144,7 @@ class CVPCollectorSuite:
                         }
                     )
                 vlans.extend(self._collect_vlans(connector, device_id, device))
+
                 if progress_callback:
                     progress_callback(
                         {
@@ -157,13 +171,19 @@ class CVPCollectorSuite:
                             'hostname': device['hostname'],
                             'collected_at': timestamp,
                             'config_text': config_text,
+                            'cvp_source': self.source.name,
                         }
                     )
-                    ip_records.extend(extract_ip_records(device_id, device['hostname'], config_text))
+                    device_ip_records = extract_ip_records(device_id, device['hostname'], config_text)
+                    for item in device_ip_records:
+                        item['cvp_source'] = self.source.name
+                    ip_records.extend(device_ip_records)
+
                 logger.info(
-                    "Completed device %s/%s: hostname=%s vrfs=%s bgp=%s vlans=%s vnis=%s config=%s",
+                    "Completed device %s/%s: source=%s hostname=%s vrfs=%s bgp=%s vlans=%s vnis=%s config=%s",
                     index,
                     total_devices,
+                    self.source.name,
                     device['hostname'],
                     len(device_vrfs),
                     len([entry for entry in bgp if entry['device_id'] == device_id]),
@@ -198,6 +218,7 @@ class CVPCollectorSuite:
                 'mgmt_ip': raw.get('primaryManagementIP', ''),
                 'model': raw.get('modelName', ''),
                 'site': raw.get('containerName', ''),
+                'cvp_source': self.source.name,
                 'tags': [],
                 'last_collected_at': timestamp,
             }
@@ -222,6 +243,7 @@ class CVPCollectorSuite:
                     'hostname': device['hostname'],
                     'vrf_name': str(vrf_name),
                     'vrf_id': self._extract_scalar_from_key(raw_key),
+                    'cvp_source': self.source.name,
                 }
             )
         return vrfs
@@ -259,6 +281,7 @@ class CVPCollectorSuite:
                     'router_id': str(updates.get(self.fields['bgp']['router_id_field'], '')),
                     'shutdown': bool(updates.get(self.fields['bgp']['shutdown_field'], False)),
                     'source_path': '/' + '/'.join(str(item) for item in path),
+                    'cvp_source': self.source.name,
                 }
             )
         return [entry for entry in entries if entry['asn']]
@@ -313,6 +336,7 @@ class CVPCollectorSuite:
                     'svi_name': svi_name if svi_name in svi_descriptions else 'X',
                     'description': description,
                     'source_path': '/' + '/'.join(self.paths['vlan']['config_path']),
+                    'cvp_source': self.source.name,
                 }
             )
         return vlans
@@ -361,6 +385,7 @@ class CVPCollectorSuite:
                     'vlan_id': vlan_id,
                     'vni': vni,
                     'source_path': '/' + '/'.join(str(item) for item in self.paths['vxlan_vni']['path_elements']),
+                    'cvp_source': self.source.name,
                 }
             )
         return entries
@@ -465,4 +490,3 @@ class CVPCollectorSuite:
         if raw_value in {None, ''}:
             return ''
         return str(raw_value)
-
