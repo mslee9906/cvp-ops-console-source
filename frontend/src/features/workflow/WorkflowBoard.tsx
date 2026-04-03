@@ -125,6 +125,11 @@ function getMinimumTableSpan(block: WorkflowTableBlock, columnWidth: number) {
   )
 }
 
+function parseCssPixels(value: string) {
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 function measureBlockMinimumHeight(card: HTMLElement) {
   const head = card.querySelector<HTMLElement>('.workflow-block-head')
   const body = card.querySelector<HTMLElement>('.workflow-block-body')
@@ -132,7 +137,20 @@ function measureBlockMinimumHeight(card: HTMLElement) {
     return MIN_BLOCK_HEIGHT
   }
 
-  return Math.max(Math.ceil(head.offsetHeight + body.scrollHeight + 2), MIN_BLOCK_HEIGHT)
+  const bodyStyle = window.getComputedStyle(body)
+  const bodyPadding =
+    parseCssPixels(bodyStyle.paddingTop) +
+    parseCssPixels(bodyStyle.paddingBottom) +
+    parseCssPixels(bodyStyle.borderTopWidth) +
+    parseCssPixels(bodyStyle.borderBottomWidth)
+  const gap = parseCssPixels(bodyStyle.rowGap || bodyStyle.gap)
+  const children = Array.from(body.children) as HTMLElement[]
+
+  const contentHeight = children.length
+    ? children.reduce((total, child) => total + Math.max(child.offsetHeight, child.scrollHeight), 0) + gap * Math.max(children.length - 1, 0)
+    : body.scrollHeight
+
+  return Math.max(Math.ceil(head.offsetHeight + bodyPadding + contentHeight + 2), MIN_BLOCK_HEIGHT)
 }
 
 function getBlockLayoutColumn(block: WorkflowBlock) {
