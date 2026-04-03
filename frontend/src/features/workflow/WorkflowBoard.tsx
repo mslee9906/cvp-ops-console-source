@@ -261,6 +261,20 @@ function findNearestFreeLayout(baseRect: BlockLayoutRect, others: BlockLayoutRec
   return base
 }
 
+function findVerticalPushLayout(baseRect: BlockLayoutRect, others: BlockLayoutRect[]) {
+  const placed = clampLayoutRect(baseRect)
+
+  for (let safety = 0; safety < 256; safety += 1) {
+    const overlaps = others.filter((other) => rectanglesOverlap(placed, other))
+    if (!overlaps.length) {
+      return placed
+    }
+    placed.row = Math.max(...overlaps.map((other) => other.row + other.rowSpan))
+  }
+
+  return placed
+}
+
 export function WorkflowBoard({ currentUser, users, focusRequest = null }: WorkflowBoardProps) {
   const canEdit = currentUser?.role !== 'viewer'
   const cardPickerRef = useRef<HTMLDivElement | null>(null)
@@ -330,7 +344,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
 
     const placedLayouts: BlockLayoutRect[] = []
     selectedPhase.blocks.forEach((block) => {
-      const placedRect = findNearestFreeLayout(buildBlockLayoutRect(block), placedLayouts)
+      const placedRect = findVerticalPushLayout(buildBlockLayoutRect(block), placedLayouts)
       placedLayouts.push(placedRect)
       layouts.set(block.id, placedRect)
     })
@@ -515,7 +529,9 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
           const measuredHeight = measureBlockMinimumHeight(card)
           const currentHeight = getBlockHeightPx(block.heightPx)
           let nextHeight = currentHeight
-          if ((block.type === 'table' && Math.abs(measuredHeight - currentHeight) > 6) || measuredHeight > currentHeight + 6) {
+          const shouldTrackExactHeight =
+            block.type === 'table' || block.type === 'links' || (block.type === 'note' && block.editing)
+          if ((shouldTrackExactHeight && Math.abs(measuredHeight - currentHeight) > 6) || measuredHeight > currentHeight + 6) {
             nextHeight = Math.max(measuredHeight, MIN_BLOCK_HEIGHT)
           }
 
@@ -1599,18 +1615,16 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       card.style.gridColumn = `${startColumn} / span ${nextSpan}`
       const minHeightFromContent = measureBlockMinimumHeight(card)
       nextHeight = Math.max(startHeight + dy, minHeightFromContent, MIN_BLOCK_HEIGHT)
-      const candidate = findNearestFreeLayout(
-        {
-          id: blockId,
-          column: startColumn,
-          row: startRow,
-          widthUnits: nextSpan,
-          rowSpan: getBlockRowSpan(nextHeight),
-        },
-        others,
-      )
+      const candidateRect = {
+        id: blockId,
+        column: startColumn,
+        row: startRow,
+        widthUnits: nextSpan,
+        rowSpan: getBlockRowSpan(nextHeight),
+      }
+      const hasHorizontalCollision = nextSpan !== startSpan && hasLayoutOverlap(candidateRect, others)
 
-      if (candidate.column !== startColumn || candidate.row !== startRow) {
+      if (hasHorizontalCollision) {
         card.classList.add('layout-overlap')
         nextSpan = lastGoodSpan
         nextHeight = lastGoodHeight
