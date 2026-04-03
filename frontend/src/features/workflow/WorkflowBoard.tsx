@@ -382,6 +382,22 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
     })
     return layouts
   }, [selectedPhase])
+  const selectedPhaseBoardHeight = useMemo(() => {
+    if (!selectedPhase) {
+      return MIN_BLOCK_HEIGHT
+    }
+
+    let maxBottom = MIN_BLOCK_HEIGHT
+    selectedPhase.blocks.forEach((block) => {
+      const layout = selectedPhaseLayoutMap.get(block.id) ?? buildBlockLayoutRect(block)
+      const top = (layout.row - 1) * (BLOCK_GRID_ROW_HEIGHT + BLOCK_GRID_GAP)
+      const bottom = top + getBlockHeightPx(block.heightPx)
+      if (bottom > maxBottom) {
+        maxBottom = bottom
+      }
+    })
+    return maxBottom
+  }, [selectedPhase, selectedPhaseLayoutMap])
   const selectedPhaseProgress = useMemo(() => (selectedPhase ? computePhaseProgress(selectedPhase) : 0), [selectedPhase])
   const workflowProgress = useMemo(
     () => (workflow ? computeWorkflowProgress(workflow) : { percent: 0, done: 0, total: 0 }),
@@ -2479,7 +2495,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                 </div>
               </div>
 
-              <div className="workflow-block-board" ref={blockBoardRef}>
+                <div className="workflow-block-board" ref={blockBoardRef} style={{ minHeight: `${selectedPhaseBoardHeight}px` }}>
                 {selectedPhase.blocks.map((block) => {
                   const blockHeightPx = getBlockHeightPx(block.heightPx)
                   const layout = selectedPhaseLayoutMap.get(block.id) ?? buildBlockLayoutRect(block)
