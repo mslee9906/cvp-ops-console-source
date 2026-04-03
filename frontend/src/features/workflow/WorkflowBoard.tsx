@@ -125,6 +125,16 @@ function getMinimumTableSpan(block: WorkflowTableBlock, columnWidth: number) {
   )
 }
 
+function measureBlockMinimumHeight(card: HTMLElement) {
+  const head = card.querySelector<HTMLElement>('.workflow-block-head')
+  const body = card.querySelector<HTMLElement>('.workflow-block-body')
+  if (!head || !body) {
+    return MIN_BLOCK_HEIGHT
+  }
+
+  return Math.max(Math.ceil(head.offsetHeight + body.scrollHeight + 2), MIN_BLOCK_HEIGHT)
+}
+
 function getBlockLayoutColumn(block: WorkflowBlock) {
   const widthUnits = clamp(block.widthUnits ?? 6, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)
   const rawColumn = typeof block.layoutColumn === 'number' ? Math.round(block.layoutColumn) : 1
@@ -446,16 +456,11 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
           if (!card) {
             return null
           }
-          const head = card.querySelector<HTMLElement>('.workflow-block-head')
-          const body = card.querySelector<HTMLElement>('.workflow-block-body')
-          if (!head || !body) {
-            return null
-          }
 
-          const measuredHeight = Math.ceil(head.offsetHeight + body.scrollHeight + 2)
+          const measuredHeight = measureBlockMinimumHeight(card)
           const currentHeight = getBlockHeightPx(block.heightPx)
           let nextHeight = currentHeight
-          if (measuredHeight > currentHeight + 6) {
+          if ((block.type === 'table' && Math.abs(measuredHeight - currentHeight) > 6) || measuredHeight > currentHeight + 6) {
             nextHeight = Math.max(measuredHeight, MIN_BLOCK_HEIGHT)
           }
 
@@ -1471,7 +1476,9 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       const dy = moveEvent.clientY - startY
       const spanDelta = Math.round(dx / (colWidth + BLOCK_GRID_GAP))
       nextSpan = clamp(startSpan + spanDelta, minSpanFromContent, MAX_BLOCK_SPAN)
-      nextHeight = Math.max(startHeight + dy, MIN_BLOCK_HEIGHT)
+      card.style.gridColumn = `${startColumn} / span ${nextSpan}`
+      const minHeightFromContent = measureBlockMinimumHeight(card)
+      nextHeight = Math.max(startHeight + dy, minHeightFromContent, MIN_BLOCK_HEIGHT)
       const candidate = findNearestFreeLayout(
         {
           id: blockId,
@@ -1487,6 +1494,9 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
         card.classList.add('layout-overlap')
         nextSpan = lastGoodSpan
         nextHeight = lastGoodHeight
+        card.style.gridColumn = `${startColumn} / span ${lastGoodSpan}`
+        card.style.gridRow = `${startRow} / span ${getBlockRowSpan(lastGoodHeight)}`
+        card.style.height = `${lastGoodHeight}px`
         return
       }
 
