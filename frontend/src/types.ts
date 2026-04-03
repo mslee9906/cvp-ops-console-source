@@ -323,3 +323,95 @@ export interface KanbanDiffResponse {
   planned_text: string
   lines: KanbanDiffLine[]
 }
+
+export type WorkflowBlockType = 'table' | 'note' | 'checklist'
+export type WorkflowTableMode = 'target' | 'custom'
+export type WorkflowColumnType = 'text' | 'textarea' | 'status'
+export type WorkflowStatus = 'not_started' | 'in_progress' | 'done' | 'blocked' | 'n_a'
+export type WorkflowBlockSize = 'compact' | 'regular' | 'wide' | 'full'
+
+export interface WorkflowTableColumn {
+  key: string
+  label: string
+  type: WorkflowColumnType
+  width: number
+}
+
+export interface WorkflowChecklistItem {
+  text: string
+  done: boolean
+  assignee: string
+}
+
+export interface WorkflowBaseBlock {
+  id: string
+  type: WorkflowBlockType
+  title: string
+  subtitle: string
+  editing: boolean
+  size: WorkflowBlockSize
+  widthUnits: number
+  heightPx: number
+}
+
+export interface WorkflowTableBlock extends WorkflowBaseBlock {
+  type: 'table'
+  mode: WorkflowTableMode
+  columns: WorkflowTableColumn[]
+  rows: Array<Record<string, string>>
+}
+
+export interface WorkflowNoteBlock extends WorkflowBaseBlock {
+  type: 'note'
+  content: string
+}
+
+export interface WorkflowChecklistBlock extends WorkflowBaseBlock {
+  type: 'checklist'
+  items: WorkflowChecklistItem[]
+}
+
+export type WorkflowBlock = WorkflowTableBlock | WorkflowNoteBlock | WorkflowChecklistBlock
+
+export interface WorkflowPhase {
+  id: string
+  title: string
+  subtitle: string
+  blocks: WorkflowBlock[]
+}
+
+export interface WorkflowDocument {
+  ticketId: string
+  cardTitle: string
+  projectName: string
+  summary: string
+  grade: string
+  owner: string
+  createdBy: string
+  lastUpdated: string
+  lastUpdatedBy: string
+  templateId?: number | null
+  templateName: string
+  targets: string[]
+  phases: WorkflowPhase[]
+}
+
+export interface WorkflowDocumentResponse {
+  card_id: number
+  workflow: WorkflowDocument
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowTemplate {
+  id: number
+  name: string
+  description: string
+  card_type: string
+  workflow: WorkflowDocument
+  is_system: boolean
+  created_by_user_id?: number | null
+  updated_by_user_id?: number | null
+  created_at: string
+  updated_at: string
+}

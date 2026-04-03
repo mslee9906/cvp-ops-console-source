@@ -18,6 +18,9 @@
   RecordScope,
   UserCreateInput,
   UserSummary,
+  WorkflowDocument,
+  WorkflowDocumentResponse,
+  WorkflowTemplate,
   VniGroupListResponse,
   VrfGroupListResponse,
 } from './types'
@@ -141,6 +144,32 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ target_id: targetId, config_text: configText }),
     }),
+  getWorkflow: (cardId: number) => request<WorkflowDocumentResponse>(`/api/workflows/cards/${cardId}`),
+  saveWorkflow: (cardId: number, workflow: WorkflowDocument) =>
+    request<WorkflowDocumentResponse>(`/api/workflows/cards/${cardId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ workflow }),
+    }),
+  getWorkflowTemplates: (cardType?: string) =>
+    request<WorkflowTemplate[]>(
+      `/api/workflows/templates${cardType ? `?card_type=${encodeURIComponent(cardType)}` : ''}`,
+    ),
+  createWorkflowTemplate: (payload: { name: string; description: string; card_type: string; workflow: WorkflowDocument }) =>
+    request<WorkflowTemplate>('/api/workflows/templates', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateWorkflowTemplate: (
+    templateId: number,
+    payload: Partial<{ name: string; description: string; workflow: WorkflowDocument }>,
+  ) =>
+    request<WorkflowTemplate>(`/api/workflows/templates/${templateId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteWorkflowTemplate: async (templateId: number) => {
+    await request<{ ok: boolean }>(`/api/workflows/templates/${templateId}`, { method: 'DELETE' })
+  },
   lookupIp: (query: string, vrf?: string) =>
     request<LookupResponse>(
       `/api/lookup/ip?q=${encodeURIComponent(query)}${vrf ? `&vrf=${encodeURIComponent(vrf)}` : ''}`,

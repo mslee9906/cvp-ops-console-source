@@ -31,6 +31,7 @@ import { LoginScreen } from './features/auth/LoginScreen'
 import { UserSettingsModal } from './features/auth/UserSettingsModal'
 import { EdmLinkManager } from './features/edm-links/EdmLinkManager'
 import { KanbanBoard } from './features/kanban/KanbanBoard'
+import { WorkflowBoard } from './features/workflow/WorkflowBoard'
 import { WorkPlanBoard } from './features/workplan/WorkPlanBoard'
 import type {
   CollectionProgressResponse,
@@ -171,9 +172,9 @@ const viewMeta: Record<ViewId, ViewMeta> = {
   },
   work_plan: {
     label: '워크플로우',
-    eyebrow: 'Planning Workspace',
-    title: '워크플로우 준비 영역',
-    description: '이후 작업 절차와 진행 공유 구조를 넣기 위한 빈 준비 탭입니다.',
+    eyebrow: 'Execution Workflow',
+    title: '작업 워크플로우',
+    description: '작업 카드와 연결된 실행 절차, 단계 진행률, 템플릿, 블록 기반 작업 문서를 관리합니다.',
     icon: ClipboardList,
   },
 }
@@ -1547,15 +1548,7 @@ function App() {
         ) : null}
 
         {activeView === 'work_plan' ? (
-          <section className="stack-layout">
-            <div className="main-card">
-              <SectionHeader title="워크플로우 준비 영역" note="작업 절차, 진행 공유, 후속 로드맵 구조를 이어서 넣기 위한 빈 화면입니다." />
-              <div className="guide-grid">
-                <GuideCard title="현재 상태" body="탭 위치와 기본 레이아웃만 먼저 확보해 둔 상태입니다. 이후 요구사항에 맞춰 계획서 전용 기능을 추가하면 됩니다." />
-                <GuideCard title="확장 방향" body="작업 카드, 작업 툴, 현황 관리, 자동화 결과와 연결되는 워크플로우 전용 구조를 이 탭에 이어서 넣을 수 있습니다." />
-              </div>
-            </div>
-          </section>
+          <WorkflowBoard currentUser={currentUser} />
         ) : null}
 
         {showConfigGuide ? (
