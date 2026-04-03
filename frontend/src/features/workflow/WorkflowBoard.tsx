@@ -257,7 +257,12 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       }
 
       const direction = event.deltaY > 0 ? 1 : -1
-      const offsets = stageNodes.map((node) => Math.min(node.offsetLeft, maxScrollLeft))
+      const containerRect = container.getBoundingClientRect()
+      const offsets = stageNodes.map((node) => {
+        const nodeRect = node.getBoundingClientRect()
+        const relativeLeft = nodeRect.left - containerRect.left + container.scrollLeft
+        return Math.max(0, Math.min(Math.round(relativeLeft), maxScrollLeft))
+      })
       const currentOffset = container.scrollLeft
       let nearestIndex = 0
 
