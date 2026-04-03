@@ -1113,32 +1113,7 @@ function App() {
 
         <div className={`rail-footer ${notificationPanelOpen ? 'has-notification-open' : ''}`}>
           <div className="user-panel">
-            <div className="user-panel-head">
-              <div className="user-panel-copy">
-                <strong>{currentUser.display_name}</strong>
-                <span>@{currentUser.username}</span>
-              </div>
-              <span className={`user-role-chip ${currentUser.role}`}>{currentUser.role}</span>
-            </div>
-            <div className="user-panel-actions">
-              <div className="user-panel-action-group">
-                <button
-                  className="user-panel-button"
-                  type="button"
-                  onClick={() => {
-                    setAccountActionError('')
-                    setAccountActionSuccess('')
-                    setAccountModalOpen(true)
-                  }}
-                >
-                  <UserCog size={14} />
-                  <span>계정</span>
-                </button>
-                <button className="user-panel-button" type="button" onClick={() => void handleLogout()}>
-                  <LogOut size={14} />
-                  <span>로그아웃</span>
-                </button>
-              </div>
+            <div className="user-panel-topbar">
               <div className={`notification-anchor ${notificationPanelOpen ? 'open' : ''}`} ref={notificationPanelRef}>
                 <button
                   className="notification-button"
@@ -1191,6 +1166,33 @@ function App() {
                     </div>
                   </div>
                 ) : null}
+              </div>
+            </div>
+            <div className="user-panel-head">
+              <span className={`user-role-chip ${currentUser.role}`}>{currentUser.role}</span>
+              <div className="user-panel-copy">
+                <strong>{currentUser.display_name}</strong>
+                <span>@{currentUser.username}</span>
+              </div>
+            </div>
+            <div className="user-panel-actions">
+              <div className="user-panel-action-group">
+                <button
+                  className="user-panel-button"
+                  type="button"
+                  onClick={() => {
+                    setAccountActionError('')
+                    setAccountActionSuccess('')
+                    setAccountModalOpen(true)
+                  }}
+                >
+                  <UserCog size={14} />
+                  <span>계정</span>
+                </button>
+                <button className="user-panel-button" type="button" onClick={() => void handleLogout()}>
+                  <LogOut size={14} />
+                  <span>로그아웃</span>
+                </button>
               </div>
             </div>
           </div>

@@ -1,5 +1,5 @@
 ﻿import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent } from 'react'
+import type { FormEvent as ReactFormEvent, PointerEvent as ReactPointerEvent } from 'react'
 import {
   Check,
   Copy,
@@ -153,6 +153,15 @@ function measureBlockMinimumHeight(card: HTMLElement) {
   return Math.max(Math.ceil(head.offsetHeight + bodyPadding + contentHeight + 2), MIN_BLOCK_HEIGHT)
 }
 
+function autoResizeTextarea(element: HTMLTextAreaElement | null, minimumHeight = 96) {
+  if (!element) {
+    return
+  }
+
+  element.style.height = '0px'
+  element.style.height = `${Math.max(element.scrollHeight, minimumHeight)}px`
+}
+
 function getBlockLayoutColumn(block: WorkflowBlock) {
   const widthUnits = clamp(block.widthUnits ?? 6, MIN_BLOCK_SPAN, MAX_BLOCK_SPAN)
   const rawColumn = typeof block.layoutColumn === 'number' ? Math.round(block.layoutColumn) : 1
@@ -274,6 +283,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
   const [, setCopyFeedback] = useState('')
   const [completingPhase, setCompletingPhase] = useState(false)
   const [completionFeedback, setCompletionFeedback] = useState('')
+  const [permissionOverlayMessage, setPermissionOverlayMessage] = useState('')
   const [blockDragState, setBlockDragState] = useState<BlockPointerDragState | null>(null)
   const [resizingBlockId, setResizingBlockId] = useState('')
 
@@ -330,18 +340,27 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       return `${left.display_name}${left.username}`.localeCompare(`${right.display_name}${right.username}`, 'ko')
     })
   }, [users])
-  const canCompleteSelectedPhase = useMemo(() => {
+  const hasSelectedPhaseCompletionPermission = useMemo(() => {
     if (!selectedPhase || !currentUser) {
-      return false
-    }
-    if (selectedPhase.isCompleted || selectedPhaseProgress < 100) {
       return false
     }
     if (currentUser.role === 'admin') {
       return true
     }
     return selectedPhase.assigneeUserId === currentUser.id
-  }, [currentUser, selectedPhase, selectedPhaseProgress])
+  }, [currentUser, selectedPhase])
+  const canCompleteSelectedPhase = useMemo(() => {
+    if (!selectedPhase) {
+      return false
+    }
+    return !selectedPhase.isCompleted && selectedPhaseProgress >= 100 && hasSelectedPhaseCompletionPermission
+  }, [hasSelectedPhaseCompletionPermission, selectedPhase, selectedPhaseProgress])
+  const canAttemptSelectedPhaseCompletion = useMemo(() => {
+    if (!selectedPhase) {
+      return false
+    }
+    return !selectedPhase.isCompleted && selectedPhaseProgress >= 100
+  }, [selectedPhase, selectedPhaseProgress])
 
   useEffect(() => {
     void bootstrap()
@@ -877,7 +896,14 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
   }
 
   async function handleCompleteSelectedPhase() {
-    if (!selectedCard || !selectedPhase || !canCompleteSelectedPhase) {
+    if (!selectedCard || !selectedPhase) {
+      return
+    }
+    if (selectedPhase.isCompleted || selectedPhaseProgress < 100) {
+      return
+    }
+    if (!hasSelectedPhaseCompletionPermission) {
+      setPermissionOverlayMessage('이 단계는 담당자 또는 admin만 완료할 수 있습니다.')
       return
     }
     try {
@@ -904,7 +930,11 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       }
       setEditingPhase(false)
     } catch (completeError) {
-      setError(completeError instanceof Error ? completeError.message : '단계를 완료 처리하지 못했습니다.')
+      if (completeError instanceof ApiError && completeError.status === 403) {
+        setPermissionOverlayMessage('이 단계는 담당자 또는 admin만 완료할 수 있습니다.')
+      } else {
+        setError(completeError instanceof Error ? completeError.message : '단계를 완료 처리하지 못했습니다.')
+      }
     } finally {
       setCompletingPhase(false)
     }
@@ -1795,8 +1825,10 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       return (
         <textarea
           className="workflow-note-textarea"
-          rows={5}
+          rows={1}
+          ref={(node) => autoResizeTextarea(node)}
           value={block.content}
+          onInput={(event: ReactFormEvent<HTMLTextAreaElement>) => autoResizeTextarea(event.currentTarget)}
           onChange={(event) => handleNoteChange(phase.id, block.id, event.target.value)}
         />
       )
@@ -2095,14 +2127,14 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                 </div>
               <div className="workflow-head-actions">
                 <button
-                  className={`workflow-ghost-button workflow-compact-toggle ${compactMode ? 'is-active' : ''}`}
+                  className={`workflow-ghost-button workflow-stage-top-button workflow-compact-toggle ${compactMode ? 'is-active' : ''}`}
                   type="button"
                   onClick={() => setCompactMode((current) => !current)}
                   aria-pressed={compactMode}
                 >
                   <span>{compactMode ? '기본 보기' : '간소화'}</span>
                 </button>
-                <button className="workflow-primary-button" type="button" onClick={openPhaseOverlay} disabled={!canEdit}>
+                <button className="workflow-primary-button workflow-stage-top-button" type="button" onClick={openPhaseOverlay} disabled={!canEdit}>
                   <Plus size={15} />
                   <span>단계 추가</span>
                 </button>
@@ -2177,45 +2209,45 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                 </div>
 
                 <div className="workflow-head-actions workflow-detail-head-actions">
-                  {editingPhase ? (
-                    <div className="workflow-head-phase-settings">
-                      <label className="workflow-field">
-                        <span>담당자</span>
-                        <select
-                          className="workflow-field-select"
-                          value={selectedPhase.assigneeUserId ? String(selectedPhase.assigneeUserId) : ''}
-                          onChange={(event) => handleUpdatePhaseAssignee(event.target.value)}
-                          disabled={!canEdit}
-                        >
-                          <option value="">미정</option>
-                          {selectedPhase.assigneeUserId && !userDirectory.has(selectedPhase.assigneeUserId) ? (
-                            <option value={String(selectedPhase.assigneeUserId)}>{getPhaseAssigneeName(selectedPhase)}</option>
-                          ) : null}
-                          {phaseAssigneeOptions.map((user) => (
-                            <option key={user.id} value={String(user.id)}>
-                              {user.display_name || user.username}
-                              {user.is_active ? '' : ' (비활성)'}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="workflow-phase-toggle">
-                        <input
-                          type="checkbox"
-                          checked={isPhaseIncludedInProgress(selectedPhase)}
-                          onChange={(event) => handleUpdatePhaseIncludeInProgress(event.target.checked)}
-                          disabled={!canEdit}
-                        />
-                        <span>진행률 반영</span>
-                      </label>
-                    </div>
-                  ) : null}
                   <div className="workflow-head-action-buttons">
+                    {editingPhase ? (
+                      <div className="workflow-head-phase-settings workflow-head-phase-settings-inline">
+                        <label className="workflow-field workflow-phase-setting-field">
+                          <span>담당자</span>
+                          <select
+                            className="workflow-field-select"
+                            value={selectedPhase.assigneeUserId ? String(selectedPhase.assigneeUserId) : ''}
+                            onChange={(event) => handleUpdatePhaseAssignee(event.target.value)}
+                            disabled={!canEdit}
+                          >
+                            <option value="">미정</option>
+                            {selectedPhase.assigneeUserId && !userDirectory.has(selectedPhase.assigneeUserId) ? (
+                              <option value={String(selectedPhase.assigneeUserId)}>{getPhaseAssigneeName(selectedPhase)}</option>
+                            ) : null}
+                            {phaseAssigneeOptions.map((user) => (
+                              <option key={user.id} value={String(user.id)}>
+                                {user.display_name || user.username}
+                                {user.is_active ? '' : ' (비활성)'}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="workflow-phase-toggle">
+                          <input
+                            type="checkbox"
+                            checked={isPhaseIncludedInProgress(selectedPhase)}
+                            onChange={(event) => handleUpdatePhaseIncludeInProgress(event.target.checked)}
+                            disabled={!canEdit}
+                          />
+                          <span>진행률 반영</span>
+                        </label>
+                      </div>
+                    ) : null}
                     <button
                       className={`workflow-primary-button workflow-complete-button ${selectedPhase.isCompleted ? 'is-complete' : ''}`}
                       type="button"
                       onClick={() => void handleCompleteSelectedPhase()}
-                      disabled={completingPhase || !canCompleteSelectedPhase}
+                      disabled={completingPhase || selectedPhase.isCompleted || !canAttemptSelectedPhaseCompletion}
                       title={
                         selectedPhase.isCompleted
                           ? '이 단계는 이미 완료된 상태입니다.'
@@ -2398,6 +2430,26 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                 <ListChecks size={18} />
                 <strong>체크리스트</strong>
                 <span>간단한 확인 항목과 완료 여부를 단계 안에서 관리합니다.</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {permissionOverlayMessage ? (
+        <div className="workflow-overlay" onClick={() => setPermissionOverlayMessage('')}>
+          <div className="workflow-overlay-backdrop" />
+          <div className="workflow-overlay-panel workflow-overlay-panel-compact" onClick={(event) => event.stopPropagation()}>
+            <div className="workflow-overlay-head">
+              <h3>권한 없음</h3>
+              <button className="workflow-icon-button" type="button" onClick={() => setPermissionOverlayMessage('')} aria-label="권한 안내 닫기">
+                <X size={16} />
+              </button>
+            </div>
+            <p className="workflow-overlay-copy">{permissionOverlayMessage}</p>
+            <div className="workflow-overlay-actions">
+              <button className="workflow-primary-button" type="button" onClick={() => setPermissionOverlayMessage('')}>
+                확인
               </button>
             </div>
           </div>
