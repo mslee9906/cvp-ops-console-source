@@ -91,7 +91,7 @@ class EdmLinkRepository:
         if not changes:
             return self.get_link(link_id)
 
-        allowed_fields = {"title", "subtitle", "link_type", "url", "color_key"}
+        allowed_fields = {"title", "subtitle", "link_type", "url", "color_key", "sort_order"}
         updates = {key: value for key, value in changes.items() if key in allowed_fields}
         if not updates:
             return self.get_link(link_id)

@@ -142,7 +142,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  updateEdmLink: (linkId: number, payload: Partial<EdmLinkInput>) =>
+  updateEdmLink: (linkId: number, payload: Partial<EdmLinkInput & { sort_order: number }>) =>
     request<EdmLink>(`/api/edm-links/${linkId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),

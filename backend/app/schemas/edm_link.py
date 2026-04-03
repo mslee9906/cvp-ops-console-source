@@ -40,3 +40,4 @@ class EdmLinkUpdate(BaseModel):
     link_type: str | None = Field(default=None, max_length=80)
     url: str | None = Field(default=None, min_length=1, max_length=1000)
     color_key: EdmLinkColorKey | None = None
+    sort_order: int | None = Field(default=None, ge=1)

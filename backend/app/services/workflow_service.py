@@ -394,6 +394,31 @@ class WorkflowService:
                 "layoutRow": self._coerce_optional_int(block.get("layoutRow")),
                 "items": items,
             }
+        if block_type == "links":
+            items = [
+                {
+                    "label": str(item.get("label") or ""),
+                    "description": str(item.get("description") or ""),
+                    "url": str(item.get("url") or ""),
+                }
+                for item in block.get("items") or []
+            ] or [
+                {"label": "링크 1", "description": "관련 설명을 입력하세요.", "url": ""},
+                {"label": "링크 2", "description": "관련 설명을 입력하세요.", "url": ""},
+            ]
+            return {
+                "id": str(block.get("id") or self._uid("links")),
+                "type": "links",
+                "title": str(block.get("title") or "링크 블록"),
+                "subtitle": str(block.get("subtitle") or ""),
+                "editing": bool(block.get("editing", False)),
+                "size": str(block.get("size") or "regular"),
+                "widthUnits": int(block.get("widthUnits") or 6),
+                "heightPx": int(block.get("heightPx") or 220),
+                "layoutColumn": self._coerce_optional_int(block.get("layoutColumn")),
+                "layoutRow": self._coerce_optional_int(block.get("layoutRow")),
+                "items": items,
+            }
         return {
             "id": str(block.get("id") or self._uid("note")),
             "type": "note",

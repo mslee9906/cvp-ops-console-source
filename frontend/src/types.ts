@@ -326,7 +326,7 @@ export interface KanbanDiffResponse {
   lines: KanbanDiffLine[]
 }
 
-export type WorkflowBlockType = 'table' | 'note' | 'checklist'
+export type WorkflowBlockType = 'table' | 'note' | 'checklist' | 'links'
 export type WorkflowTableMode = 'target' | 'custom'
 export type WorkflowColumnType = 'text' | 'textarea' | 'status'
 export type WorkflowStatus = 'not_started' | 'in_progress' | 'done' | 'blocked' | 'n_a'
@@ -343,6 +343,12 @@ export interface WorkflowChecklistItem {
   text: string
   done: boolean
   assignee: string
+}
+
+export interface WorkflowLinkItem {
+  label: string
+  description: string
+  url: string
 }
 
 export interface WorkflowBaseBlock {
@@ -368,6 +374,11 @@ export interface WorkflowTableBlock extends WorkflowBaseBlock {
 export interface WorkflowNoteBlock extends WorkflowBaseBlock {
   type: 'note'
   content: string
+}
+
+export interface WorkflowLinkBlock extends WorkflowBaseBlock {
+  type: 'links'
+  items: WorkflowLinkItem[]
 }
 
 export interface AutomationSource {
@@ -476,7 +487,7 @@ export interface WorkflowChecklistBlock extends WorkflowBaseBlock {
   items: WorkflowChecklistItem[]
 }
 
-export type WorkflowBlock = WorkflowTableBlock | WorkflowNoteBlock | WorkflowChecklistBlock
+export type WorkflowBlock = WorkflowTableBlock | WorkflowNoteBlock | WorkflowChecklistBlock | WorkflowLinkBlock
 
 export interface WorkflowPhase {
   id: string

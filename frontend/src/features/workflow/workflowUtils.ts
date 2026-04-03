@@ -4,6 +4,8 @@ import type {
   WorkflowChecklistBlock,
   WorkflowChecklistItem,
   WorkflowDocument,
+  WorkflowLinkBlock,
+  WorkflowLinkItem,
   WorkflowNoteBlock,
   WorkflowPhase,
   WorkflowStatus,
@@ -169,6 +171,29 @@ export function createChecklistBlock(
       [
         { text: '추가 확인 항목 1', done: false, assignee: '미정' },
         { text: '추가 확인 항목 2', done: false, assignee: '미정' },
+      ],
+  }
+}
+
+export function createLinkBlock(
+  title = '링크 블록',
+  subtitle = '관련 문서와 시스템 바로가기',
+  items?: WorkflowLinkItem[],
+): WorkflowLinkBlock {
+  return {
+    id: uid('links'),
+    type: 'links',
+    title,
+    subtitle,
+    editing: true,
+    size: 'regular',
+    widthUnits: 6,
+    heightPx: 220,
+    items:
+      items ??
+      [
+        { label: '링크 1', description: '관련 설명을 입력하세요.', url: '' },
+        { label: '링크 2', description: '관련 설명을 입력하세요.', url: '' },
       ],
   }
 }

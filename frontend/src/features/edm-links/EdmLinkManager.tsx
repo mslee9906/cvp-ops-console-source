@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { FormEvent } from 'react'
-import { ExternalLink, Link2, PencilLine, Plus, Trash2 } from 'lucide-react'
+import type { DragEvent, FormEvent } from 'react'
+import { Link2, PencilLine, Plus, Search, Trash2 } from 'lucide-react'
 
 import { api } from '../../api'
 import type { EdmLink, EdmLinkColorKey, EdmLinkInput } from '../../types'
@@ -31,8 +31,23 @@ export function EdmLinkManager() {
   const [editorMode, setEditorMode] = useState<'create' | 'edit' | null>(null)
   const [editorLink, setEditorLink] = useState<EdmLink | null>(null)
   const [formValues, setFormValues] = useState<EdmLinkInput>(EMPTY_LINK_INPUT)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [draggedLinkId, setDraggedLinkId] = useState<number | null>(null)
+  const [dropTargetId, setDropTargetId] = useState<number | null>(null)
 
-  const sortedLinks = useMemo(() => [...links].sort((left, right) => left.sort_order - right.sort_order || left.id - right.id), [links])
+  const sortedLinks = useMemo(
+    () => [...links].sort((left, right) => left.sort_order - right.sort_order || left.id - right.id),
+    [links],
+  )
+  const filteredLinks = useMemo(() => {
+    const token = searchQuery.trim().toLowerCase()
+    if (!token) {
+      return sortedLinks
+    }
+    return sortedLinks.filter((link) =>
+      [link.title, link.subtitle, link.link_type].join(' ').toLowerCase().includes(token),
+    )
+  }, [searchQuery, sortedLinks])
 
   useEffect(() => {
     void loadLinks()
@@ -42,8 +57,7 @@ export function EdmLinkManager() {
     try {
       setLoading(true)
       setError('')
-      const response = await api.getEdmLinks()
-      setLinks(response)
+      setLinks(await api.getEdmLinks())
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'EDM LINK 목록을 불러오지 못했습니다.')
     } finally {
@@ -122,13 +136,66 @@ export function EdmLinkManager() {
     window.open(ensureAbsoluteUrl(url), '_blank', 'noopener,noreferrer')
   }
 
+  function handleDragStart(linkId: number) {
+    setDraggedLinkId(linkId)
+    setDropTargetId(linkId)
+  }
+
+  function handleDragOver(event: DragEvent<HTMLElement>, linkId: number) {
+    event.preventDefault()
+    if (draggedLinkId === null || draggedLinkId === linkId) {
+      return
+    }
+    setDropTargetId(linkId)
+  }
+
+  async function handleDrop(targetId: number) {
+    if (draggedLinkId === null || draggedLinkId === targetId) {
+      setDraggedLinkId(null)
+      setDropTargetId(null)
+      return
+    }
+
+    const fromIndex = sortedLinks.findIndex((item) => item.id === draggedLinkId)
+    const toIndex = sortedLinks.findIndex((item) => item.id === targetId)
+    if (fromIndex < 0 || toIndex < 0) {
+      setDraggedLinkId(null)
+      setDropTargetId(null)
+      return
+    }
+
+    const reordered = [...sortedLinks]
+    const [moved] = reordered.splice(fromIndex, 1)
+    reordered.splice(toIndex, 0, moved)
+    const normalized = reordered.map((item, index) => ({ ...item, sort_order: index + 1 }))
+
+    setLinks(normalized)
+    setDraggedLinkId(null)
+    setDropTargetId(null)
+
+    try {
+      const changed = normalized.filter((item, index) => item.sort_order !== sortedLinks[index]?.sort_order || item.id !== sortedLinks[index]?.id)
+      await Promise.all(changed.map((item) => api.updateEdmLink(item.id, { sort_order: item.sort_order })))
+      const latest = await api.getEdmLinks()
+      setLinks(latest)
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : '링크 순서를 저장하지 못했습니다.')
+      await loadLinks()
+    }
+  }
+
+  function handleDragEnd() {
+    setDraggedLinkId(null)
+    setDropTargetId(null)
+  }
+
   return (
     <section className="edm-shell">
       <div className="edm-toolbar">
-        <div>
+        <div className="edm-toolbar-copy">
           <p className="edm-kicker">EDM Link Directory</p>
-          <h3>사내 링크 바로가기 관리</h3>
-          <p className="edm-copy">NAS, 문서함, 업무 포털 링크를 제목과 소제목, 색상별 버튼으로 정리해서 빠르게 열 수 있습니다.</p>
+          <h3>사내 링크 바로가기</h3>
+          <p className="edm-copy">자주 쓰는 포털, 문서, 시스템 링크를 빠르게 열고 순서를 정리할 수 있습니다.</p>
         </div>
         <button className="edm-primary-button" type="button" onClick={openCreateModal}>
           <Plus size={16} />
@@ -136,41 +203,62 @@ export function EdmLinkManager() {
         </button>
       </div>
 
+      <div className="edm-search-row">
+        <label className="edm-search">
+          <Search size={16} />
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="링크 이름이나 설명을 검색하세요..."
+          />
+        </label>
+        <div className="edm-count">총 {filteredLinks.length}개의 링크</div>
+      </div>
+
       {error ? <div className="edm-message error">{error}</div> : null}
       {loading ? <div className="edm-loading">EDM LINK 목록을 불러오는 중입니다.</div> : null}
 
       {!loading ? (
-        sortedLinks.length > 0 ? (
+        filteredLinks.length > 0 ? (
           <div className="edm-grid">
-            {sortedLinks.map((link) => (
-              <article key={link.id} className={`edm-card ${link.color_key}`}>
+            {filteredLinks.map((link) => (
+              <article
+                key={link.id}
+                className={`edm-card ${link.color_key} ${draggedLinkId === link.id ? 'is-dragging' : ''} ${
+                  dropTargetId === link.id && draggedLinkId !== link.id ? 'is-drop-target' : ''
+                }`}
+                draggable
+                onDragStart={() => handleDragStart(link.id)}
+                onDragOver={(event) => handleDragOver(event, link.id)}
+                onDrop={() => void handleDrop(link.id)}
+                onDragEnd={handleDragEnd}
+              >
                 <div className="edm-card-top">
                   <span className="edm-type-badge">{link.link_type || '바로가기'}</span>
                   <button className="edm-icon-button" type="button" onClick={() => openEditModal(link)} aria-label="링크 수정">
                     <PencilLine size={16} />
                   </button>
                 </div>
+
                 <div className="edm-card-body">
                   <h4>{link.title}</h4>
-                  <p>{link.subtitle || '설명을 입력하면 이 영역에 표시됩니다.'}</p>
+                  <p>{link.subtitle || '설명이 없는 링크입니다.'}</p>
                 </div>
+
                 <div className="edm-card-foot">
+                  <div className="edm-link-preview">{link.url}</div>
                   <button className="edm-open-button" type="button" onClick={() => openLink(link.url)}>
                     <Link2 size={16} />
-                    <span>링크 열기</span>
-                  </button>
-                  <button className="edm-secondary-button" type="button" onClick={() => openLink(link.url)} aria-label="새 창으로 열기">
-                    <ExternalLink size={16} />
+                    <span>열기</span>
                   </button>
                 </div>
-                <code>{link.url}</code>
               </article>
             ))}
           </div>
         ) : (
           <div className="edm-empty-state">
-            <strong>등록된 EDM LINK가 없습니다.</strong>
-            <p>오른쪽 상단의 링크 등록 버튼으로 첫 링크를 추가해 주세요.</p>
+            <strong>표시할 EDM LINK가 없습니다.</strong>
+            <p>검색어를 바꾸거나 새 링크를 등록해 주세요.</p>
           </div>
         )
       ) : null}
@@ -194,7 +282,7 @@ export function EdmLinkManager() {
                 <input
                   value={formValues.title}
                   onChange={(event) => setFormValues((current) => ({ ...current, title: event.target.value }))}
-                  placeholder="예: 작업 계획서 NAS"
+                  placeholder="예: 공통 포털"
                   required
                 />
               </label>
@@ -205,16 +293,16 @@ export function EdmLinkManager() {
                   <input
                     value={formValues.link_type}
                     onChange={(event) => setFormValues((current) => ({ ...current, link_type: event.target.value }))}
-                    placeholder="예: NAS / 공용 문서 / 고객 제출"
+                    placeholder="예: 공통 포털"
                   />
                 </label>
 
                 <label className="edm-field">
-                  <span>소제목</span>
+                  <span>설명</span>
                   <input
                     value={formValues.subtitle}
                     onChange={(event) => setFormValues((current) => ({ ...current, subtitle: event.target.value }))}
-                    placeholder="예: 삼성 제출용 문서 폴더"
+                    placeholder="간단한 설명"
                   />
                 </label>
               </div>
@@ -224,13 +312,13 @@ export function EdmLinkManager() {
                 <input
                   value={formValues.url}
                   onChange={(event) => setFormValues((current) => ({ ...current, url: event.target.value }))}
-                  placeholder="https://... 또는 사내 NAS 링크"
+                  placeholder="https://..."
                   required
                 />
               </label>
 
               <div className="edm-field wide">
-                <span>버튼 색상</span>
+                <span>카드 색상</span>
                 <div className="edm-color-grid">
                   {COLOR_OPTIONS.map((option) => (
                     <button
@@ -252,7 +340,9 @@ export function EdmLinkManager() {
                     <Trash2 size={16} />
                     <span>삭제</span>
                   </button>
-                ) : <span />}
+                ) : (
+                  <span />
+                )}
                 <div className="edm-inline-actions">
                   <button className="edm-secondary-button ghost" type="button" onClick={closeModal} disabled={submitting}>
                     취소

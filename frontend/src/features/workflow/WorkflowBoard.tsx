@@ -3,8 +3,10 @@ import type { FormEvent as ReactFormEvent, PointerEvent as ReactPointerEvent } f
 import {
   Check,
   Copy,
+  ExternalLink,
   GripVertical,
   LayoutTemplate,
+  Link2,
   ListChecks,
   NotebookPen,
   Pencil,
@@ -22,6 +24,7 @@ import type {
   WorkflowBlock,
   WorkflowChecklistBlock,
   WorkflowDocument,
+  WorkflowLinkBlock,
   WorkflowNoteBlock,
   WorkflowPhase,
   WorkflowStatus,
@@ -44,6 +47,7 @@ import {
   computeWorkflowProgress,
   createChecklistBlock,
   createCustomTableBlock,
+  createLinkBlock,
   createEmptyRow,
   createNoteBlock,
   createTargetTableBlock,
@@ -160,6 +164,20 @@ function autoResizeTextarea(element: HTMLTextAreaElement | null, minimumHeight =
 
   element.style.height = '0px'
   element.style.height = `${Math.max(element.scrollHeight, minimumHeight)}px`
+}
+
+function ensureWorkflowUrl(url: string) {
+  const trimmed = url.trim()
+  if (!trimmed) {
+    return ''
+  }
+  if (/^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(trimmed)) {
+    return trimmed
+  }
+  if (trimmed.startsWith('//')) {
+    return `https:${trimmed}`
+  }
+  return `https://${trimmed.replace(/^\/+/, '')}`
 }
 
 function getBlockLayoutColumn(block: WorkflowBlock) {
@@ -1028,7 +1046,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
     }
   }
 
-  function handleAddBlock(kind: 'target-table' | 'custom-table' | 'note' | 'checklist') {
+  function handleAddBlock(kind: 'target-table' | 'custom-table' | 'note' | 'checklist' | 'links') {
     if (!canEdit || !workflow || !selectedPhase) {
       return
     }
@@ -1044,6 +1062,8 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
         block = createCustomTableBlock()
       } else if (kind === 'checklist') {
         block = createChecklistBlock()
+      } else if (kind === 'links') {
+        block = createLinkBlock()
       } else {
         block = createNoteBlock()
       }
@@ -1233,6 +1253,58 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       const block = findBlock(phaseId, blockId, draft)
       if (block && block.type === 'note') {
         block.content = value
+      }
+    })
+  }
+
+  function handleAddLinkItem(phaseId: string, blockId: string) {
+    if (!canEdit) {
+      return
+    }
+    mutateWorkflow((draft) => {
+      const block = findBlock(phaseId, blockId, draft)
+      if (!block || block.type !== 'links') {
+        return
+      }
+      block.items.push({
+        label: `링크 ${block.items.length + 1}`,
+        description: '관련 설명을 입력하세요.',
+        url: '',
+      })
+    })
+  }
+
+  function handleRemoveLinkItem(phaseId: string, blockId: string, itemIndex: number) {
+    if (!canEdit) {
+      return
+    }
+    mutateWorkflow((draft) => {
+      const block = findBlock(phaseId, blockId, draft)
+      if (!block || block.type !== 'links' || block.items.length <= 1) {
+        return
+      }
+      block.items.splice(itemIndex, 1)
+    })
+  }
+
+  function handleLinkItemChange(
+    phaseId: string,
+    blockId: string,
+    itemIndex: number,
+    field: 'label' | 'description' | 'url',
+    value: string,
+  ) {
+    if (!canEdit) {
+      return
+    }
+    mutateWorkflow((draft) => {
+      const block = findBlock(phaseId, blockId, draft)
+      if (!block || block.type !== 'links') {
+        return
+      }
+      const item = block.items[itemIndex]
+      if (item) {
+        item[field] = value
       }
     })
   }
@@ -1633,6 +1705,9 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
     if (block.type === 'note') {
       return renderNoteBlock(phase, block)
     }
+    if (block.type === 'links') {
+      return renderLinkBlock(phase, block)
+    }
     return renderChecklistBlock(phase, block)
   }
 
@@ -1891,6 +1966,73 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                     <span>{item.done ? '완료됨' : '미완료'}</span>
                   </div>
                   <div className="workflow-check-assignee">{item.assignee || '미정'}</div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  function renderLinkBlock(phase: WorkflowPhase, block: WorkflowLinkBlock) {
+    return (
+      <div className="workflow-link-body">
+        {block.editing ? (
+          <div className="workflow-block-toolbar">
+            <div className="workflow-toolbar-group">
+              <button className="workflow-soft-btn workflow-block-tool-button" type="button" onClick={() => handleAddLinkItem(phase.id, block.id)}>
+                링크 추가
+              </button>
+            </div>
+          </div>
+        ) : null}
+        <div className="workflow-link-items">
+          {block.items.map((item, index) => (
+            <div key={`${block.id}-link-${index}`} className="workflow-link-item">
+              {block.editing ? (
+                <>
+                  <input
+                    className="workflow-check-text-input"
+                    value={item.label}
+                    onChange={(event) => handleLinkItemChange(phase.id, block.id, index, 'label', event.target.value)}
+                    placeholder="버튼 이름"
+                  />
+                  <input
+                    className="workflow-check-assignee-input"
+                    value={item.description}
+                    onChange={(event) => handleLinkItemChange(phase.id, block.id, index, 'description', event.target.value)}
+                    placeholder="링크 설명"
+                  />
+                  <input
+                    className="workflow-check-assignee-input workflow-link-url-input"
+                    value={item.url}
+                    onChange={(event) => handleLinkItemChange(phase.id, block.id, index, 'url', event.target.value)}
+                    placeholder="https://..."
+                  />
+                  <button
+                    className="workflow-mini-icon-button"
+                    type="button"
+                    onClick={() => handleRemoveLinkItem(phase.id, block.id, index)}
+                    aria-label={`링크 ${index + 1} 삭제`}
+                    title={`링크 ${index + 1} 삭제`}
+                  >
+                    <X size={12} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="workflow-link-open-button"
+                    type="button"
+                    onClick={() => window.open(ensureWorkflowUrl(item.url), '_blank', 'noopener,noreferrer')}
+                    disabled={!item.url.trim()}
+                  >
+                    <Link2 size={15} />
+                    <span>{item.label || `링크 ${index + 1}`}</span>
+                    <ExternalLink size={13} />
+                  </button>
+                  <p>{item.description || '설명이 없습니다.'}</p>
                 </>
               )}
             </div>
@@ -2425,6 +2567,11 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                 <NotebookPen size={18} />
                 <strong>메모 블록</strong>
                 <span>특이사항, 승인 조건, 전달 사항을 자유롭게 기록합니다.</span>
+              </button>
+              <button className="workflow-overlay-choice" type="button" onClick={() => handleAddBlock('links')}>
+                <Link2 size={18} />
+                <strong>링크 블록</strong>
+                <span>관련 문서와 시스템 링크를 버튼형 목록으로 배치합니다.</span>
               </button>
               <button className="workflow-overlay-choice" type="button" onClick={() => handleAddBlock('checklist')}>
                 <ListChecks size={18} />

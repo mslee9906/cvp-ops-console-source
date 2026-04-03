@@ -1113,66 +1113,66 @@ function App() {
 
         <div className={`rail-footer ${notificationPanelOpen ? 'has-notification-open' : ''}`}>
           <div className="user-panel">
-            <div className="user-panel-topbar">
-              <span className={`user-role-chip ${currentUser.role}`}>{currentUser.role}</span>
-              <div className={`notification-anchor ${notificationPanelOpen ? 'open' : ''}`} ref={notificationPanelRef}>
-                <button
-                  className="notification-button"
-                  type="button"
-                  onClick={() => setNotificationPanelOpen((current) => !current)}
-                  aria-label="알림 열기"
-                >
-                  <Bell size={16} />
-                  {notificationUnreadCount > 0 ? (
-                    <span className="notification-badge">{notificationUnreadCount > 9 ? '9+' : notificationUnreadCount}</span>
-                  ) : null}
-                </button>
-                {notificationPanelOpen ? (
-                  <div className="notification-popover">
-                    <div className="notification-popover-head">
-                      <div>
-                        <strong>알림</strong>
-                        <span>{notificationUnreadCount > 0 ? `안 읽음 ${notificationUnreadCount}건` : '새 알림 없음'}</span>
-                      </div>
-                      <button
-                        className="notification-clear-button"
-                        type="button"
-                        onClick={() => void handleMarkAllNotificationsRead()}
-                        disabled={notificationUnreadCount === 0}
-                      >
-                        <CheckCheck size={14} />
-                        <span>전체 읽음</span>
-                      </button>
-                    </div>
-                    {notificationsLoading ? <div className="notification-empty">알림을 불러오는 중입니다.</div> : null}
-                    {notificationsError ? <div className="notification-error">{notificationsError}</div> : null}
-                    {!notificationsLoading && !notifications.length ? (
-                      <div className="notification-empty">표시할 알림이 없습니다.</div>
-                    ) : null}
-                    <div className="notification-list">
-                      {notifications.map((item) => (
-                        <button
-                          key={item.id}
-                          className={`notification-item ${item.is_read ? 'read' : 'unread'} notification-${item.kind}`}
-                          type="button"
-                          onClick={() => void handleNotificationClick(item)}
-                        >
-                          <div className="notification-item-head">
-                            <strong>{item.title}</strong>
-                            <span>{formatDateTime(item.created_at)}</span>
-                          </div>
-                          <p>{item.body || '업무 알림이 도착했습니다.'}</p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
             <div className="user-panel-head">
               <div className="user-panel-copy">
                 <strong>{currentUser.display_name}</strong>
                 <span>@{currentUser.username}</span>
+              </div>
+              <div className="user-panel-head-right">
+                <span className={`user-role-chip ${currentUser.role}`}>{currentUser.role}</span>
+                <div className={`notification-anchor ${notificationPanelOpen ? 'open' : ''}`} ref={notificationPanelRef}>
+                  <button
+                    className="notification-button"
+                    type="button"
+                    onClick={() => setNotificationPanelOpen((current) => !current)}
+                    aria-label="알림 열기"
+                  >
+                    <Bell size={16} />
+                    {notificationUnreadCount > 0 ? (
+                      <span className="notification-badge">{notificationUnreadCount > 9 ? '9+' : notificationUnreadCount}</span>
+                    ) : null}
+                  </button>
+                  {notificationPanelOpen ? (
+                    <div className="notification-popover">
+                      <div className="notification-popover-head">
+                        <div>
+                          <strong>알림</strong>
+                          <span>{notificationUnreadCount > 0 ? `안 읽음 ${notificationUnreadCount}건` : '새 알림 없음'}</span>
+                        </div>
+                        <button
+                          className="notification-clear-button"
+                          type="button"
+                          onClick={() => void handleMarkAllNotificationsRead()}
+                          disabled={notificationUnreadCount === 0}
+                        >
+                          <CheckCheck size={14} />
+                          <span>전체 읽음</span>
+                        </button>
+                      </div>
+                      {notificationsLoading ? <div className="notification-empty">알림을 불러오는 중입니다.</div> : null}
+                      {notificationsError ? <div className="notification-error">{notificationsError}</div> : null}
+                      {!notificationsLoading && !notifications.length ? (
+                        <div className="notification-empty">표시할 알림이 없습니다.</div>
+                      ) : null}
+                      <div className="notification-list">
+                        {notifications.map((item) => (
+                          <button
+                            key={item.id}
+                            className={`notification-item ${item.is_read ? 'read' : 'unread'} notification-${item.kind}`}
+                            type="button"
+                            onClick={() => void handleNotificationClick(item)}
+                          >
+                            <div className="notification-item-head">
+                              <strong>{item.title}</strong>
+                              <span>{formatDateTime(item.created_at)}</span>
+                            </div>
+                            <p>{item.body || '업무 알림이 도착했습니다.'}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
             <div className="user-panel-actions">
