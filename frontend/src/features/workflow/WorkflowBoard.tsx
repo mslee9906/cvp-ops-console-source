@@ -201,6 +201,18 @@ function buildBlockLayoutRect(block: WorkflowBlock): BlockLayoutRect {
   }
 }
 
+function compareBlocksForLayout(left: WorkflowBlock, right: WorkflowBlock) {
+  const leftRect = buildBlockLayoutRect(left)
+  const rightRect = buildBlockLayoutRect(right)
+  if (leftRect.row !== rightRect.row) {
+    return leftRect.row - rightRect.row
+  }
+  if (leftRect.column !== rightRect.column) {
+    return leftRect.column - rightRect.column
+  }
+  return 0
+}
+
 function rectanglesOverlap(left: BlockLayoutRect, right: BlockLayoutRect) {
   const leftEndColumn = left.column + left.widthUnits
   const rightEndColumn = right.column + right.widthUnits
@@ -343,7 +355,8 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
     }
 
     const placedLayouts: BlockLayoutRect[] = []
-    selectedPhase.blocks.forEach((block) => {
+    const orderedBlocks = [...selectedPhase.blocks].sort(compareBlocksForLayout)
+    orderedBlocks.forEach((block) => {
       const placedRect = findVerticalPushLayout(buildBlockLayoutRect(block), placedLayouts)
       placedLayouts.push(placedRect)
       layouts.set(block.id, placedRect)
