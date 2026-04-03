@@ -160,3 +160,54 @@ class ConfigSearchResponse(BaseModel):
     total_count: int
     total_line_matches: int
     items: list[ConfigSearchMatch] = Field(default_factory=list)
+
+
+class KanbanLinkedDevice(BaseModel):
+    device_id: str
+    hostname: str = ""
+    mgmt_ip: str = ""
+    model: str = ""
+    serial: str = ""
+
+
+class KanbanDraftDevice(BaseModel):
+    hostname: str = ""
+    mgmt_ip: str = ""
+    model: str = ""
+    serial: str = ""
+
+
+class KanbanCardResponse(BaseModel):
+    id: int
+    title: str
+    description: str = ""
+    work_type: str
+    column_key: str
+    order_index: int
+    existing_device_id: str | None = None
+    linked_device: KanbanLinkedDevice | None = None
+    draft_device: KanbanDraftDevice | None = None
+    created_at: str
+    updated_at: str
+
+
+class KanbanBoardResponse(BaseModel):
+    columns: list[str] = Field(default_factory=list)
+    cards: list[KanbanCardResponse] = Field(default_factory=list)
+
+
+class KanbanCardUpsertRequest(BaseModel):
+    title: str
+    description: str = ""
+    work_type: str
+    column_key: str = "draft"
+    existing_device_id: str | None = None
+    new_device_hostname: str = ""
+    new_device_mgmt_ip: str = ""
+    new_device_model: str = ""
+    new_device_serial: str = ""
+
+
+class KanbanCardMoveRequest(BaseModel):
+    column_key: str
+    position: int = 0
