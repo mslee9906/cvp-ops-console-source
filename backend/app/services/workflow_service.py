@@ -168,7 +168,7 @@ class WorkflowService:
         document = self.repository.get_document(card_id)
         if not document:
             document = self._create_document_from_card(card)
-        workflow = self._normalize_workflow_document(document.get("workflow") or {}, card)
+        workflow = self._synchronize_workflow(document.get("workflow") or {}, card)
 
         phases = workflow.get("phases") or []
         phase_index = next((index for index, phase in enumerate(phases) if str(phase.get("id") or "") == phase_id), -1)
