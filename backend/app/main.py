@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.api.automation_routes import router as automation_router
 from app.api.auth_routes import SESSION_COOKIE_NAME, router as auth_router
 from app.api.edm_link_routes import router as edm_link_router
 from app.api.kanban_routes import router as kanban_router
@@ -21,6 +22,7 @@ from app.repositories.kanban_repository import KanbanRepository
 from app.repositories.snapshot_repository import SnapshotRepository
 from app.repositories.workflow_repository import WorkflowRepository
 from app.services.auth_service import AuthService
+from app.services.automation_service import AutomationService
 from app.services.collection_service import CollectionService
 from app.services.edm_link_service import EdmLinkService
 from app.services.kanban_service import KanbanService
@@ -45,8 +47,9 @@ file_manager = ConfigFileManager(settings.config_dir)
 collection_service = CollectionService(repository, file_manager, settings)
 query_service = QueryService(repository)
 auth_service = AuthService(auth_repository, settings)
+automation_service = AutomationService(repository, settings)
 edm_link_service = EdmLinkService(edm_link_repository)
-kanban_service = KanbanService(kanban_repository, repository)
+kanban_service = KanbanService(kanban_repository, repository, workflow_repository)
 workflow_service = WorkflowService(workflow_repository, kanban_repository)
 
 app = FastAPI(
@@ -65,6 +68,7 @@ app.add_middleware(
 app.state.collection_service = collection_service
 app.state.query_service = query_service
 app.state.auth_service = auth_service
+app.state.automation_service = automation_service
 app.state.edm_link_service = edm_link_service
 app.state.kanban_service = kanban_service
 app.state.workflow_service = workflow_service
@@ -72,6 +76,7 @@ app.state.source_mode = "demo"
 app.state.settings = settings
 app.include_router(auth_router, prefix="/api/auth")
 app.include_router(router, prefix="/api")
+app.include_router(automation_router, prefix="/api/automation")
 app.include_router(edm_link_router, prefix="/api/edm-links")
 app.include_router(kanban_router, prefix="/api/kanban")
 app.include_router(workflow_router, prefix="/api/workflows")

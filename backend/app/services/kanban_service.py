@@ -8,6 +8,7 @@ from typing import Any
 
 from app.repositories.kanban_repository import KanbanRepository
 from app.repositories.snapshot_repository import SnapshotRepository
+from app.repositories.workflow_repository import WorkflowRepository
 from app.services.config_parser import extract_ip_records
 
 
@@ -15,32 +16,86 @@ ROUTER_BGP_RE = re.compile(r"^\s*router bgp (\S+)", re.MULTILINE)
 
 
 class KanbanService:
-    def __init__(self, repository: KanbanRepository, snapshot_repository: SnapshotRepository) -> None:
+    def __init__(
+        self,
+        repository: KanbanRepository,
+        snapshot_repository: SnapshotRepository,
+        workflow_repository: WorkflowRepository,
+    ) -> None:
         self.repository = repository
         self.snapshot_repository = snapshot_repository
+        self.workflow_repository = workflow_repository
 
     def initialize(self) -> None:
         self.repository.initialize()
 
     def list_cards(self) -> list[dict]:
-        return self.repository.list_cards()
+        return [self._apply_workflow_progress(card) for card in self.repository.list_cards()]
 
     def create_card(self, payload: dict, current_user: dict[str, Any] | None = None) -> dict:
         if current_user:
             payload["created_by_user_id"] = int(current_user["id"])
             payload["updated_by_user_id"] = int(current_user["id"])
-        return self.repository.create_card(payload)
+        return self._apply_workflow_progress(self.repository.create_card(payload))
 
     def update_card(self, card_id: int, changes: dict, current_user: dict[str, Any] | None = None) -> dict | None:
         if current_user:
             changes["updated_by_user_id"] = int(current_user["id"])
-        return self.repository.update_card(card_id, changes)
+        card = self.repository.update_card(card_id, changes)
+        return self._apply_workflow_progress(card) if card else None
 
     def delete_card(self, card_id: int) -> bool:
         return self.repository.delete_card(card_id)
 
     def reorder_cards(self, items: list[dict]) -> list[dict]:
-        return self.repository.reorder_cards(items)
+        return [self._apply_workflow_progress(card) for card in self.repository.reorder_cards(items)]
+
+    def _apply_workflow_progress(self, card: dict[str, Any]) -> dict[str, Any]:
+        card_id = int(card.get("id") or 0)
+        if not card_id:
+            return card
+
+        document = self.workflow_repository.get_document(card_id)
+        if not document:
+            card["checklist_total"] = 0
+            card["checklist_completed"] = 0
+            card["progress_percent"] = 0
+            return card
+
+        completed, total = self._calculate_workflow_progress(document.get("workflow") or {})
+        card["checklist_total"] = total
+        card["checklist_completed"] = completed
+        card["progress_percent"] = int(round((completed / total) * 100)) if total else 0
+        return card
+
+    def _calculate_workflow_progress(self, workflow: dict[str, Any]) -> tuple[int, int]:
+        completed = 0
+        total = 0
+
+        for phase in workflow.get("phases") or []:
+            for block in phase.get("blocks") or []:
+                block_type = str(block.get("type") or "")
+                if block_type == "table":
+                    columns = block.get("columns") or []
+                    status_key = next(
+                        (str(column.get("key") or "status") for column in columns if str(column.get("type") or "") == "status"),
+                        "status",
+                    )
+                    rows = block.get("rows") or []
+                    total += len(rows)
+                    completed += sum(
+                        1
+                        for row in rows
+                        if str((row or {}).get(status_key) or "not_started") in {"done", "n_a"}
+                    )
+                    continue
+
+                if block_type == "checklist":
+                    items = block.get("items") or []
+                    total += len(items)
+                    completed += sum(1 for item in items if bool((item or {}).get("done", False)))
+
+        return completed, total
 
     def get_target_snapshot(self, target_id: int) -> dict[str, Any] | None:
         target = self.repository.get_target(target_id)

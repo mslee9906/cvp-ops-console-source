@@ -1,4 +1,12 @@
-﻿import type {
+import type {
+  AutomationApplyResponse,
+  AutomationConfigPreviewResponse,
+  AutomationPlanResponse,
+  AutomationSource,
+  AutomationSourceDevice,
+  AutomationTargetMode,
+  AutomationToolDetail,
+  AutomationToolSummary,
   CollectionProgressResponse,
   ConfigPreviewResponse,
   ConfigSearchResponse,
@@ -18,11 +26,11 @@
   RecordScope,
   UserCreateInput,
   UserSummary,
+  VniGroupListResponse,
+  VrfGroupListResponse,
   WorkflowDocument,
   WorkflowDocumentResponse,
   WorkflowTemplate,
-  VniGroupListResponse,
-  VrfGroupListResponse,
 } from './types'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
@@ -89,6 +97,32 @@ export const api = {
   getConfig: (deviceId: string) => request<ConfigPreviewResponse>(`/api/devices/${deviceId}/config`),
   getCollectionStatus: () => request<CollectionProgressResponse>('/api/collections/status'),
   startRefresh: () => request<CollectionProgressResponse>('/api/collections/refresh', { method: 'POST' }),
+  getAutomationSources: () => request<AutomationSource[]>('/api/automation/sources'),
+  getAutomationSourceDevices: (source: string) =>
+    request<AutomationSourceDevice[]>(`/api/automation/sources/${encodeURIComponent(source)}/devices`),
+  getAutomationSourceConfig: (source: string, deviceId: string) =>
+    request<AutomationConfigPreviewResponse>(
+      `/api/automation/sources/${encodeURIComponent(source)}/devices/${encodeURIComponent(deviceId)}/config`,
+    ),
+  getAutomationTools: () => request<AutomationToolSummary[]>('/api/automation/tools'),
+  getAutomationToolDetail: (toolSlug: string) =>
+    request<AutomationToolDetail>(`/api/automation/tools/${encodeURIComponent(toolSlug)}`),
+  previewAutomationTool: (
+    toolSlug: string,
+    payload: { source: string; target_mode: AutomationTargetMode; device_ids: string[] },
+  ) =>
+    request<AutomationPlanResponse>(`/api/automation/tools/${encodeURIComponent(toolSlug)}/preview`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  applyAutomationTool: (
+    toolSlug: string,
+    payload: { source: string; target_mode: AutomationTargetMode; device_ids: string[] },
+  ) =>
+    request<AutomationApplyResponse>(`/api/automation/tools/${encodeURIComponent(toolSlug)}/apply`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   getRecords: (scope: RecordScope, limit = 200, extraQuery = '') =>
     request<RecordListResponse>(`/api/records/${scope}?limit=${limit}${extraQuery}`),
   getVrfGroups: (limit = 200, excludeDefault = false, name = '') =>

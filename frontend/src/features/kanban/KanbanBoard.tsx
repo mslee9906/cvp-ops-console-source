@@ -1,6 +1,6 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import type { DragEvent, FormEvent } from 'react'
-import { ArrowLeft, CheckCircle2, GripVertical, Plus, RefreshCcw, Search, Trash2 } from 'lucide-react'
+﻿import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
+import { ArrowLeft, CheckCircle2, GripVertical, Plus, RefreshCcw, Search } from 'lucide-react'
 
 import { api } from '../../api'
 import type {
@@ -17,7 +17,7 @@ import { AutoGrowTextarea } from './AutoGrowTextarea'
 import { KanbanCardModal } from './KanbanCardModal'
 import './kanban.css'
 
-type DetailStepKey = 'basic' | 'target' | 'checklist'
+type DetailStepKey = 'basic' | 'target'
 
 const COLUMN_META: Array<{ key: KanbanColumnKey; label: string; tone: string }> = [
   { key: 'blocked', label: '보류', tone: 'rose' },
@@ -29,9 +29,8 @@ const COLUMN_META: Array<{ key: KanbanColumnKey; label: string; tone: string }> 
 ]
 
 const DETAIL_STEP_META: Array<{ key: DetailStepKey; label: string; body: string }> = [
-  { key: 'basic', label: '기본 정보', body: '제목, 담당자, 상태와 작업 분류를 정리합니다.' },
-  { key: 'target', label: '작업 대상', body: '기존 장비는 인벤토리에서 선택하고, 신규 장비는 수기로 등록합니다.' },
-  { key: 'checklist', label: '체크리스트', body: '체크 항목과 진행률을 관리합니다.' },
+  { key: 'basic', label: '기본 정보', body: '카드 제목, 설명, 상태, 작업 유형 같은 기본 정보를 관리합니다.' },
+  { key: 'target', label: '작업 대상', body: '기존 장비 연결이나 신규 장비 등록 등 실제 작업 대상을 관리합니다.' },
 ]
 
 const EMPTY_CARD_INPUT: KanbanCardInput = {
@@ -64,14 +63,12 @@ export function KanbanBoard({ users }: Props) {
   const [detailDraft, setDetailDraft] = useState<KanbanCardInput | null>(null)
   const [activeDetailStep, setActiveDetailStep] = useState<DetailStepKey>('basic')
   const [dragCardId, setDragCardId] = useState<number | null>(null)
-  const [dragChecklistIndex, setDragChecklistIndex] = useState<number | null>(null)
   const [targetSearch, setTargetSearch] = useState('')
   const [existingBulkDraft, setExistingBulkDraft] = useState('')
   const [newTargetBulkDraft, setNewTargetBulkDraft] = useState('')
   const [editingNewTargetIndex, setEditingNewTargetIndex] = useState<number | null>(null)
   const [newTargetDraft, setNewTargetDraft] = useState<KanbanTargetItem>(() => createEmptyTarget('new'))
   const [actionOverlayMessage, setActionOverlayMessage] = useState('')
-  const checklistDraftIdRef = useRef(-1)
   const targetDraftIdRef = useRef(-1)
 
   const deferredTargetSearch = useDeferredValue(targetSearch)
@@ -81,8 +78,12 @@ export function KanbanBoard({ users }: Props) {
     [cards, selectedCardId],
   )
   const detailProgress = useMemo(
-    () => calculateProgress(detailDraft?.checklist_items ?? selectedCard?.checklist_items ?? []),
-    [detailDraft?.checklist_items, selectedCard?.checklist_items],
+    () => ({
+      percent: selectedCard?.progress_percent ?? 0,
+      completed: selectedCard?.checklist_completed ?? 0,
+      total: selectedCard?.checklist_total ?? 0,
+    }),
+    [selectedCard?.checklist_completed, selectedCard?.checklist_total, selectedCard?.progress_percent],
   )
   const activeStepMeta = useMemo(
     () => DETAIL_STEP_META.find((step) => step.key === activeDetailStep) ?? DETAIL_STEP_META[0],
@@ -156,7 +157,7 @@ export function KanbanBoard({ users }: Props) {
       setCards(sortCards(cardResponse))
       setDevices(deviceResponse)
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '칸반 정보를 불러오지 못했습니다.')
+      setError(loadError instanceof Error ? loadError.message : '?곸궠梨띈??筌먲퐢沅???釉띾쐞???? 嶺뚮쪇沅?쭛???鍮??')
     } finally {
       setLoading(false)
     }
@@ -169,7 +170,7 @@ export function KanbanBoard({ users }: Props) {
       const response = await api.getKanbanCards()
       setCards(sortCards(response))
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '칸반 카드를 불러오지 못했습니다.')
+      setError(loadError instanceof Error ? loadError.message : '?곸궠梨띈??곸궠?獄?쓣紐??釉띾쐞???? 嶺뚮쪇沅?쭛???鍮??')
     } finally {
       setLoading(false)
     }
@@ -182,7 +183,7 @@ export function KanbanBoard({ users }: Props) {
       const response = await api.getDevices()
       setDevices(response)
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '장비 인벤토리를 불러오지 못했습니다.')
+      setError(loadError instanceof Error ? loadError.message : '?縕???筌뤾퍒萸??ル벣遊???釉띾쐞???? 嶺뚮쪇沅?쭛???鍮??')
     } finally {
       setDeviceLoading(false)
     }
@@ -207,7 +208,6 @@ export function KanbanBoard({ users }: Props) {
     setSelectedCardId(card.id)
     setDetailDraft(toCardInput(card))
     setActiveDetailStep('basic')
-    setDragChecklistIndex(null)
     setTargetSearch('')
     setExistingBulkDraft('')
     setNewTargetBulkDraft('')
@@ -219,7 +219,6 @@ export function KanbanBoard({ users }: Props) {
     setSelectedCardId(null)
     setDetailDraft(null)
     setActiveDetailStep('basic')
-    setDragChecklistIndex(null)
     setTargetSearch('')
     setExistingBulkDraft('')
     setNewTargetBulkDraft('')
@@ -233,10 +232,10 @@ export function KanbanBoard({ users }: Props) {
       setError('')
       const created = await api.createKanbanCard(normalizeCardInput(values))
       setCards((current) => sortCards([...current, created]))
-      setActionOverlayMessage('카드가 생성되었습니다.')
+      setActionOverlayMessage('?곸궠?獄?쑚泥? ??諛댁뎽??琉????鍮??')
       closeModal()
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : '카드를 생성하지 못했습니다.')
+      setError(submitError instanceof Error ? submitError.message : '?곸궠?獄?쓣紐???諛댁뎽??? 嶺뚮쪇沅?쭛???鍮??')
     } finally {
       setSubmitting(false)
     }
@@ -251,17 +250,17 @@ export function KanbanBoard({ users }: Props) {
       if (selectedCardId === cardId) {
         setDetailDraft(toCardInput(updated))
       }
-      setActionOverlayMessage('카드가 저장되었습니다.')
+      setActionOverlayMessage('?곸궠?獄?쑚泥? ???縕ョ뵳???곕????덈펲.')
       closeModal()
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : '카드를 수정하지 못했습니다.')
+      setError(submitError instanceof Error ? submitError.message : '?곸궠?獄?쓣紐???瑜곸젧??? 嶺뚮쪇沅?쭛???鍮??')
     } finally {
       setSubmitting(false)
     }
   }
 
   async function handleDelete(cardId: number) {
-    if (!window.confirm('이 카드를 삭제할까요?')) {
+    if (!window.confirm('???곸궠?獄?쓣紐??????ル맪???')) {
       return
     }
 
@@ -273,10 +272,10 @@ export function KanbanBoard({ users }: Props) {
       if (selectedCardId === cardId) {
         closeDetail()
       }
-      setActionOverlayMessage('카드가 삭제되었습니다.')
+      setActionOverlayMessage('?곸궠?獄?쑚泥? ?????琉????鍮??')
       closeModal()
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : '카드를 삭제하지 못했습니다.')
+      setError(deleteError instanceof Error ? deleteError.message : '?곸궠?獄?쓣紐??????? 嶺뚮쪇沅?쭛???鍮??')
     } finally {
       setSubmitting(false)
     }
@@ -296,7 +295,7 @@ export function KanbanBoard({ users }: Props) {
       setDetailDraft(toCardInput(updated))
       setActionOverlayMessage(detailStepSuccessMessage(activeDetailStep))
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : '카드 상세를 저장하지 못했습니다.')
+      setError(submitError instanceof Error ? submitError.message : '?곸궠?獄???⑤㈇??????繞③뇡?彛? 嶺뚮쪇沅?쭛???鍮??')
     } finally {
       setSubmitting(false)
     }
@@ -324,7 +323,7 @@ export function KanbanBoard({ users }: Props) {
       setCards(sortCards(response))
     } catch (reorderError) {
       setCards(previousCards)
-      setError(reorderError instanceof Error ? reorderError.message : '카드 순서를 저장하지 못했습니다.')
+      setError(reorderError instanceof Error ? reorderError.message : '?곸궠?獄???戮?맋?????繞③뇡?彛? 嶺뚮쪇沅?쭛???鍮??')
     }
   }
 
@@ -339,98 +338,6 @@ export function KanbanBoard({ users }: Props) {
       assignee_user_id: nextUserId,
       assignee: selectedUser?.display_name ?? '',
     })
-  }
-
-  function addChecklistItem() {
-    setDetailDraft((current) =>
-      current
-        ? {
-            ...current,
-            checklist_items: [
-              ...(current.checklist_items ?? []),
-              {
-                id: checklistDraftIdRef.current--,
-                title: '',
-                is_completed: false,
-              },
-            ],
-          }
-        : current,
-    )
-  }
-
-  function updateChecklistItem(index: number, changes: Partial<NonNullable<KanbanCardInput['checklist_items']>[number]>) {
-    setDetailDraft((current) => {
-      if (!current) {
-        return current
-      }
-
-      return {
-        ...current,
-        checklist_items: (current.checklist_items ?? []).map((item, itemIndex) =>
-          itemIndex === index ? { ...item, ...changes } : item,
-        ),
-      }
-    })
-  }
-
-  function removeChecklistItem(index: number) {
-    setDetailDraft((current) =>
-      current
-        ? {
-            ...current,
-            checklist_items: (current.checklist_items ?? []).filter((_, itemIndex) => itemIndex !== index),
-          }
-        : current,
-    )
-  }
-
-  function reorderChecklistItems(sourceIndex: number, targetIndex: number) {
-    if (sourceIndex === targetIndex) {
-      return
-    }
-
-    setDetailDraft((current) => {
-      if (!current) {
-        return current
-      }
-
-      const items = [...(current.checklist_items ?? [])]
-      if (
-        sourceIndex < 0 ||
-        sourceIndex >= items.length ||
-        targetIndex < 0 ||
-        targetIndex >= items.length
-      ) {
-        return current
-      }
-
-      const [moved] = items.splice(sourceIndex, 1)
-      items.splice(targetIndex, 0, moved)
-
-      return {
-        ...current,
-        checklist_items: items.map((item, index) => ({
-          ...item,
-          sort_order: index + 1,
-        })),
-      }
-    })
-  }
-
-  function handleChecklistDragStart(index: number) {
-    setDragChecklistIndex(index)
-  }
-
-  function handleChecklistDrop(event: DragEvent<HTMLDivElement>, targetIndex: number) {
-    event.preventDefault()
-    event.stopPropagation()
-    if (dragChecklistIndex === null) {
-      return
-    }
-
-    reorderChecklistItems(dragChecklistIndex, targetIndex)
-    setDragChecklistIndex(null)
   }
 
   function addExistingTarget(device: DeviceSummary) {
@@ -511,7 +418,7 @@ export function KanbanBoard({ users }: Props) {
       'new',
     )
     if (!normalized.display_name) {
-      setError('신규 장비는 Hostname 또는 장비 이름을 입력해야 합니다.')
+      setError('??ル맪???縕???Hostname ???裕??縕?????藥?????놁졑??怨룻뒍 ??紐껊퉵??')
       return
     }
 
@@ -565,7 +472,7 @@ export function KanbanBoard({ users }: Props) {
     }
 
     if (missedTokens.length) {
-      setError(`인벤토리에서 찾지 못한 장비: ${missedTokens.join(', ')}`)
+      setError(`?筌뤾퍒萸??ル벣遊?????嶺뚢돦堉? 嶺뚮쪇沅?뇡??縕?? ${missedTokens.join(', ')}`)
     } else {
       setError('')
     }
@@ -645,8 +552,8 @@ export function KanbanBoard({ users }: Props) {
               >
                 {cardsInColumn.length === 0 ? (
                   <div className="kanban-empty-state">
-                    <strong>카드가 없습니다.</strong>
-                    <p>새 카드를 만들거나 다른 컬럼에서 드래그해 보세요.</p>
+                    <strong>아직 카드가 없습니다.</strong>
+                    <p>새 작업을 등록하거나 다른 상태로 카드를 이동해 보세요.</p>
                   </div>
                 ) : (
                   cardsInColumn.map((card, index) => (
@@ -683,8 +590,8 @@ export function KanbanBoard({ users }: Props) {
 
                       <p className="kanban-card-description">{card.description || '작업 설명이 아직 없습니다.'}</p>
                       <div className="kanban-card-ownership">
-                        <span>생성 {card.created_by_name || '미지정'}</span>
-                        <span>담당 {card.assignee || '미지정'}</span>
+                        <span>생성자 {card.created_by_name || '미지정'}</span>
+                        <span>담당자 {card.assignee || '미지정'}</span>
                       </div>
                       <div className="kanban-card-meta">
                         <span>{priorityLabel(card.priority)}</span>
@@ -720,26 +627,26 @@ export function KanbanBoard({ users }: Props) {
       <div className="kanban-toolbar">
         <div>
           <p className="kanban-kicker">Kanban Board</p>
-          <h3>작업 칸반 보드</h3>
+          <h3>작업 보드</h3>
           <p className="kanban-copy">
-            보드에서는 카드 요약만 빠르게 보고, 자세히 보기에서는 기본 정보와 작업 대상, 체크리스트만 관리합니다.
-            작업 계획 성격의 단계는 별도 작업 계획 화면에서 이어집니다.
+            작업 카드의 생성, 배치, 우선순위, 담당자와 현재 진행률을 한 화면에서 관리합니다.
+            자세히 보기에서는 기본 정보와 작업 대상만 수정할 수 있으며, 진행률은 워크플로우 전체 진행도와 연동됩니다.
           </p>
         </div>
         <div className="kanban-inline-actions">
           <button className="kanban-ghost-button" type="button" onClick={() => void loadCards()} disabled={loading || submitting}>
             <RefreshCcw size={16} />
-            <span>다시 불러오기</span>
+            <span>카드 새로고침</span>
           </button>
           <button className="kanban-primary-button" type="button" onClick={openCreateModal}>
             <Plus size={16} />
-            <span>카드 생성</span>
+            <span>작업 추가</span>
           </button>
         </div>
       </div>
 
       {error ? <div className="kanban-message error">{error}</div> : null}
-      {loading ? <div className="kanban-loading">칸반 카드 목록을 불러오는 중입니다.</div> : null}
+      {loading ? <div className="kanban-loading">작업 카드 목록을 불러오는 중입니다.</div> : null}
 
       {!loading && !selectedCard ? boardContent : null}
 
@@ -761,7 +668,7 @@ export function KanbanBoard({ users }: Props) {
                     <small className="kanban-summary-ticket">{selectedCard.card_code}</small>
                   </div>
                   <button className="kanban-link-button" type="button" onClick={() => openEditModal(selectedCard)}>
-                    빠른 수정
+                    카드 수정
                   </button>
                 </div>
                 <div className="kanban-summary-row">
@@ -789,7 +696,7 @@ export function KanbanBoard({ users }: Props) {
                   <strong>{priorityLabel(detailDraft.priority)}</strong>
                 </div>
                 <div className="kanban-summary-row">
-                  <span>수정 시각</span>
+                  <span>마지막 갱신</span>
                   <strong>{formatDateTime(selectedCard.updated_at)}</strong>
                 </div>
                 <div className="kanban-summary-row">
@@ -798,7 +705,7 @@ export function KanbanBoard({ users }: Props) {
                 </div>
                 <div className="kanban-progress-card">
                   <div className="kanban-progress-head">
-                    <span>진행률</span>
+                    <span>현재 진행률</span>
                     <strong>{detailProgress.percent}%</strong>
                   </div>
                   <div className="kanban-progress-bar" aria-hidden="true">
@@ -811,7 +718,7 @@ export function KanbanBoard({ users }: Props) {
               </article>
 
               <section className="kanban-step-panel">
-                <p className="kanban-kicker">작업 단계</p>
+                <p className="kanban-kicker">세부 항목</p>
                 {DETAIL_STEP_META.map((step) => (
                   <button
                     key={step.key}
@@ -862,7 +769,7 @@ export function KanbanBoard({ users }: Props) {
                       </label>
 
                       <label className="kanban-field">
-                        <span>상태</span>
+                        <span>현재 상태</span>
                         <select
                           value={detailDraft.column_key}
                           onChange={(event) => updateDetailDraft({ column_key: event.target.value as KanbanColumnKey })}
@@ -924,13 +831,13 @@ export function KanbanBoard({ users }: Props) {
                       <div className="kanban-target-head">
                         <div>
                           <p className="kanban-kicker">Target Inventory</p>
-                          <h4>{detailDraft.card_type === 'new' ? '신규 대상 장비 등록' : '기존 장비 선택'}</h4>
+                          <h4>{detailDraft.card_type === 'new' ? '신규 장비 작업 대상' : '기존 장비 작업 대상'}</h4>
                         </div>
                         <div className="kanban-inline-actions left">
                           {detailDraft.card_type === 'existing' ? (
                             <button className="kanban-ghost-button" type="button" onClick={() => void loadDevices()} disabled={deviceLoading}>
                               <RefreshCcw size={16} />
-                              <span>{deviceLoading ? '불러오는 중...' : '인벤토리 갱신'}</span>
+                              <span>{deviceLoading ? '장비 목록 불러오는 중...' : '장비 목록 새로고침'}</span>
                             </button>
                           ) : (
                             <button className="kanban-ghost-button" type="button" onClick={resetNewTargetEditor}>
@@ -968,16 +875,16 @@ export function KanbanBoard({ users }: Props) {
                               ))
                             ) : (
                               <div className="kanban-target-empty">
-                                <strong>추가 가능한 장비가 없습니다.</strong>
-                                <p>검색 조건을 바꾸거나 이미 선택된 장비를 확인해 주세요.</p>
+                                <strong>선택 가능한 장비가 없습니다.</strong>
+                                <p>검색 조건을 바꾸거나 snapshot 장비 목록을 다시 불러오세요.</p>
                               </div>
                             )}
                           </div>
                           <div className="kanban-target-form-card">
                             <div className="kanban-target-editor-head">
                               <div>
-                                <strong>여러 대 한 번에 추가</strong>
-                                <p>한 줄에 `hostname` 또는 `mgmt ip` 하나씩 입력하면 선택 대상에 일괄 반영됩니다.</p>
+                                <strong>여러 장비 한 번에 추가</strong>
+                                <p>`hostname` 또는 `mgmt ip`를 한 줄에 하나씩 입력하면 선택 가능한 장비를 한 번에 추가합니다.</p>
                               </div>
                               <button className="kanban-ghost-button" type="button" onClick={addExistingTargetsFromBulk}>
                                 <Plus size={16} />
@@ -985,7 +892,7 @@ export function KanbanBoard({ users }: Props) {
                               </button>
                             </div>
                             <label className="kanban-field wide">
-                              <span>일괄 등록</span>
+                              <span>일괄 입력</span>
                               <AutoGrowTextarea
                                 value={existingBulkDraft}
                                 rows={4}
@@ -1002,8 +909,8 @@ export function KanbanBoard({ users }: Props) {
                           <div className="kanban-target-form-card">
                             <div className="kanban-target-editor-head">
                               <div>
-                                <strong>{editingNewTargetIndex === null ? '신규 장비 등록' : '신규 장비 수정'}</strong>
-                                <p>입력 영역은 하나만 유지하고, 아래 표에서 행을 눌러 수정합니다.</p>
+                                <strong>{editingNewTargetIndex === null ? '신규 장비 추가' : '신규 장비 수정'}</strong>
+                                <p>Hostname, 관리 IP, 모델, 역할 힌트를 입력해 작업 대상에 직접 등록합니다.</p>
                               </div>
                               <div className="kanban-inline-actions left">
                                 <button className="kanban-ghost-button" type="button" onClick={resetNewTargetEditor}>
@@ -1011,13 +918,13 @@ export function KanbanBoard({ users }: Props) {
                                 </button>
                                 <button className="kanban-primary-button" type="button" onClick={saveNewTargetDraft}>
                                   <Plus size={16} />
-                                  <span>{editingNewTargetIndex === null ? '대상 추가' : '수정 반영'}</span>
+                                  <span>{editingNewTargetIndex === null ? '장비 추가' : '수정 완료'}</span>
                                 </button>
                               </div>
                             </div>
                             <div className="kanban-target-form-grid">
                               <label className="kanban-field">
-                                <span>장비 이름 / Hostname</span>
+                                <span>장비명 / Hostname</span>
                                 <input
                                   value={newTargetDraft.display_name}
                                   onChange={(event) =>
@@ -1043,11 +950,11 @@ export function KanbanBoard({ users }: Props) {
                                   onChange={(event) =>
                                     setNewTargetDraft((current) => ({ ...current, model: event.target.value, target_kind: 'new' }))
                                   }
-                                  placeholder="예: DCS-7280"
+                                  placeholder="?? DCS-7280"
                                 />
                               </label>
                               <label className="kanban-field">
-                                <span>역할 / 메모</span>
+                                <span>역할 / 역할 힌트</span>
                                 <input
                                   value={newTargetDraft.role_hint}
                                   onChange={(event) =>
@@ -1058,7 +965,7 @@ export function KanbanBoard({ users }: Props) {
                               </label>
                             </div>
                             <label className="kanban-field wide">
-                              <span>신규 장비 일괄 등록</span>
+                              <span>신규 장비 일괄 입력</span>
                               <AutoGrowTextarea
                                 value={newTargetBulkDraft}
                                 rows={4}
@@ -1067,17 +974,17 @@ export function KanbanBoard({ users }: Props) {
                               />
                             </label>
                             <div className="kanban-target-card-actions">
-                              <p className="kanban-target-helper">한 줄에 `hostname, mgmt ip, model, 메모` 순서로 적으면 여러 대를 한 번에 등록할 수 있습니다.</p>
+                              <p className="kanban-target-helper">`hostname, mgmt ip, model, 역할 힌트` 순서로 한 줄에 한 대씩 입력할 수 있습니다.</p>
                               <button className="kanban-ghost-button" type="button" onClick={addNewTargetsFromBulk}>
                                 <Plus size={16} />
-                                <span>여러 대 추가</span>
+                                <span>일괄 등록</span>
                               </button>
                             </div>
                           </div>
                           {targetRows.length === 0 ? (
                             <div className="kanban-target-empty">
-                              <strong>등록된 신규 대상 장비가 없습니다.</strong>
-                              <p>위 편집기에서 한 대씩 추가하거나, 여러 줄 입력으로 한 번에 등록해 주세요.</p>
+                              <strong>등록된 신규 장비가 없습니다.</strong>
+                              <p>위 입력 영역에서 한 대씩 추가하거나 여러 줄 입력으로 한 번에 등록하세요.</p>
                             </div>
                           ) : null}
                         </div>
@@ -1086,16 +993,16 @@ export function KanbanBoard({ users }: Props) {
                       {targetRows.length > 0 ? (
                         <div className="kanban-target-table-shell">
                           <div className="kanban-target-table-head">
-                            <strong>선택된 작업 대상</strong>
+                            <strong>현재 등록된 작업 대상</strong>
                             <span>{targetRows.length}대</span>
                           </div>
                           <div className="kanban-target-table">
                             <div className="kanban-target-table-row header">
-                              <span>장비</span>
+                              <span>장비명</span>
                               <span>Mgmt IP</span>
                               <span>Model</span>
                               <span>연결 상태</span>
-                              <span>동작</span>
+                              <span>관리</span>
                             </div>
                             {targetRows.map((target, index) => (
                               <div
@@ -1106,7 +1013,7 @@ export function KanbanBoard({ users }: Props) {
                                 <span>{target.display_name || '-'}</span>
                                 <span>{target.mgmt_ip || '-'}</span>
                                 <span>{target.model || '-'}</span>
-                                <span>{target.cvp_device_id ? 'CVP 연결됨' : '수기 등록'}</span>
+                                <span>{target.cvp_device_id ? 'CVP 연결됨' : '수기 등록 대상'}</span>
                                 <span>
                                   {detailDraft.card_type === 'new' ? (
                                     <button
@@ -1146,82 +1053,6 @@ export function KanbanBoard({ users }: Props) {
                   </form>
                 ) : null}
 
-                {activeDetailStep === 'checklist' ? (
-                  <form className="kanban-form" onSubmit={handleDetailSubmit}>
-                    <section className="kanban-checklist-panel">
-                      <div className="kanban-checklist-head">
-                        <div>
-                          <p className="kanban-kicker">Checklist</p>
-                          <h4>작업 체크리스트</h4>
-                        </div>
-                        <button className="kanban-ghost-button" type="button" onClick={addChecklistItem}>
-                          <Plus size={16} />
-                          <span>항목 추가</span>
-                        </button>
-                      </div>
-
-                      {detailDraft.checklist_items && detailDraft.checklist_items.length > 0 ? (
-                        <div className="kanban-checklist-list">
-                          {detailDraft.checklist_items.map((item, index) => (
-                            <div
-                              key={item.id ?? `draft-${index}`}
-                              className={`kanban-checklist-item ${dragChecklistIndex === index ? 'dragging' : ''}`}
-                              onDragOver={(event) => event.preventDefault()}
-                              onDrop={(event) => handleChecklistDrop(event, index)}
-                            >
-                              <button
-                                className="kanban-checklist-grip"
-                                type="button"
-                                draggable
-                                onDragStart={() => handleChecklistDragStart(index)}
-                                onDragEnd={() => setDragChecklistIndex(null)}
-                                aria-label="체크리스트 항목 순서 이동"
-                              >
-                                <GripVertical size={16} />
-                              </button>
-                              <label className="kanban-checklist-toggle">
-                                <input
-                                  type="checkbox"
-                                  checked={item.is_completed}
-                                  onChange={(event) => updateChecklistItem(index, { is_completed: event.target.checked })}
-                                />
-                              </label>
-                              <AutoGrowTextarea
-                                className={`kanban-checklist-input ${item.is_completed ? 'completed' : ''}`}
-                                value={item.title}
-                                onChange={(event) => updateChecklistItem(index, { title: event.target.value })}
-                                placeholder="예: 변경 전 snapshot 확인"
-                                rows={1}
-                                spellCheck={false}
-                                autoCorrect="off"
-                                autoCapitalize="off"
-                              />
-                              <button
-                                className="kanban-link-button danger"
-                                type="button"
-                                onClick={() => removeChecklistItem(index)}
-                                aria-label="체크리스트 항목 삭제"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="kanban-checklist-empty">
-                          <strong>체크리스트가 아직 없습니다.</strong>
-                          <p>항목을 추가하면 진행률이 자동 계산됩니다.</p>
-                        </div>
-                      )}
-                    </section>
-
-                    <div className="kanban-detail-actions end">
-                      <button className="kanban-primary-button" type="submit" disabled={submitting}>
-                        {submitting ? '저장 중...' : '체크리스트 저장'}
-                      </button>
-                    </div>
-                  </form>
-                ) : null}
               </div>
             </section>
           </div>
@@ -1356,19 +1187,7 @@ function formatDateTime(value: string) {
 
 function detailStepSuccessMessage(step: DetailStepKey) {
   if (step === 'basic') return '기본 정보가 저장되었습니다.'
-  if (step === 'target') return '작업 대상이 저장되었습니다.'
-  return '체크리스트가 저장되었습니다.'
-}
-
-function calculateProgress(items: KanbanCardInput['checklist_items']) {
-  const normalizedItems = items ?? []
-  const completed = normalizedItems.filter((item) => item.is_completed).length
-  const total = normalizedItems.length
-  return {
-    completed,
-    total,
-    percent: total > 0 ? Math.round((completed / total) * 100) : 0,
-  }
+  return '작업 대상이 저장되었습니다.'
 }
 
 function createEmptyTarget(targetKind: KanbanTargetKind): KanbanTargetItem {

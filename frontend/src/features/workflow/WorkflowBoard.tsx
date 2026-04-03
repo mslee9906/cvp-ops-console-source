@@ -69,6 +69,9 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
   const canEdit = currentUser?.role !== 'viewer'
   const cardPickerRef = useRef<HTMLDivElement | null>(null)
   const blockBoardRef = useRef<HTMLDivElement | null>(null)
+  const stageLaneRef = useRef<HTMLDivElement | null>(null)
+  const stageLaneScrollTargetRef = useRef(0)
+  const stageLaneScrollFrameRef = useRef<number | null>(null)
   const workflowRef = useRef<WorkflowDocument | null>(null)
   const selectedCardIdRef = useRef<number | null>(null)
   const saveTimerRef = useRef<number | null>(null)
@@ -88,6 +91,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
   const [workflow, setWorkflow] = useState<WorkflowDocument | null>(null)
   const [selectedPhaseId, setSelectedPhaseId] = useState('')
   const [editingPhase, setEditingPhase] = useState(false)
+  const [compactMode, setCompactMode] = useState(false)
   const [templates, setTemplates] = useState<WorkflowTemplate[]>([])
   const [showAddOverlay, setShowAddOverlay] = useState(false)
   const [showTemplateOverlay, setShowTemplateOverlay] = useState(false)
@@ -96,9 +100,9 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
   const [newPhaseSubtitle, setNewPhaseSubtitle] = useState('')
   const [templateName, setTemplateName] = useState('')
   const [templateDescription, setTemplateDescription] = useState('')
-  const [saveState, setSaveState] = useState<SaveState>('idle')
-  const [saveMessage, setSaveMessage] = useState('')
-  const [copyFeedback, setCopyFeedback] = useState('')
+  const [, setSaveState] = useState<SaveState>('idle')
+  const [, setSaveMessage] = useState('')
+  const [, setCopyFeedback] = useState('')
 
   const selectedCard = useMemo(
     () => cards.find((card) => card.id === selectedCardId) ?? null,
@@ -122,6 +126,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
     [workflow],
   )
   const workflowFingerprint = useMemo(() => (workflow ? JSON.stringify(workflow) : ''), [workflow])
+  const targetSummary = useMemo(() => summarizeTargets(workflow?.targets ?? []), [workflow?.targets])
 
   useEffect(() => {
     void bootstrap()
@@ -181,6 +186,54 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
   }, [showCardPicker])
 
   useEffect(() => {
+    const lane = stageLaneRef.current
+    if (!lane) {
+      return
+    }
+
+    stageLaneScrollTargetRef.current = lane.scrollLeft
+
+    const animateScroll = () => {
+      const current = lane.scrollLeft
+      const target = stageLaneScrollTargetRef.current
+      const delta = target - current
+
+      if (Math.abs(delta) < 0.5) {
+        lane.scrollLeft = target
+        stageLaneScrollFrameRef.current = null
+        return
+      }
+
+      lane.scrollLeft = current + delta * 0.18
+      stageLaneScrollFrameRef.current = window.requestAnimationFrame(animateScroll)
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+        return
+      }
+      if (lane.scrollWidth <= lane.clientWidth) {
+        return
+      }
+      event.preventDefault()
+      const maxScroll = Math.max(0, lane.scrollWidth - lane.clientWidth)
+      stageLaneScrollTargetRef.current = clamp(stageLaneScrollTargetRef.current + event.deltaY, 0, maxScroll)
+      if (stageLaneScrollFrameRef.current === null) {
+        stageLaneScrollFrameRef.current = window.requestAnimationFrame(animateScroll)
+      }
+    }
+
+    lane.addEventListener('wheel', handleWheel, { passive: false })
+    return () => {
+      lane.removeEventListener('wheel', handleWheel)
+      if (stageLaneScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(stageLaneScrollFrameRef.current)
+        stageLaneScrollFrameRef.current = null
+      }
+    }
+  }, [workflow?.phases.length])
+
+  useEffect(() => {
     if (!workflow || !selectedCardId || !canEdit) {
       return
     }
@@ -214,14 +267,6 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  useEffect(() => {
-    if (!copyFeedback) {
-      return
-    }
-    const timer = window.setTimeout(() => setCopyFeedback(''), 1800)
-    return () => window.clearTimeout(timer)
-  }, [copyFeedback])
 
   async function bootstrap() {
     try {
@@ -1258,7 +1303,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
   }
 
   return (
-    <section className="workflow-shell">
+    <section className={`workflow-shell ${compactMode ? 'compact' : ''}`}>
       {error ? <div className="workflow-message error">{error}</div> : null}
 
       {loadingWorkflow || !workflow || !selectedCard ? (
@@ -1269,76 +1314,70 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
       ) : (
         <>
           <section className="workflow-hero-grid">
-            <article className="workflow-hero">
-              <div className="workflow-hero-top" ref={cardPickerRef}>
-                <div className="workflow-hero-card-picker">
-                  <p className="workflow-kicker">Workflow Link</p>
-                  <button
-                    className={`workflow-selected-card ${showCardPicker ? 'open' : ''}`}
-                    type="button"
-                    onClick={() => setShowCardPicker((current) => !current)}
-                  >
-                    <div>
-                      <strong>{selectedCard?.title || '카드를 선택하세요.'}</strong>
-                      <span>
-                        {selectedCard
-                          ? `${selectedCard.card_code} · ${selectedCard.assignee || '담당자 미지정'} · ${(selectedCard.targets ?? []).length} targets`
-                          : '워크플로우를 연결할 작업 카드를 선택합니다.'}
-                      </span>
-                    </div>
-                    <Search size={16} />
-                  </button>
+            <article className={`workflow-hero ${compactMode ? 'is-compact' : ''}`}>
+              <div className="workflow-hero-top">
+                <div className="workflow-hero-main">
+                  <h2>{workflow.cardTitle}</h2>
+                  <p className="workflow-hero-summary">{workflow.summary}</p>
+                </div>
 
-                  {showCardPicker ? (
-                    <div className="workflow-card-picker">
-                      <label className="workflow-search-field">
-                        <Search size={15} />
-                        <input
-                          value={cardFilter}
-                          onChange={(event) => setCardFilter(event.target.value)}
-                          placeholder="카드 제목, 코드, 담당자 검색"
-                        />
-                      </label>
-                      <div className="workflow-card-list">
-                        {filteredCards.map((card) => (
-                          <button
-                            key={card.id}
-                            className={`workflow-card-option ${card.id === selectedCardId ? 'active' : ''}`}
-                            type="button"
-                            onClick={() => void handleSelectCard(card.id)}
-                          >
-                            <div>
-                              <strong>{card.title}</strong>
-                              <span>{card.assignee || '담당자 미지정'}</span>
-                            </div>
-                            <div className="workflow-card-option-meta">
-                              <span>{card.card_code}</span>
-                              <span>{(card.targets ?? []).length} targets</span>
-                            </div>
-                          </button>
-                        ))}
-                        {!filteredCards.length ? (
-                          <div className="workflow-card-option empty">
-                            <strong>검색 결과가 없습니다.</strong>
-                            <span>제목, 카드 코드, 담당자 기준으로 다시 검색하세요.</span>
-                          </div>
-                        ) : null}
+                <div className="workflow-hero-side" ref={cardPickerRef}>
+                  <div className="workflow-hero-card-picker">
+                    <button
+                      className={`workflow-selected-card ${showCardPicker ? 'open' : ''}`}
+                      type="button"
+                      onClick={() => setShowCardPicker((current) => !current)}
+                    >
+                      <div>
+                        <strong>{selectedCard?.title || '카드를 선택하세요.'}</strong>
+                        <span>
+                          {selectedCard
+                            ? `${selectedCard.card_code} · ${selectedCard.assignee || '담당자 미지정'} · ${(selectedCard.targets ?? []).length} targets`
+                            : '워크플로우를 연결할 작업 카드를 선택합니다.'}
+                        </span>
                       </div>
-                    </div>
-                  ) : null}
-                </div>
+                      <Search size={16} />
+                    </button>
 
-                <div className="workflow-toolbar-right">
-                  <div className={`workflow-save-chip ${saveState}`}>
-                    <span>{saveMessage || '대기 중'}</span>
+                    {showCardPicker ? (
+                      <div className="workflow-card-picker">
+                        <label className="workflow-search-field">
+                          <Search size={15} />
+                          <input
+                            value={cardFilter}
+                            onChange={(event) => setCardFilter(event.target.value)}
+                            placeholder="카드 제목, 코드, 담당자 검색"
+                          />
+                        </label>
+                        <div className="workflow-card-list">
+                          {filteredCards.map((card) => (
+                            <button
+                              key={card.id}
+                              className={`workflow-card-option ${card.id === selectedCardId ? 'active' : ''}`}
+                              type="button"
+                              onClick={() => void handleSelectCard(card.id)}
+                            >
+                              <div>
+                                <strong>{card.title}</strong>
+                                <span>{card.assignee || '담당자 미지정'}</span>
+                              </div>
+                              <div className="workflow-card-option-meta">
+                                <span>{card.card_code}</span>
+                                <span>{(card.targets ?? []).length} targets</span>
+                              </div>
+                            </button>
+                          ))}
+                          {!filteredCards.length ? (
+                            <div className="workflow-card-option empty">
+                              <strong>검색 결과가 없습니다.</strong>
+                              <span>제목, 카드 코드, 담당자 기준으로 다시 검색하세요.</span>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
-                  {copyFeedback ? <div className="workflow-save-chip feedback">{copyFeedback}</div> : null}
                 </div>
-              </div>
-
-              <div className="workflow-hero-main">
-                <h2>{workflow.cardTitle}</h2>
-                <p className="workflow-hero-summary">{workflow.summary}</p>
               </div>
 
               <div className="workflow-meta-sheet">
@@ -1349,10 +1388,6 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                 <div className="workflow-meta-row">
                   <span>프로젝트명</span>
                   <strong>{workflow.projectName}</strong>
-                </div>
-                <div className="workflow-meta-row">
-                  <span>작업 등급</span>
-                  <strong>{workflow.grade}</strong>
                 </div>
                 <div className="workflow-meta-row">
                   <span>생성자</span>
@@ -1366,14 +1401,14 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                   <span>실 담당자</span>
                   <strong>{workflow.owner}</strong>
                 </div>
-                <div className="workflow-meta-row full">
+                <div className="workflow-meta-row">
                   <span>작업 대상</span>
-                  <strong>{workflow.targets.join(', ')}</strong>
+                  <strong>{targetSummary}</strong>
                 </div>
               </div>
             </article>
 
-            <article className="workflow-progress-shell">
+            <article className={`workflow-progress-shell ${compactMode ? 'is-compact' : ''}`}>
               <div className="workflow-progress-layout">
                 <div className="workflow-progress-panel">
                   <div className="workflow-progress-ring-wrap">
@@ -1389,6 +1424,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                           strokeDashoffset:
                             PROGRESS_CIRCUMFERENCE -
                             (PROGRESS_CIRCUMFERENCE * workflowProgress.percent) / 100,
+                          stroke: getProgressColor(workflowProgress.percent),
                         }}
                       />
                     </svg>
@@ -1416,33 +1452,58 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                             <span>{progress}%</span>
                           </div>
                           <div className="workflow-phase-progress-bar">
-                            <span style={{ width: `${progress}%` }} />
+                            <span style={{ width: `${progress}%`, background: getProgressColor(progress) }} />
                           </div>
                         </div>
                       )
                     })}
                   </div>
                 </div>
+
+                <div className="workflow-progress-summary-bar">
+                  <div className="workflow-progress-summary-copy">
+                    <strong>전체 진행률</strong>
+                    <span>{workflowProgress.percent}%</span>
+                  </div>
+                  <div className="workflow-progress-summary-track">
+                    <span
+                      style={{
+                        width: `${workflowProgress.percent}%`,
+                        background: getProgressColor(workflowProgress.percent),
+                      }}
+                    />
+                  </div>
+                  <div className="workflow-progress-summary-meta">
+                    {workflowProgress.done}개 완료 / {workflowProgress.total}개 전체 항목
+                  </div>
+                </div>
               </div>
             </article>
           </section>
 
-          <section className="workflow-stage-shell">
+          <section className={`workflow-stage-shell ${compactMode ? 'is-compact' : ''}`}>
               <div className="workflow-section-head">
                 <div className="workflow-section-head-left">
-                  <div>
-                    <p className="workflow-kicker">Stage Flow</p>
-                    <h3>작업 흐름도</h3>
+                    <div className="workflow-stage-title-row">
+                      <h3>STAGE</h3>
+                      <div className="workflow-inline-actions">
+                       <button className="workflow-ghost-button" type="button" onClick={() => setShowTemplateOverlay(true)}>
+                         <LayoutTemplate size={15} />
+                         <span>템플릿</span>
+                      </button>
+                      <span className="workflow-inline-chip">{workflow.templateName || '기본 템플릿'}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="workflow-inline-actions">
-                  <button className="workflow-ghost-button" type="button" onClick={() => setShowTemplateOverlay(true)}>
-                    <LayoutTemplate size={15} />
-                    <span>템플릿</span>
-                  </button>
-                  <span className="workflow-inline-chip">{workflow.templateName || '기본 템플릿'}</span>
-                </div>
-              </div>
               <div className="workflow-head-actions">
+                <button
+                  className={`workflow-ghost-button workflow-compact-toggle ${compactMode ? 'is-active' : ''}`}
+                  type="button"
+                  onClick={() => setCompactMode((current) => !current)}
+                  aria-pressed={compactMode}
+                >
+                  <span>{compactMode ? '기본 보기' : '간소화'}</span>
+                </button>
                 <button className="workflow-primary-button" type="button" onClick={() => setShowPhaseOverlay(true)} disabled={!canEdit}>
                   <Plus size={15} />
                   <span>단계 추가</span>
@@ -1450,7 +1511,7 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
               </div>
             </div>
 
-            <div className="workflow-stage-lane">
+            <div className="workflow-stage-lane" ref={stageLaneRef}>
               {workflow.phases.map((phase, index) => {
                 const progress = computePhaseProgress(phase)
                 return (
@@ -1470,13 +1531,12 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                       }}
                       onDrop={() => handleStageDrop(phase.id)}
                     >
-                      <span className="workflow-stage-index">{index + 1}</span>
                       <h4>{phase.title}</h4>
                       <p className="workflow-stage-description">{phase.subtitle}</p>
                       <div className="workflow-stage-meta">
                         <span className="workflow-stage-text">블록 {phase.blocks.length}개 · {progress}%</span>
                         <span className="workflow-mini-progress">
-                          <span style={{ width: `${progress}%` }} />
+                          <span style={{ width: `${progress}%`, background: getProgressColor(progress) }} />
                         </span>
                       </div>
                     </article>
@@ -1485,7 +1545,6 @@ export function WorkflowBoard({ currentUser }: WorkflowBoardProps) {
                 )
               })}
             </div>
-            <p className="workflow-lane-help">단계를 드래그하면 순서를 변경할 수 있습니다.</p>
           </section>
 
           {selectedPhase ? (
@@ -1812,6 +1871,27 @@ function formatWorkflowTimestamp(date: Date) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
+}
+
+function summarizeTargets(targets: string[]) {
+  const cleaned = targets.map((target) => target.trim()).filter(Boolean)
+  if (!cleaned.length) {
+    return '미정'
+  }
+  if (cleaned.length <= 2) {
+    return cleaned.join(', ')
+  }
+  return `${cleaned.slice(0, 2).join(', ')}, ...`
+}
+
+function getProgressColor(percent: number) {
+  if (percent >= 100) {
+    return '#1e8a5d'
+  }
+  if (percent >= 50) {
+    return '#d08a2f'
+  }
+  return '#d9a1aa'
 }
 
 async function copyPlainText(text: string) {

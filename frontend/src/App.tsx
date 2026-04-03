@@ -29,11 +29,13 @@ import './App.css'
 import { ApiError, api } from './api'
 import { LoginScreen } from './features/auth/LoginScreen'
 import { UserSettingsModal } from './features/auth/UserSettingsModal'
+import { AutomationConsole } from './features/automation/AutomationConsole'
 import { EdmLinkManager } from './features/edm-links/EdmLinkManager'
 import { KanbanBoard } from './features/kanban/KanbanBoard'
 import { WorkflowBoard } from './features/workflow/WorkflowBoard'
 import { WorkPlanBoard } from './features/workplan/WorkPlanBoard'
 import type {
+  AutomationSource,
   CollectionProgressResponse,
   ConfigPreviewResponse,
   ConfigSearchMatch,
@@ -61,7 +63,8 @@ type ViewId =
   | 'devices'
   | 'config'
   | 'edm_link'
-  | 'automation'
+  | 'automation_ip_tags'
+  | 'automation_lldp_tags'
   | 'kanban'
   | 'work_tool'
   | 'work_plan'
@@ -149,11 +152,18 @@ const viewMeta: Record<ViewId, ViewMeta> = {
     description: '업무 문서함, NAS, 제출 포털 링크를 버튼 형태로 등록하고 색상별로 정리합니다.',
     icon: Link2,
   },
-  automation: {
-    label: '준비 중',
+  automation_ip_tags: {
+    label: 'IP TAG',
     eyebrow: 'Automation Tools',
-    title: '자동화 툴 준비 영역',
-    description: '추후 자동화 기능이 추가될 영역입니다. 현재는 구조와 위치만 준비해 둔 상태입니다.',
+    title: 'IP TAG 자동화',
+    description: '실제 running-config의 인터페이스 IP와 CVP IP TAG를 비교해 추가/삭제 대상을 계산하고 workspace submit까지 실행합니다.',
+    icon: Wrench,
+  },
+  automation_lldp_tags: {
+    label: 'LLDP TAG',
+    eyebrow: 'Automation Tools',
+    title: 'LLDP TAG 자동화',
+    description: '실제 LLDP neighbor와 CVP LLDP device/interface TAG를 비교해 추가/삭제 대상을 계산하고 workspace submit까지 실행합니다.',
     icon: Wrench,
   },
   kanban: {
@@ -180,7 +190,7 @@ const viewMeta: Record<ViewId, ViewMeta> = {
 }
 
 const managementViews: ViewId[] = ['ip', 'bgp', 'vlan', 'vni', 'vrf', 'devices', 'config', 'edm_link']
-const automationViews: ViewId[] = ['automation']
+const automationViews: ViewId[] = ['automation_ip_tags', 'automation_lldp_tags']
 const kanbanViews: ViewId[] = ['kanban', 'work_tool', 'work_plan']
 
 const initialLookupState = {
@@ -260,6 +270,12 @@ function App() {
   const [devices, setDevices] = useState<DeviceSummary[]>([])
   const [devicesLoading, setDevicesLoading] = useState(false)
   const [devicesError, setDevicesError] = useState('')
+  const [automationSources, setAutomationSources] = useState<AutomationSource[]>([])
+  const [automationSourcesError, setAutomationSourcesError] = useState('')
+  const [selectedIpAutomationSource, setSelectedIpAutomationSource] = useState('')
+  const [selectedIpAutomationDeviceIds, setSelectedIpAutomationDeviceIds] = useState<string[]>([])
+  const [selectedLldpAutomationSource, setSelectedLldpAutomationSource] = useState('')
+  const [selectedLldpAutomationDeviceIds, setSelectedLldpAutomationDeviceIds] = useState<string[]>([])
   const [deviceSearch, setDeviceSearch] = useState('')
   const [deviceVisibleCount, setDeviceVisibleCount] = useState(DEFAULT_PAGE_SIZE)
   const [selectedDeviceId, setSelectedDeviceId] = useState('')
@@ -400,6 +416,26 @@ function App() {
   }, [selectedVni])
 
   useEffect(() => {
+    if (!automationSources.length) {
+      setSelectedIpAutomationSource('')
+      setSelectedIpAutomationDeviceIds([])
+      setSelectedLldpAutomationSource('')
+      setSelectedLldpAutomationDeviceIds([])
+      return
+    }
+
+    if (!selectedIpAutomationSource || !automationSources.some((source) => source.name === selectedIpAutomationSource)) {
+      setSelectedIpAutomationSource(automationSources[0].name)
+      setSelectedIpAutomationDeviceIds([])
+    }
+
+    if (!selectedLldpAutomationSource || !automationSources.some((source) => source.name === selectedLldpAutomationSource)) {
+      setSelectedLldpAutomationSource(automationSources[0].name)
+      setSelectedLldpAutomationDeviceIds([])
+    }
+  }, [automationSources, selectedIpAutomationSource, selectedLldpAutomationSource])
+
+  useEffect(() => {
     const nav = document.querySelector<HTMLElement>('.rail-nav.grouped')
     if (!nav) {
       return
@@ -493,6 +529,12 @@ function App() {
       setUsers([])
       setAccountModalOpen(false)
       setAuthError('')
+      setAutomationSources([])
+      setAutomationSourcesError('')
+      setSelectedIpAutomationSource('')
+      setSelectedIpAutomationDeviceIds([])
+      setSelectedLldpAutomationSource('')
+      setSelectedLldpAutomationDeviceIds([])
     }
   }
 
@@ -546,6 +588,7 @@ function App() {
       loadOverview(),
       loadCollectionStatus(),
       loadDevices(),
+      loadAutomationSources(),
       loadRecord('ip', DEFAULT_PAGE_SIZE),
       loadRecord('bgp', DEFAULT_PAGE_SIZE),
       loadRecord('vlan', DEFAULT_PAGE_SIZE),
@@ -562,6 +605,7 @@ function App() {
         await Promise.all([
           loadOverview(),
           loadDevices(),
+          loadAutomationSources(),
           loadRecord('ip', recordLimits.ip),
           loadRecord('bgp', recordLimits.bgp),
           loadRecord('vlan', recordLimits.vlan),
@@ -577,6 +621,17 @@ function App() {
       }
     } catch (error) {
       setRefreshError(error instanceof Error ? error.message : '수집 상태를 확인하지 못했습니다.')
+    }
+  }
+
+  async function loadAutomationSources() {
+    try {
+      setAutomationSourcesError('')
+      const response = await api.getAutomationSources()
+      setAutomationSources(response)
+    } catch (error) {
+      setAutomationSources([])
+      setAutomationSourcesError(error instanceof Error ? error.message : '자동화용 CVP source 목록을 불러오지 못했습니다.')
     }
   }
 
@@ -742,6 +797,16 @@ function App() {
     await loadConfigPreview(deviceId)
   }
 
+  function handleIpAutomationSourceChange(source: string) {
+    setSelectedIpAutomationSource(source)
+    setSelectedIpAutomationDeviceIds([])
+  }
+
+  function handleLldpAutomationSourceChange(source: string) {
+    setSelectedLldpAutomationSource(source)
+    setSelectedLldpAutomationDeviceIds([])
+  }
+
   async function handleConfigSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     await performConfigSearch(configSearchQuery, DEFAULT_PAGE_SIZE)
@@ -831,6 +896,11 @@ function App() {
       if (selectedDeviceId) {
         await loadConfigPreview(selectedDeviceId)
       }
+      return
+    }
+
+    if (activeView === 'automation_ip_tags' || activeView === 'automation_lldp_tags') {
+      await loadAutomationSources()
       return
     }
 
@@ -1517,15 +1587,33 @@ function App() {
           </section>
         ) : null}
 
-        {activeView === 'automation' ? (
+        {activeView === 'automation_ip_tags' ? (
           <section className="stack-layout">
-            <div className="main-card">
-              <SectionHeader title="자동화 툴 준비 영역" note="향후 자동화 코드가 추가될 위치를 먼저 맞춰 둔 상태입니다." />
-              <div className="guide-grid">
-                <GuideCard title="백엔드 구조" body="자동화 기능은 collector와 분리해서 backend/app/tools 아래에 tool_<name>.py 형태로 추가하기 좋게 잡아 두는 방향이 맞습니다." />
-                <GuideCard title="현재 상태" body="UI에는 준비 중 항목만 두고, 실제 자동화 버튼과 API는 이후 예제코드가 들어오면 그때 연결하는 편이 안전합니다." />
-              </div>
-            </div>
+            {automationSourcesError ? <div className="message-banner error">{automationSourcesError}</div> : null}
+            <AutomationConsole
+              toolSlug="ip_interface_tags"
+              sources={automationSources}
+              selectedSource={selectedIpAutomationSource}
+              onSelectedSourceChange={handleIpAutomationSourceChange}
+              selectedDeviceIds={selectedIpAutomationDeviceIds}
+              onSelectedDeviceIdsChange={setSelectedIpAutomationDeviceIds}
+              canApply={currentUser.role !== 'viewer'}
+            />
+          </section>
+        ) : null}
+
+        {activeView === 'automation_lldp_tags' ? (
+          <section className="stack-layout">
+            {automationSourcesError ? <div className="message-banner error">{automationSourcesError}</div> : null}
+            <AutomationConsole
+              toolSlug="lldp_tags"
+              sources={automationSources}
+              selectedSource={selectedLldpAutomationSource}
+              onSelectedSourceChange={handleLldpAutomationSourceChange}
+              selectedDeviceIds={selectedLldpAutomationDeviceIds}
+              onSelectedDeviceIdsChange={setSelectedLldpAutomationDeviceIds}
+              canApply={currentUser.role !== 'viewer'}
+            />
           </section>
         ) : null}
 

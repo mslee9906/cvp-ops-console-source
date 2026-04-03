@@ -326,6 +326,73 @@ class SnapshotRepository:
             devices.append(item)
         return devices
 
+    def list_raw_sources(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    cvp_source,
+                    COUNT(*) AS raw_device_count,
+                    MAX(last_collected_at) AS latest_collected_at
+                FROM devices_raw
+                GROUP BY cvp_source
+                ORDER BY cvp_source
+                """,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_raw_devices(self, source_name: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    d.raw_device_key,
+                    d.cvp_source,
+                    d.device_id,
+                    d.hostname,
+                    d.serial,
+                    d.mgmt_ip,
+                    d.model,
+                    d.site,
+                    d.tags_json,
+                    d.last_collected_at,
+                    c.config_hash,
+                    c.collected_at AS config_collected_at
+                FROM devices_raw AS d
+                LEFT JOIN config_snapshots_raw AS c
+                    ON c.raw_device_key = d.raw_device_key
+                WHERE d.cvp_source = ?
+                ORDER BY d.hostname, d.device_id
+                """,
+                (source_name,),
+            ).fetchall()
+        devices = []
+        for row in rows:
+            item = dict(row)
+            item["tags"] = json.loads(item.pop("tags_json"))
+            item["has_config"] = bool(item.get("config_hash"))
+            devices.append(item)
+        return devices
+
+    def get_raw_device_config(self, source_name: str, device_id: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    cvp_source,
+                    device_id,
+                    hostname,
+                    config_hash,
+                    file_path,
+                    collected_at,
+                    line_count
+                FROM config_snapshots_raw
+                WHERE cvp_source = ? AND device_id = ?
+                """,
+                (source_name, device_id),
+            ).fetchone()
+        return dict(row) if row else None
+
     def get_device_config(self, device_id: str) -> dict[str, Any] | None:
         with self._connect() as connection:
             row = connection.execute(

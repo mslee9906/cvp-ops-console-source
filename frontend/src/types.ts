@@ -366,6 +366,107 @@ export interface WorkflowNoteBlock extends WorkflowBaseBlock {
   content: string
 }
 
+export interface AutomationSource {
+  name: string
+  host: string
+  port: number
+  raw_device_count: number
+  latest_collected_at: string | null
+}
+
+export interface AutomationSourceDevice {
+  raw_device_key: string
+  cvp_source: string
+  device_id: string
+  hostname: string
+  serial: string
+  mgmt_ip: string
+  model: string
+  site: string
+  tags: string[]
+  last_collected_at: string
+  has_config: boolean
+  config_collected_at: string | null
+}
+
+export interface AutomationConfigPreviewResponse extends ConfigPreviewResponse {
+  cvp_source: string
+}
+
+export interface AutomationApiStep {
+  title: string
+  target: string
+  detail: string
+}
+
+export interface AutomationToolSummary {
+  slug: string
+  title: string
+  summary: string
+  workspace_name: string
+}
+
+export interface AutomationToolDetail extends AutomationToolSummary {
+  description: string
+  code_preview: string
+  api_steps: AutomationApiStep[]
+  notes: string[]
+  warnings: string[]
+}
+
+export type AutomationTargetMode = 'selected' | 'all'
+
+export interface AutomationTagOperation {
+  action: 'add' | 'remove'
+  element_type: 'device' | 'interface'
+  label: string
+  value: string
+  device_id: string
+  interface_id: string | null
+  display_key: string
+}
+
+export interface AutomationResolvedDevice {
+  device_id: string
+  hostname: string
+}
+
+export interface AutomationPlanResponse {
+  slug: string
+  source: string
+  target_mode: AutomationTargetMode
+  requested_device_ids: string[]
+  resolved_device_ids: string[]
+  resolved_devices: AutomationResolvedDevice[]
+  summary: string
+  add_count: number
+  remove_count: number
+  operations: AutomationTagOperation[]
+  notes: string[]
+  warnings: string[]
+}
+
+export interface AutomationWorkspaceResult {
+  action: 'add' | 'remove'
+  workspace_name: string
+  workspace_id: string
+  change_control_ids: string[]
+}
+
+export interface AutomationApplyResponse {
+  slug: string
+  source: string
+  target_mode: AutomationTargetMode
+  requested_device_ids: string[]
+  resolved_device_ids: string[]
+  summary: string
+  add_count: number
+  remove_count: number
+  workspaces: AutomationWorkspaceResult[]
+  notes: string[]
+  warnings: string[]
+}
+
 export interface WorkflowChecklistBlock extends WorkflowBaseBlock {
   type: 'checklist'
   items: WorkflowChecklistItem[]
