@@ -1,6 +1,7 @@
 ﻿import { startTransition, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Activity,
   Bell,
@@ -265,6 +266,11 @@ function App() {
   const [notificationsLoading, setNotificationsLoading] = useState(false)
   const [notificationsError, setNotificationsError] = useState('')
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
+  const [notificationPopoverStyle, setNotificationPopoverStyle] = useState<{ top: number; left: number; visibility: 'hidden' | 'visible' }>({
+    top: 0,
+    left: 0,
+    visibility: 'hidden',
+  })
   const [workflowFocusRequest, setWorkflowFocusRequest] = useState<WorkflowFocusRequest | null>(null)
   const [activeView, setActiveView] = useState<ViewId>('home')
   const [managementOpen, setManagementOpen] = useState(true)
@@ -320,7 +326,8 @@ function App() {
   const [configSearchState, setConfigSearchState] = useState(initialConfigSearchState)
   const [configSearchOverlay, setConfigSearchOverlay] = useState(initialConfigSearchOverlayState)
   const [showConfigGuide, setShowConfigGuide] = useState(false)
-  const notificationPanelRef = useRef<HTMLDivElement | null>(null)
+  const notificationAnchorRef = useRef<HTMLDivElement | null>(null)
+  const notificationPopoverRef = useRef<HTMLDivElement | null>(null)
 
   const [ipQuery, setIpQuery] = useState('')
   const [ipVrf, setIpVrf] = useState('')
@@ -515,18 +522,62 @@ function App() {
 
   useEffect(() => {
     if (!notificationPanelOpen) {
+      setNotificationPopoverStyle((current) => ({ ...current, visibility: 'hidden' }))
       return
     }
 
     const handleOutsidePointer = (event: MouseEvent) => {
-      if (!notificationPanelRef.current?.contains(event.target as Node)) {
-        setNotificationPanelOpen(false)
+      const target = event.target as Node
+      if (notificationAnchorRef.current?.contains(target) || notificationPopoverRef.current?.contains(target)) {
+        return
       }
+        setNotificationPanelOpen(false)
     }
 
     window.addEventListener('mousedown', handleOutsidePointer)
     return () => window.removeEventListener('mousedown', handleOutsidePointer)
   }, [notificationPanelOpen])
+
+  useEffect(() => {
+    if (!notificationPanelOpen) {
+      return
+    }
+
+    const updatePosition = () => {
+      const anchor = notificationAnchorRef.current
+      const popover = notificationPopoverRef.current
+      if (!anchor || !popover) {
+        return
+      }
+
+      const anchorRect = anchor.getBoundingClientRect()
+      const popoverRect = popover.getBoundingClientRect()
+      const gap = 12
+      const nextLeft = Math.min(
+        Math.max(gap, anchorRect.right + 12),
+        Math.max(gap, window.innerWidth - popoverRect.width - gap),
+      )
+      const nextTop = Math.min(
+        Math.max(gap, anchorRect.bottom - popoverRect.height),
+        Math.max(gap, window.innerHeight - popoverRect.height - gap),
+      )
+
+      setNotificationPopoverStyle({
+        top: nextTop,
+        left: nextLeft,
+        visibility: 'visible',
+      })
+    }
+
+    const frameId = window.requestAnimationFrame(updatePosition)
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [notificationPanelOpen, notifications.length, notificationUnreadCount, notificationsLoading, notificationsError])
 
   async function initializeSession() {
     try {
@@ -1120,61 +1171,21 @@ function App() {
               </div>
               <div className="user-panel-head-right">
                 <span className={`user-role-chip ${currentUser.role}`}>{currentUser.role}</span>
-                <div className={`notification-anchor ${notificationPanelOpen ? 'open' : ''}`} ref={notificationPanelRef}>
-                  <button
-                    className="notification-button"
-                    type="button"
-                    onClick={() => setNotificationPanelOpen((current) => !current)}
+                  <div className={`notification-anchor ${notificationPanelOpen ? 'open' : ''}`} ref={notificationAnchorRef}>
+                    <button
+                      className="notification-button"
+                      type="button"
+                      onClick={() => setNotificationPanelOpen((current) => !current)}
                     aria-label="알림 열기"
                   >
                     <Bell size={16} />
-                    {notificationUnreadCount > 0 ? (
-                      <span className="notification-badge">{notificationUnreadCount > 9 ? '9+' : notificationUnreadCount}</span>
-                    ) : null}
-                  </button>
-                  {notificationPanelOpen ? (
-                    <div className="notification-popover">
-                      <div className="notification-popover-head">
-                        <div>
-                          <strong>알림</strong>
-                          <span>{notificationUnreadCount > 0 ? `안 읽음 ${notificationUnreadCount}건` : '새 알림 없음'}</span>
-                        </div>
-                        <button
-                          className="notification-clear-button"
-                          type="button"
-                          onClick={() => void handleMarkAllNotificationsRead()}
-                          disabled={notificationUnreadCount === 0}
-                        >
-                          <CheckCheck size={14} />
-                          <span>전체 읽음</span>
-                        </button>
-                      </div>
-                      {notificationsLoading ? <div className="notification-empty">알림을 불러오는 중입니다.</div> : null}
-                      {notificationsError ? <div className="notification-error">{notificationsError}</div> : null}
-                      {!notificationsLoading && !notifications.length ? (
-                        <div className="notification-empty">표시할 알림이 없습니다.</div>
+                      {notificationUnreadCount > 0 ? (
+                        <span className="notification-badge">{notificationUnreadCount > 9 ? '9+' : notificationUnreadCount}</span>
                       ) : null}
-                      <div className="notification-list">
-                        {notifications.map((item) => (
-                          <button
-                            key={item.id}
-                            className={`notification-item ${item.is_read ? 'read' : 'unread'} notification-${item.kind}`}
-                            type="button"
-                            onClick={() => void handleNotificationClick(item)}
-                          >
-                            <div className="notification-item-head">
-                              <strong>{item.title}</strong>
-                              <span>{formatDateTime(item.created_at)}</span>
-                            </div>
-                            <p>{item.body || '업무 알림이 도착했습니다.'}</p>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
             <div className="user-panel-actions">
               <div className="user-panel-action-group">
                 <button
@@ -1886,6 +1897,55 @@ function App() {
           />
         ) : null}
       </main>
+      {notificationPanelOpen && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              ref={notificationPopoverRef}
+              className="notification-popover"
+              style={{
+                top: `${notificationPopoverStyle.top}px`,
+                left: `${notificationPopoverStyle.left}px`,
+                visibility: notificationPopoverStyle.visibility,
+              }}
+            >
+              <div className="notification-popover-head">
+                <div>
+                  <strong>알림</strong>
+                  <span>{notificationUnreadCount > 0 ? `안 읽음 ${notificationUnreadCount}건` : '새 알림 없음'}</span>
+                </div>
+                <button
+                  className="notification-clear-button"
+                  type="button"
+                  onClick={() => void handleMarkAllNotificationsRead()}
+                  disabled={notificationUnreadCount === 0}
+                >
+                  <CheckCheck size={14} />
+                  <span>전체 읽음</span>
+                </button>
+              </div>
+              {notificationsLoading ? <div className="notification-empty">알림을 불러오는 중입니다.</div> : null}
+              {notificationsError ? <div className="notification-error">{notificationsError}</div> : null}
+              {!notificationsLoading && !notifications.length ? <div className="notification-empty">표시할 알림이 없습니다.</div> : null}
+              <div className="notification-list">
+                {notifications.map((item) => (
+                  <button
+                    key={item.id}
+                    className={`notification-item ${item.is_read ? 'read' : 'unread'} notification-${item.kind}`}
+                    type="button"
+                    onClick={() => void handleNotificationClick(item)}
+                  >
+                    <div className="notification-item-head">
+                      <strong>{item.title}</strong>
+                      <span>{formatDateTime(item.created_at)}</span>
+                    </div>
+                    <p>{item.body || '업무 알림이 도착했습니다.'}</p>
+                  </button>
+                ))}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   )
 }

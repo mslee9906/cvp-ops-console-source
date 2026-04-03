@@ -248,10 +248,7 @@
 }
 
 .notification-popover {
-  position: absolute;
-  left: calc(100% + 0.8rem);
-  top: auto;
-  bottom: 0;
+  position: fixed;
   width: min(340px, calc(100vw - 3rem));
   max-height: 420px;
   display: grid;
@@ -1716,9 +1713,6 @@
 
 @media (max-width: 760px) {
   .notification-popover {
-    left: auto;
-    right: 0;
-    bottom: calc(100% + 0.6rem);
     width: min(320px, calc(100vw - 2rem));
   }
 }
