@@ -122,7 +122,7 @@
 }
 
 .rail-footer.has-notification-open {
-  z-index: 140;
+  z-index: 1200;
 }
 
 .user-panel {
@@ -204,7 +204,7 @@
 }
 
 .notification-anchor.open {
-  z-index: 160;
+  z-index: 1250;
 }
 
 .notification-button {
@@ -259,7 +259,7 @@
   background: rgba(20, 28, 40, 0.98);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 18px 36px rgba(6, 12, 24, 0.34);
-  z-index: 180;
+  z-index: 1300;
 }
 
 .notification-popover-head {

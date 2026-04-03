@@ -287,6 +287,27 @@ function findVerticalPushLayout(baseRect: BlockLayoutRect, others: BlockLayoutRe
   return placed
 }
 
+function reflowPhaseBlocks(blocks: WorkflowBlock[]) {
+  const placedLayouts: BlockLayoutRect[] = []
+  const layoutMap = new Map<string, BlockLayoutRect>()
+  const orderedBlocks = [...blocks].sort(compareBlocksForLayout)
+
+  orderedBlocks.forEach((block) => {
+    const placedRect = findVerticalPushLayout(buildBlockLayoutRect(block), placedLayouts)
+    placedLayouts.push(placedRect)
+    layoutMap.set(block.id, placedRect)
+  })
+
+  blocks.forEach((block) => {
+    const placedRect = layoutMap.get(block.id)
+    if (!placedRect) {
+      return
+    }
+    block.layoutColumn = placedRect.column
+    block.layoutRow = placedRect.row
+  })
+}
+
 export function WorkflowBoard({ currentUser, users, focusRequest = null }: WorkflowBoardProps) {
   const canEdit = currentUser?.role !== 'viewer'
   const cardPickerRef = useRef<HTMLDivElement | null>(null)
@@ -354,12 +375,10 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       return layouts
     }
 
-    const placedLayouts: BlockLayoutRect[] = []
-    const orderedBlocks = [...selectedPhase.blocks].sort(compareBlocksForLayout)
-    orderedBlocks.forEach((block) => {
-      const placedRect = findVerticalPushLayout(buildBlockLayoutRect(block), placedLayouts)
-      placedLayouts.push(placedRect)
-      layouts.set(block.id, placedRect)
+    const placedBlocks = cloneValue(selectedPhase.blocks)
+    reflowPhaseBlocks(placedBlocks)
+    placedBlocks.forEach((block) => {
+      layouts.set(block.id, buildBlockLayoutRect(block))
     })
     return layouts
   }, [selectedPhase])
@@ -580,6 +599,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
               block.widthUnits = widthUnits
             }
           })
+          reflowPhaseBlocks(phase.blocks)
         },
         { touch: false },
       )
@@ -1533,16 +1553,20 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
         if (!currentState || currentState.blockId !== blockId) {
           return null
         }
-        mutateWorkflow((draft) => {
-          const currentBlock = findBlock(selectedPhase.id, blockId, draft)
-          if (!currentBlock) {
-            return
-          }
-          currentBlock.layoutColumn = currentState.targetColumn
-          currentBlock.layoutRow = currentState.targetRow
-        })
-        return null
+      mutateWorkflow((draft) => {
+        const currentBlock = findBlock(selectedPhase.id, blockId, draft)
+        if (!currentBlock) {
+          return
+        }
+        currentBlock.layoutColumn = currentState.targetColumn
+        currentBlock.layoutRow = currentState.targetRow
+        const phase = draft.phases.find((item) => item.id === selectedPhase.id)
+        if (phase) {
+          reflowPhaseBlocks(phase.blocks)
+        }
       })
+      return null
+    })
 
       try {
         header.releasePointerCapture(event.pointerId)
@@ -1662,12 +1686,14 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       card.classList.remove('layout-overlap')
       setResizingBlockId('')
       mutateWorkflow((draft) => {
-        const currentBlock = findBlock(selectedPhase.id, blockId, draft)
-        if (!currentBlock) {
+        const phase = draft.phases.find((item) => item.id === selectedPhase.id)
+        const currentBlock = phase?.blocks.find((item) => item.id === blockId)
+        if (!phase || !currentBlock) {
           return
         }
         currentBlock.widthUnits = lastGoodSpan
         currentBlock.heightPx = lastGoodHeight
+        reflowPhaseBlocks(phase.blocks)
       })
     }
 
