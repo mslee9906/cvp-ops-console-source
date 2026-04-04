@@ -14,6 +14,7 @@ from app.api.auth_routes import SESSION_COOKIE_NAME, router as auth_router
 from app.api.edm_link_routes import router as edm_link_router
 from app.api.kanban_routes import router as kanban_router
 from app.api.notification_routes import router as notification_router
+from app.api.reservation_routes import router as reservation_router
 from app.api.workflow_routes import router as workflow_router
 from app.api.routes import router
 from app.core.settings import get_settings
@@ -21,6 +22,7 @@ from app.repositories.auth_repository import AuthRepository
 from app.repositories.edm_link_repository import EdmLinkRepository
 from app.repositories.kanban_repository import KanbanRepository
 from app.repositories.notification_repository import NotificationRepository
+from app.repositories.reservation_repository import ReservationRepository
 from app.repositories.snapshot_repository import SnapshotRepository
 from app.repositories.workflow_repository import WorkflowRepository
 from app.services.auth_service import AuthService
@@ -30,6 +32,7 @@ from app.services.edm_link_service import EdmLinkService
 from app.services.kanban_service import KanbanService
 from app.services.notification_service import NotificationService
 from app.services.query_service import QueryService
+from app.services.reservation_service import ReservationService
 from app.services.workflow_service import WorkflowService
 from app.storage.config_files import ConfigFileManager
 
@@ -46,14 +49,16 @@ auth_repository = AuthRepository(settings.db_path)
 edm_link_repository = EdmLinkRepository(settings.db_path)
 kanban_repository = KanbanRepository(settings.db_path)
 notification_repository = NotificationRepository(settings.db_path)
+reservation_repository = ReservationRepository(settings.db_path)
 workflow_repository = WorkflowRepository(settings.db_path)
 file_manager = ConfigFileManager(settings.config_dir)
-collection_service = CollectionService(repository, file_manager, settings)
-query_service = QueryService(repository)
+reservation_service = ReservationService(reservation_repository, kanban_repository, repository)
+collection_service = CollectionService(repository, file_manager, settings, reservation_service=reservation_service)
+query_service = QueryService(repository, reservation_repository)
 auth_service = AuthService(auth_repository, settings)
 automation_service = AutomationService(repository, settings)
 edm_link_service = EdmLinkService(edm_link_repository)
-kanban_service = KanbanService(kanban_repository, repository, workflow_repository)
+kanban_service = KanbanService(kanban_repository, repository, workflow_repository, reservation_repository)
 notification_service = NotificationService(notification_repository)
 workflow_service = WorkflowService(workflow_repository, kanban_repository, notification_service)
 
@@ -77,6 +82,7 @@ app.state.automation_service = automation_service
 app.state.edm_link_service = edm_link_service
 app.state.kanban_service = kanban_service
 app.state.notification_service = notification_service
+app.state.reservation_service = reservation_service
 app.state.workflow_service = workflow_service
 app.state.source_mode = "demo"
 app.state.settings = settings
@@ -86,6 +92,7 @@ app.include_router(automation_router, prefix="/api/automation")
 app.include_router(edm_link_router, prefix="/api/edm-links")
 app.include_router(kanban_router, prefix="/api/kanban")
 app.include_router(notification_router, prefix="/api/notifications")
+app.include_router(reservation_router, prefix="/api/reservations")
 app.include_router(workflow_router, prefix="/api/workflows")
 
 
@@ -107,8 +114,10 @@ def bootstrap_demo_snapshot() -> None:
     edm_link_service.initialize()
     kanban_service.initialize()
     notification_service.initialize()
+    reservation_service.initialize()
     workflow_service.initialize()
     latest_job = collection_service.ensure_seed_data()
+    reservation_service.reconcile_snapshot()
     app.state.source_mode = latest_job["source"]
 
 

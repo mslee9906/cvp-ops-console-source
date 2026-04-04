@@ -3,6 +3,7 @@ import { CheckCircle2, Copy, RefreshCcw, Search, Unlink2 } from 'lucide-react'
 
 import { api } from '../../api'
 import type {
+  CardReservationsResponse,
   DeviceSummary,
   KanbanCard,
   KanbanColumnKey,
@@ -10,14 +11,16 @@ import type {
   KanbanTargetItem,
   KanbanTargetSnapshotResponse,
   KanbanValidationResponse,
+  ResourceReservation,
 } from '../../types'
 import './workplan.css'
 
-type WorkPlanStepKey = 'planned_config' | 'snapshot' | 'diff' | 'validation'
+type WorkPlanStepKey = 'planned_config' | 'snapshot' | 'reservation' | 'diff' | 'validation'
 
 const WORK_PLAN_STEP_META: Array<{ key: WorkPlanStepKey; label: string; body: string }> = [
   { key: 'planned_config', label: '예정 Config', body: '대상 장비별 예정 Config를 입력하고 저장합니다.' },
   { key: 'snapshot', label: 'Snapshot', body: 'CVP 연결 여부를 정하고, 연결된 장비의 현재 snapshot을 확인합니다.' },
+  { key: 'reservation', label: '예약', body: 'BGP AS와 VxLAN VNI 사용 예정 값을 카드 단위로 예약하고 상태를 공유합니다.' },
   { key: 'diff', label: 'Diff', body: '기존 snapshot Config와 예정 Config를 나란히 비교합니다.' },
   { key: 'validation', label: '자동 검증', body: 'BGP ASN, Loopback, 일반 IP 중복 여부를 순차적으로 확인합니다.' },
 ]
@@ -38,10 +41,14 @@ export function WorkPlanBoard() {
   const [snapshotLoading, setSnapshotLoading] = useState(false)
   const [validationLoading, setValidationLoading] = useState(false)
   const [diffLoading, setDiffLoading] = useState(false)
+  const [reservationLoading, setReservationLoading] = useState(false)
   const [plannedConfigDraft, setPlannedConfigDraft] = useState('')
   const [snapshotData, setSnapshotData] = useState<KanbanTargetSnapshotResponse | null>(null)
   const [validationData, setValidationData] = useState<KanbanValidationResponse | null>(null)
   const [diffData, setDiffData] = useState<KanbanDiffResponse | null>(null)
+  const [reservationData, setReservationData] = useState<CardReservationsResponse | null>(null)
+  const [bgpReservationDraft, setBgpReservationDraft] = useState('')
+  const [vniReservationDraft, setVniReservationDraft] = useState('')
   const [copyFeedback, setCopyFeedback] = useState('')
   const [actionOverlayMessage, setActionOverlayMessage] = useState('')
 
@@ -133,6 +140,14 @@ export function WorkPlanBoard() {
   }, [activeStep, selectedTargetId])
 
   useEffect(() => {
+    if (!selectedCardId) {
+      setReservationData(null)
+      return
+    }
+    void loadReservations(selectedCardId)
+  }, [selectedCardId])
+
+  useEffect(() => {
     if (!copyFeedback) {
       return
     }
@@ -182,6 +197,9 @@ export function WorkPlanBoard() {
     if (selectedTargetId && activeStep === 'snapshot') {
       await loadSnapshot(selectedTargetId)
     }
+    if (selectedCardId) {
+      await loadReservations(selectedCardId)
+    }
   }
 
   async function loadSnapshot(targetId: number) {
@@ -194,6 +212,19 @@ export function WorkPlanBoard() {
       setError(loadError instanceof Error ? loadError.message : 'Snapshot을 불러오지 못했습니다.')
     } finally {
       setSnapshotLoading(false)
+    }
+  }
+
+  async function loadReservations(cardId: number) {
+    try {
+      setReservationLoading(true)
+      const response = await api.getCardReservations(cardId)
+      setReservationData(response)
+    } catch (loadError) {
+      setReservationData(null)
+      setError(loadError instanceof Error ? loadError.message : '예약 정보를 불러오지 못했습니다.')
+    } finally {
+      setReservationLoading(false)
     }
   }
 
@@ -295,6 +326,63 @@ export function WorkPlanBoard() {
       setError(loadError instanceof Error ? loadError.message : 'Diff를 불러오지 못했습니다.')
     } finally {
       setDiffLoading(false)
+    }
+  }
+
+  async function handleCreateBgpReservation() {
+    if (!selectedCard) {
+      return
+    }
+    try {
+      setSaving(true)
+      setError('')
+      await api.createBgpAsReservation(selectedCard.id, bgpReservationDraft.trim())
+      setBgpReservationDraft('')
+      await loadReservations(selectedCard.id)
+      setActionOverlayMessage('BGP AS 예약이 저장되었습니다.')
+    } catch (reservationError) {
+      setError(reservationError instanceof Error ? reservationError.message : 'BGP AS 예약에 실패했습니다.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleCreateVniReservation() {
+    if (!selectedCard) {
+      return
+    }
+    try {
+      setSaving(true)
+      setError('')
+      await api.createVniReservation(selectedCard.id, vniReservationDraft.trim())
+      setVniReservationDraft('')
+      await loadReservations(selectedCard.id)
+      setActionOverlayMessage('VNI 예약이 저장되었습니다.')
+    } catch (reservationError) {
+      setError(reservationError instanceof Error ? reservationError.message : 'VNI 예약에 실패했습니다.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleCancelReservation(kind: 'bgp_as' | 'vni', reservationId: number) {
+    if (!selectedCard) {
+      return
+    }
+    try {
+      setSaving(true)
+      setError('')
+      if (kind === 'bgp_as') {
+        await api.cancelBgpAsReservation(selectedCard.id, reservationId)
+      } else {
+        await api.cancelVniReservation(selectedCard.id, reservationId)
+      }
+      await loadReservations(selectedCard.id)
+      setActionOverlayMessage('예약이 취소되었습니다.')
+    } catch (reservationError) {
+      setError(reservationError instanceof Error ? reservationError.message : '예약 취소에 실패했습니다.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -599,6 +687,94 @@ export function WorkPlanBoard() {
                     </section>
                   ) : null}
 
+                  {activeStep === 'reservation' ? (
+                    <section className="workplan-two-column">
+                      <article className="workplan-stage-card tall">
+                        <div className="workplan-stage-card-head">
+                          <strong>BGP AS 예약</strong>
+                          <span className="workplan-stage-pill">카드 단위 예약</span>
+                        </div>
+                        <p className="workplan-reservation-copy">
+                          신규 장비 설치나 L2 확장 작업 전에 사용할 BGP AS를 먼저 예약해 두고, 다른 사용자가 조회 시 바로 알 수 있게 합니다.
+                        </p>
+                        <div className="workplan-reservation-form">
+                          <input
+                            className="workplan-reservation-input"
+                            value={bgpReservationDraft}
+                            onChange={(event) => setBgpReservationDraft(event.target.value)}
+                            placeholder="예: 65123"
+                          />
+                          <button
+                            className="workplan-primary-button"
+                            type="button"
+                            onClick={() => void handleCreateBgpReservation()}
+                            disabled={saving || !bgpReservationDraft.trim()}
+                          >
+                            예약 추가
+                          </button>
+                        </div>
+                        <div className="workplan-validation-summary subtle">
+                          <strong>동작 규칙</strong>
+                          <p>현재 snapshot에 값이 실제로 감지되면 예약은 자동으로 fulfilled 상태로 전환되고, 이후에는 실제 사용 정보가 우선합니다.</p>
+                        </div>
+                        {reservationLoading ? (
+                          <div className="workplan-empty-state compact">
+                            <strong>예약 목록을 불러오는 중입니다.</strong>
+                            <p>현재 카드에 연결된 BGP AS 예약 상태를 정리하고 있습니다.</p>
+                          </div>
+                        ) : (
+                          <ReservationList
+                            title="BGP AS 예약 목록"
+                            items={reservationData?.bgp_as ?? []}
+                            onCancel={(reservationId) => void handleCancelReservation('bgp_as', reservationId)}
+                          />
+                        )}
+                      </article>
+
+                      <article className="workplan-stage-card tall">
+                        <div className="workplan-stage-card-head">
+                          <strong>VxLAN VNI 예약</strong>
+                          <span className="workplan-stage-pill soft">Overlay Resource</span>
+                        </div>
+                        <p className="workplan-reservation-copy">
+                          실제 VNI가 아직 snapshot에 없더라도, 어떤 카드가 먼저 사용 예정인지 예약 정보로 공유하고 중복 사용을 막습니다.
+                        </p>
+                        <div className="workplan-reservation-form">
+                          <input
+                            className="workplan-reservation-input"
+                            value={vniReservationDraft}
+                            onChange={(event) => setVniReservationDraft(event.target.value)}
+                            placeholder="예: 11001"
+                          />
+                          <button
+                            className="workplan-primary-button"
+                            type="button"
+                            onClick={() => void handleCreateVniReservation()}
+                            disabled={saving || !vniReservationDraft.trim()}
+                          >
+                            예약 추가
+                          </button>
+                        </div>
+                        <div className="workplan-validation-summary subtle">
+                          <strong>공유 기준</strong>
+                          <p>다른 사용자가 VNI 현황을 조회하면 예약 상태와 작업 카드 정보를 함께 볼 수 있습니다.</p>
+                        </div>
+                        {reservationLoading ? (
+                          <div className="workplan-empty-state compact">
+                            <strong>예약 목록을 불러오는 중입니다.</strong>
+                            <p>현재 카드에 연결된 VNI 예약 상태를 정리하고 있습니다.</p>
+                          </div>
+                        ) : (
+                          <ReservationList
+                            title="VNI 예약 목록"
+                            items={reservationData?.vni ?? []}
+                            onCancel={(reservationId) => void handleCancelReservation('vni', reservationId)}
+                          />
+                        )}
+                      </article>
+                    </section>
+                  ) : null}
+
                   {activeStep === 'validation' ? (
                     <section className="workplan-stage-card tall">
                       <div className="workplan-stage-card-head">
@@ -852,6 +1028,76 @@ async function copyPlainText(text: string) {
   textarea.select()
   document.execCommand('copy')
   document.body.removeChild(textarea)
+}
+
+function ReservationList({
+  title,
+  items,
+  onCancel,
+}: {
+  title: string
+  items: ResourceReservation[]
+  onCancel: (reservationId: number) => void
+}) {
+  return (
+    <div className="workplan-reservation-list-shell">
+      <div className="workplan-stage-card-head compact">
+        <strong>{title}</strong>
+        <span className="workplan-stage-pill soft">{items.length}건</span>
+      </div>
+      {items.length > 0 ? (
+        <div className="workplan-reservation-list">
+          {items.map((item) => (
+            <article key={`${item.kind}-${item.id}`} className={`workplan-reservation-item ${item.status}`}>
+              <div className="workplan-reservation-item-head">
+                <div>
+                  <strong>{item.value}</strong>
+                  <p>{item.card_code || item.card_title || '현재 카드'}</p>
+                </div>
+                <span className={`workplan-reservation-status ${item.status}`}>{reservationStatusLabel(item.status)}</span>
+              </div>
+              <div className="workplan-reservation-meta">
+                <span>예약자 {item.reserved_by_name || '-'}</span>
+                <span>등록 {formatReservationTimestamp(item.created_at)}</span>
+                {item.status === 'fulfilled' && item.fulfilled_at ? <span>반영 {formatReservationTimestamp(item.fulfilled_at)}</span> : null}
+                {item.status === 'cancelled' && item.cancelled_at ? <span>취소 {formatReservationTimestamp(item.cancelled_at)}</span> : null}
+              </div>
+              {item.status === 'reserved' ? (
+                <div className="workplan-inline-actions">
+                  <button className="workplan-ghost-button danger" type="button" onClick={() => onCancel(item.id)}>
+                    예약 취소
+                  </button>
+                </div>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="workplan-empty-state compact">
+          <strong>등록된 예약이 없습니다.</strong>
+          <p>이 카드에서 먼저 사용할 값을 예약하면 다른 사용자 조회와 중복 확인에 즉시 반영됩니다.</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function reservationStatusLabel(status: ResourceReservation['status']) {
+  if (status === 'fulfilled') {
+    return '반영 완료'
+  }
+  if (status === 'cancelled') {
+    return '취소됨'
+  }
+  return '예약 중'
+}
+
+function formatReservationTimestamp(value: string) {
+  if (!value) {
+    return '-'
+  }
+  const normalized = value.replace('T', ' ')
+  return normalized.slice(0, 16)
 }
 
 function sortCards(cards: KanbanCard[]) {

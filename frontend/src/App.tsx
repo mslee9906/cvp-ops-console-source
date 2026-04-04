@@ -1492,6 +1492,7 @@ function App() {
                       <thead>
                         <tr>
                           <th>VNI</th>
+                          <th>상태</th>
                           <th>장비 수</th>
                           <th>VLAN</th>
                         </tr>
@@ -1504,6 +1505,7 @@ function App() {
                             onClick={() => setSelectedVni(item.vni)}
                           >
                             <td className="mono-cell">{item.vni}</td>
+                            <td><StatusPill status={item.status} /></td>
                             <td>{item.device_count}</td>
                             <td>{item.vlan_ids.join(', ') || '-'}</td>
                           </tr>
@@ -1534,44 +1536,55 @@ function App() {
                 <PanelState title="장비 목록 대기 중" body="왼쪽 표에서 VNI를 선택하면 연결된 장비와 VLAN을 확인할 수 있습니다." />
               ) : (
                 <>
-                  <div className="inline-filter member-filter">
-                    <Search />
-                    <input
-                      value={vniMemberFilter}
-                      onChange={(event) => setVniMemberFilter(event.target.value)}
-                      placeholder="Hostname 검색"
-                    />
-                  </div>
+                  {selectedVniGroup.status !== 'reserved' ? (
+                    <div className="inline-filter member-filter">
+                      <Search />
+                      <input
+                        value={vniMemberFilter}
+                        onChange={(event) => setVniMemberFilter(event.target.value)}
+                        placeholder="Hostname 검색"
+                      />
+                    </div>
+                  ) : null}
                   <div className="result-summary compact-summary">
                     <div>
                       <strong>동일 L2 확장 VLAN</strong>
                       <p>{selectedVniGroup.vlan_ids.join(', ') || '-'}</p>
                     </div>
-                    <StatusPill status={selectedVniGroup.device_count > 1 ? 'in_use' : 'available'} />
+                    <StatusPill status={selectedVniGroup.status} />
                   </div>
-                  <DisplayCount visible={filteredVniDevices.length} total={selectedVniGroup.device_count} />
-                  <div className="table-shell compact-table-shell">
-                    <table className="data-table narrow">
-                      <thead>
-                        <tr>
-                          <th>Hostname</th>
-                          <th>Mgmt IP</th>
-                          <th>VLAN ID</th>
-                          <th>VLAN Name</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredVniDevices.map((device) => (
-                          <tr key={`${selectedVniGroup.vni}-${device.device_id}-${device.vlan_id}`}>
-                            <td>{device.hostname}</td>
-                            <td className="mono-cell">{device.mgmt_ip || '-'}</td>
-                            <td className="mono-cell">{device.vlan_id || '-'}</td>
-                            <td>{device.vlan_name || '-'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  {selectedVniGroup.status === 'reserved' && selectedVniGroup.reservation ? (
+                    <PanelState
+                      title="예약된 VNI입니다."
+                      body={`카드 ${selectedVniGroup.reservation.card_code || '-'} / ${selectedVniGroup.reservation.card_title || '-'} / 예약자 ${selectedVniGroup.reservation.reserved_by_name || '-'} / 등록 ${formatCompactTimestamp(selectedVniGroup.reservation.created_at)}`}
+                    />
+                  ) : (
+                    <>
+                      <DisplayCount visible={filteredVniDevices.length} total={selectedVniGroup.device_count} />
+                      <div className="table-shell compact-table-shell">
+                        <table className="data-table narrow">
+                          <thead>
+                            <tr>
+                              <th>Hostname</th>
+                              <th>Mgmt IP</th>
+                              <th>VLAN ID</th>
+                              <th>VLAN Name</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredVniDevices.map((device) => (
+                              <tr key={`${selectedVniGroup.vni}-${device.device_id}-${device.vlan_id}`}>
+                                <td>{device.hostname}</td>
+                                <td className="mono-cell">{device.mgmt_ip || '-'}</td>
+                                <td className="mono-cell">{device.vlan_id || '-'}</td>
+                                <td>{device.vlan_name || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </aside>
@@ -2219,16 +2232,24 @@ function SidebarSection({
   )
 }
 
-function StatusPill({ status }: { status: LookupStatus }) {
-  const meta: Record<LookupStatus, { label: string; className: string }> = {
+function StatusPill({ status }: { status: LookupStatus | 'reserved' }) {
+  const meta: Record<LookupStatus | 'reserved', { label: string; className: string }> = {
     available: { label: '사용 후보', className: 'status-pill available' },
     in_use: { label: '이미 사용 중', className: 'status-pill in-use' },
+    reserved: { label: '예약', className: 'status-pill review' },
     review: { label: '검토 필요', className: 'status-pill review' },
     not_available: { label: '사용 불가', className: 'status-pill blocked' },
     error: { label: '입력 오류', className: 'status-pill error' },
   }
 
   return <span className={meta[status].className}>{meta[status].label}</span>
+}
+
+function formatCompactTimestamp(value: string) {
+  if (!value) {
+    return '-'
+  }
+  return value.replace('T', ' ').slice(0, 16)
 }
 
 function MetricCard({

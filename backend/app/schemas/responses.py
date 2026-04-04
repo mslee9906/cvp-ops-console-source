@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class LookupStatus(str, Enum):
     available = "available"
     in_use = "in_use"
+    reserved = "reserved"
     review = "review"
     not_available = "not_available"
     error = "error"
@@ -131,8 +132,10 @@ class VniGroupDevice(BaseModel):
 class VniGroupItem(BaseModel):
     vni: str
     device_count: int
+    status: LookupStatus = LookupStatus.in_use
     vlan_ids: list[str] = Field(default_factory=list)
     devices: list[VniGroupDevice] = Field(default_factory=list)
+    reservation: dict[str, Any] | None = None
 
 
 class VniGroupListResponse(BaseModel):

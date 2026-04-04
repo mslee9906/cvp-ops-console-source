@@ -21,10 +21,12 @@ class CollectionService:
         repository: SnapshotRepository,
         file_manager: ConfigFileManager,
         settings: Settings,
+        reservation_service: Any | None = None,
     ) -> None:
         self.repository = repository
         self.file_manager = file_manager
         self.settings = settings
+        self.reservation_service = reservation_service
         self._progress_lock = Lock()
         self._progress: dict[str, Any] = {
             'source_mode': self._source_mode(),
@@ -111,6 +113,8 @@ class CollectionService:
                 'error_message': '; '.join(failure_details),
             }
             self.repository.replace_snapshot(snapshot, config_metadata, latest_job)
+            if self.reservation_service is not None:
+                self.reservation_service.reconcile_snapshot()
             logger.info(
                 "Snapshot refresh completed successfully. source=%s devices=%s bgp=%s vrfs=%s vlans=%s vnis=%s ip_records=%s configs=%s source_failures=%s",
                 source,

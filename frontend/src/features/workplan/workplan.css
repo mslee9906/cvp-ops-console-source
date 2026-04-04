@@ -473,6 +473,117 @@
   flex-wrap: wrap;
 }
 
+.workplan-reservation-copy {
+  margin: 0;
+  color: #67768c;
+  line-height: 1.55;
+}
+
+.workplan-reservation-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.workplan-reservation-input {
+  width: 100%;
+  min-width: 0;
+  border-radius: 16px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface-base);
+  padding: 12px 14px;
+  font: inherit;
+  color: #152234;
+}
+
+.workplan-reservation-input:focus {
+  outline: none;
+  border-color: rgba(53, 99, 233, 0.36);
+  box-shadow: 0 0 0 4px rgba(53, 99, 233, 0.08);
+}
+
+.workplan-reservation-list-shell {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+}
+
+.workplan-reservation-list {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.workplan-reservation-item {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface-soft);
+}
+
+.workplan-reservation-item.reserved {
+  border-color: rgba(53, 99, 233, 0.18);
+  background: rgba(242, 247, 255, 0.96);
+}
+
+.workplan-reservation-item.fulfilled {
+  border-color: rgba(31, 139, 119, 0.18);
+  background: rgba(240, 251, 248, 0.98);
+}
+
+.workplan-reservation-item.cancelled {
+  border-color: rgba(24, 34, 47, 0.08);
+  background: rgba(246, 248, 251, 0.98);
+}
+
+.workplan-reservation-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workplan-reservation-item-head p {
+  margin: 4px 0 0;
+  color: #67768c;
+  font-size: 12px;
+}
+
+.workplan-reservation-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.workplan-reservation-status.reserved {
+  background: var(--accent-blue-soft);
+  color: var(--accent-blue-strong);
+}
+
+.workplan-reservation-status.fulfilled {
+  background: var(--accent-teal-soft);
+  color: #0f6b57;
+}
+
+.workplan-reservation-status.cancelled {
+  background: var(--surface-strong);
+  color: #526278;
+}
+
+.workplan-reservation-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: #67768c;
+  font-size: 12px;
+}
+
 .workplan-config-textarea {
   width: 100%;
   min-height: 360px;
@@ -769,6 +880,10 @@
   .workplan-layout,
   .workplan-two-column,
   .workplan-validation-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workplan-reservation-form {
     grid-template-columns: 1fr;
   }
 

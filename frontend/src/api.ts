@@ -8,6 +8,7 @@ import type {
   AutomationToolDetail,
   AutomationToolSummary,
   CollectionProgressResponse,
+  CardReservationsResponse,
   ConfigPreviewResponse,
   ConfigSearchResponse,
   DeviceSummary,
@@ -26,6 +27,7 @@ import type {
   OverviewResponse,
   RecordListResponse,
   RecordScope,
+  ResourceReservation,
   UserCreateInput,
   UserSummary,
   VniGroupListResponse,
@@ -171,6 +173,26 @@ export const api = {
     }),
   getKanbanTargetSnapshot: (targetId: number) =>
     request<KanbanTargetSnapshotResponse>(`/api/kanban/targets/${targetId}/snapshot`),
+  getCardReservations: (cardId: number) =>
+    request<CardReservationsResponse>(`/api/reservations/cards/${cardId}`),
+  createBgpAsReservation: (cardId: number, asn: string) =>
+    request<ResourceReservation>(`/api/reservations/cards/${cardId}/bgp-as`, {
+      method: 'POST',
+      body: JSON.stringify({ asn }),
+    }),
+  createVniReservation: (cardId: number, vni: string) =>
+    request<ResourceReservation>(`/api/reservations/cards/${cardId}/vni`, {
+      method: 'POST',
+      body: JSON.stringify({ vni }),
+    }),
+  cancelBgpAsReservation: (cardId: number, reservationId: number) =>
+    request<ResourceReservation>(`/api/reservations/cards/${cardId}/bgp-as/${reservationId}/cancel`, {
+      method: 'POST',
+    }),
+  cancelVniReservation: (cardId: number, reservationId: number) =>
+    request<ResourceReservation>(`/api/reservations/cards/${cardId}/vni/${reservationId}/cancel`, {
+      method: 'POST',
+    }),
   validateKanbanConfig: (targetId: number, configText: string) =>
     request<KanbanValidationResponse>('/api/kanban/validate', {
       method: 'POST',

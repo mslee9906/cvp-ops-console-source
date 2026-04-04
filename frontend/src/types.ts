@@ -68,7 +68,7 @@ export interface LookupMatch {
 export interface LookupResponse {
   query: string
   scope: string
-  status: LookupStatus
+  status: LookupStatus | 'reserved'
   summary: string
   exact_match_count: number
   related_match_count: number
@@ -120,8 +120,10 @@ export interface VniGroupDevice {
 export interface VniGroupItem {
   vni: string
   device_count: number
+  status: LookupStatus | 'reserved'
   vlan_ids: string[]
   devices: VniGroupDevice[]
+  reservation?: ResourceReservation | null
 }
 
 export interface VniGroupListResponse {
@@ -324,6 +326,31 @@ export interface KanbanDiffResponse {
   snapshot_text: string
   planned_text: string
   lines: KanbanDiffLine[]
+}
+
+export type ResourceReservationKind = 'bgp_as' | 'vni'
+export type ResourceReservationStatus = 'reserved' | 'fulfilled' | 'cancelled'
+
+export interface ResourceReservation {
+  id: number
+  kind: ResourceReservationKind
+  value: string
+  status: ResourceReservationStatus
+  card_id: number
+  card_code: string
+  card_title: string
+  reserved_by_user_id?: number | null
+  reserved_by_name: string
+  created_at: string
+  updated_at: string
+  fulfilled_at: string
+  cancelled_at: string
+}
+
+export interface CardReservationsResponse {
+  card_id: number
+  bgp_as: ResourceReservation[]
+  vni: ResourceReservation[]
 }
 
 export type WorkflowBlockType = 'table' | 'note' | 'checklist' | 'links'

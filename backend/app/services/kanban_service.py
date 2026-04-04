@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from app.repositories.kanban_repository import KanbanRepository
+from app.repositories.reservation_repository import ReservationRepository
 from app.repositories.snapshot_repository import SnapshotRepository
 from app.repositories.workflow_repository import WorkflowRepository
 from app.services.config_parser import extract_ip_records
@@ -21,10 +22,12 @@ class KanbanService:
         repository: KanbanRepository,
         snapshot_repository: SnapshotRepository,
         workflow_repository: WorkflowRepository,
+        reservation_repository: ReservationRepository | None = None,
     ) -> None:
         self.repository = repository
         self.snapshot_repository = snapshot_repository
         self.workflow_repository = workflow_repository
+        self.reservation_repository = reservation_repository
 
     def initialize(self) -> None:
         self.repository.initialize()
@@ -213,20 +216,46 @@ class KanbanService:
                 for row in self.snapshot_repository.get_bgp_entries(asn)
                 if str(row["device_id"]) != linked_device_id
             ]
-            if not matches:
+            if matches:
+                items.append(
+                    {
+                        "title": f"AS {asn} 이미 사용 중",
+                        "body": f"현재 스냅샷에서 {len(matches)}개 BGP 컨텍스트가 같은 ASN을 사용하고 있습니다.",
+                        "severity": "error",
+                        "details": {
+                            "asn": asn,
+                            "matches": matches,
+                        },
+                    }
+                )
                 continue
 
-            items.append(
-                {
-                    "title": f"AS {asn} 이미 사용 중",
-                    "body": f"현재 스냅샷에서 {len(matches)}개 BGP 컨텍스트가 같은 ASN을 사용하고 있습니다.",
-                    "severity": "error",
-                    "details": {
-                        "asn": asn,
-                        "matches": matches,
-                    },
-                }
-            )
+            if self.reservation_repository:
+                reservation = self.reservation_repository.get_active_bgp_as_reservation(asn)
+                if reservation and int(reservation["card_id"]) != int(target.get("card_id") or 0):
+                    reserved_card = reservation["card_code"] or f"카드 {reservation['card_id']}"
+                    items.append(
+                        {
+                            "title": f"AS {asn} 예약 중",
+                            "body": (
+                                f"현재 작업 카드가 아닌 {reserved_card}에서 "
+                                "이 ASN을 먼저 예약해 두었습니다."
+                            ),
+                            "severity": "warning",
+                            "details": {
+                                "asn": asn,
+                                "reservation": reservation,
+                                "matches": [
+                                    {
+                                        "device_id": f"reservation:{reservation['id']}",
+                                        "hostname": reservation["card_code"] or "예약 항목",
+                                        "vrf": "",
+                                        "asn": reservation["value"],
+                                    }
+                                ],
+                            },
+                        }
+                    )
 
         return items
 

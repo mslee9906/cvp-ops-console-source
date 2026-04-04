@@ -4,13 +4,19 @@ import ipaddress
 from pathlib import Path
 from typing import Any
 
+from app.repositories.reservation_repository import ReservationRepository
 from app.repositories.snapshot_repository import SnapshotRepository
 from app.schemas.responses import LookupResponse, LookupStatus
 
 
 class QueryService:
-    def __init__(self, repository: SnapshotRepository) -> None:
+    def __init__(
+        self,
+        repository: SnapshotRepository,
+        reservation_repository: ReservationRepository | None = None,
+    ) -> None:
         self.repository = repository
+        self.reservation_repository = reservation_repository
 
     def get_overview(self, source_mode: str) -> dict[str, Any]:
         overview = self.repository.get_overview()
@@ -147,7 +153,9 @@ class QueryService:
             )
 
         items = []
+        actual_vni_values: set[str] = set()
         for vni_value, device_rows in grouped.items():
+            actual_vni_values.add(vni_value)
             sorted_devices = sorted(
                 device_rows,
                 key=lambda item: (self._numeric_sort_key(item['vlan_id']), item['hostname'].lower()),
@@ -157,10 +165,28 @@ class QueryService:
                 {
                     'vni': vni_value,
                     'device_count': len({item['device_id'] for item in sorted_devices}),
+                    'status': LookupStatus.in_use,
                     'vlan_ids': vlan_ids,
                     'devices': sorted_devices,
+                    'reservation': None,
                 }
             )
+
+        if self.reservation_repository:
+            for reservation in self.reservation_repository.list_active_vni_reservations(vni):
+                value = str(reservation['value'])
+                if value in actual_vni_values:
+                    continue
+                items.append(
+                    {
+                        'vni': value,
+                        'device_count': 0,
+                        'status': LookupStatus.reserved,
+                        'vlan_ids': [],
+                        'devices': [],
+                        'reservation': self._build_reservation_context(reservation),
+                    }
+                )
 
         items.sort(key=lambda item: self._numeric_sort_key(item['vni']))
         return {
@@ -259,16 +285,44 @@ class QueryService:
         }
 
     def lookup_bgp(self, asn: str) -> LookupResponse:
-        matches = self.repository.get_bgp_entries(asn)
+        normalized_asn = str(int(str(asn).strip())) if str(asn).strip().isdigit() else str(asn).strip()
+        matches = self.repository.get_bgp_entries(normalized_asn)
         if matches:
-            summary = f'AS {asn} is already used on {len(matches)} BGP context(s).'
+            summary = f'AS {normalized_asn} is already used on {len(matches)} BGP context(s).'
             status = LookupStatus.in_use
+        elif self.reservation_repository:
+            reservation = self.reservation_repository.get_active_bgp_as_reservation(normalized_asn)
+            if reservation:
+                summary = (
+                    f"AS {normalized_asn} is reserved by {reservation['reserved_by_name'] or reservation['card_code'] or 'another card'}."
+                )
+                status = LookupStatus.reserved
+                matches = [
+                    {
+                        'device_id': f"reservation:{reservation['id']}",
+                        'hostname': reservation['card_code'] or '예약 항목',
+                        'vrf': None,
+                        'label': '예약',
+                        'details': {
+                            'asn': reservation['value'],
+                            'status': reservation['status'],
+                            'card_id': reservation['card_id'],
+                            'card_code': reservation['card_code'],
+                            'card_title': reservation['card_title'],
+                            'reserved_by': reservation['reserved_by_name'],
+                            'created_at': reservation['created_at'],
+                        },
+                    }
+                ]
+            else:
+                summary = f'AS {normalized_asn} is not present in the current CVP snapshot.'
+                status = LookupStatus.available
         else:
-            summary = f'AS {asn} is not present in the current CVP snapshot.'
+            summary = f'AS {normalized_asn} is not present in the current CVP snapshot.'
             status = LookupStatus.available
 
         return LookupResponse(
-            query=asn,
+            query=normalized_asn,
             scope='bgp',
             status=status,
             summary=summary,
@@ -289,6 +343,23 @@ class QueryService:
                 for item in matches
             ],
         )
+
+    def _build_reservation_context(self, reservation: dict[str, Any]) -> dict[str, Any]:
+        return {
+            'id': reservation['id'],
+            'kind': reservation['kind'],
+            'value': reservation['value'],
+            'status': reservation['status'],
+            'card_id': reservation['card_id'],
+            'card_code': reservation['card_code'],
+            'card_title': reservation['card_title'],
+            'reserved_by_user_id': reservation['reserved_by_user_id'],
+            'reserved_by_name': reservation['reserved_by_name'],
+            'created_at': reservation['created_at'],
+            'updated_at': reservation['updated_at'],
+            'fulfilled_at': reservation['fulfilled_at'],
+            'cancelled_at': reservation['cancelled_at'],
+        }
 
     def lookup_vrf(self, name: str) -> LookupResponse:
         matches = self.repository.get_vrf_entries(name)
