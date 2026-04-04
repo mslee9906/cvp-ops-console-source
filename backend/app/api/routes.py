@@ -7,10 +7,6 @@ from app.schemas.responses import (
     ConfigSearchResponse,
     ConfigPreviewResponse,
     DeviceSummary,
-    KanbanBoardResponse,
-    KanbanCardMoveRequest,
-    KanbanCardResponse,
-    KanbanCardUpsertRequest,
     LookupResponse,
     OverviewResponse,
     RecordListResponse,
@@ -157,46 +153,4 @@ def refresh_collection(request: Request) -> CollectionProgressResponse:
     return progress
 
 
-@router.get('/kanban/cards', response_model=KanbanBoardResponse)
-def list_kanban_cards(request: Request) -> KanbanBoardResponse:
-    return request.app.state.kanban_service.list_board()
-
-
-@router.post('/kanban/cards', response_model=KanbanCardResponse)
-def create_kanban_card(
-    request: Request,
-    payload: KanbanCardUpsertRequest,
-) -> KanbanCardResponse:
-    try:
-        return request.app.state.kanban_service.create_card(payload.model_dump())
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.put('/kanban/cards/{card_id}', response_model=KanbanCardResponse)
-def update_kanban_card(
-    request: Request,
-    card_id: int,
-    payload: KanbanCardUpsertRequest,
-) -> KanbanCardResponse:
-    try:
-        return request.app.state.kanban_service.update_card(card_id, payload.model_dump())
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail='Card not found') from exc
-
-
-@router.post('/kanban/cards/{card_id}/move', response_model=KanbanCardResponse)
-def move_kanban_card(
-    request: Request,
-    card_id: int,
-    payload: KanbanCardMoveRequest,
-) -> KanbanCardResponse:
-    try:
-        return request.app.state.kanban_service.move_card(card_id, payload.column_key, payload.position)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail='Card not found') from exc
 
