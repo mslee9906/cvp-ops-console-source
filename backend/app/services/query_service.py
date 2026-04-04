@@ -286,9 +286,9 @@ class QueryService:
 
     def lookup_bgp(self, asn: str) -> LookupResponse:
         normalized_asn = str(int(str(asn).strip())) if str(asn).strip().isdigit() else str(asn).strip()
-        matches = self.repository.get_bgp_entries(normalized_asn)
-        if matches:
-            summary = f'AS {normalized_asn} is already used on {len(matches)} BGP context(s).'
+        snapshot_matches = self.repository.get_bgp_entries(normalized_asn)
+        if snapshot_matches:
+            summary = f'AS {normalized_asn} is already used on {len(snapshot_matches)} BGP context(s).'
             status = LookupStatus.in_use
         elif self.reservation_repository:
             reservation = self.reservation_repository.get_active_bgp_as_reservation(normalized_asn)
@@ -297,23 +297,31 @@ class QueryService:
                     f"AS {normalized_asn} is reserved by {reservation['reserved_by_name'] or reservation['card_code'] or 'another card'}."
                 )
                 status = LookupStatus.reserved
-                matches = [
-                    {
-                        'device_id': f"reservation:{reservation['id']}",
-                        'hostname': reservation['card_code'] or '예약 항목',
-                        'vrf': None,
-                        'label': '예약',
-                        'details': {
-                            'asn': reservation['value'],
-                            'status': reservation['status'],
-                            'card_id': reservation['card_id'],
-                            'card_code': reservation['card_code'],
-                            'card_title': reservation['card_title'],
-                            'reserved_by': reservation['reserved_by_name'],
-                            'created_at': reservation['created_at'],
-                        },
-                    }
-                ]
+                return LookupResponse(
+                    query=normalized_asn,
+                    scope='bgp',
+                    status=status,
+                    summary=summary,
+                    exact_match_count=0,
+                    related_match_count=1,
+                    matches=[
+                        {
+                            'device_id': f"reservation:{reservation['id']}",
+                            'hostname': reservation['card_code'] or '예약 항목',
+                            'vrf': None,
+                            'label': '예약',
+                            'details': {
+                                'asn': reservation['value'],
+                                'status': reservation['status'],
+                                'card_id': reservation['card_id'],
+                                'card_code': reservation['card_code'],
+                                'card_title': reservation['card_title'],
+                                'reserved_by': reservation['reserved_by_name'],
+                                'created_at': reservation['created_at'],
+                            },
+                        }
+                    ],
+                )
             else:
                 summary = f'AS {normalized_asn} is not present in the current CVP snapshot.'
                 status = LookupStatus.available
@@ -326,21 +334,21 @@ class QueryService:
             scope='bgp',
             status=status,
             summary=summary,
-            exact_match_count=len(matches),
+            exact_match_count=len(snapshot_matches),
             related_match_count=0,
             matches=[
                 {
                     'device_id': item['device_id'],
                     'hostname': item['hostname'],
                     'vrf': item['vrf'],
-                    'label': f"Router ID {item['router_id']}",
+                    'label': f"Router ID {item.get('router_id', '')}".strip(),
                     'details': {
-                        'asn': item['asn'],
-                        'router_id': item['router_id'],
-                        'shutdown': bool(item['shutdown']),
+                        'asn': item.get('asn', ''),
+                        'router_id': item.get('router_id', ''),
+                        'shutdown': bool(item.get('shutdown', False)),
                     },
                 }
-                for item in matches
+                for item in snapshot_matches
             ],
         )
 
