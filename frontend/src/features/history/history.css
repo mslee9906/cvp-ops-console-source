@@ -131,6 +131,15 @@
   cursor: default;
 }
 
+.history-workflow-view .workflow-stage-shell,
+.history-workflow-view .workflow-stage-lane {
+  overscroll-behavior: contain;
+}
+
+.history-workflow-view .workflow-stage-lane {
+  touch-action: pan-x;
+}
+
 @media (max-width: 960px) {
   .history-summary-grid {
     grid-template-columns: 1fr;

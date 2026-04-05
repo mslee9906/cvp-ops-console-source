@@ -3,7 +3,7 @@ import { ArrowLeft, ClipboardList, History, RefreshCcw, RotateCcw, Search } from
 
 import { api } from '../../api'
 import type { UserSummary, WorkHistoryItem } from '../../types'
-import { WorkflowBoard } from '../workflow/WorkflowBoard'
+import { HistoryWorkflowViewer } from './HistoryWorkflowViewer'
 import './history.css'
 
 type Props = {
@@ -36,6 +36,8 @@ const priorityLabels: Record<string, string> = {
 }
 
 export function WorkHistoryBoard({ currentUser, users }: Props) {
+  void currentUser
+  void users
   const [items, setItems] = useState<WorkHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -158,14 +160,7 @@ export function WorkHistoryBoard({ currentUser, users }: Props) {
 
   if (viewMode === 'workflow' && selectedItem) {
     return (
-      <WorkflowBoard
-        currentUser={currentUser}
-        users={users}
-        readOnlyCard={selectedItem.archived_card}
-        readOnlyWorkflow={selectedItem.archived_workflow}
-        onBack={returnToList}
-        backLabel="작업 이력으로 돌아가기"
-      />
+      <HistoryWorkflowViewer card={selectedItem.archived_card} workflow={selectedItem.archived_workflow} onBack={returnToList} />
     )
   }
 
