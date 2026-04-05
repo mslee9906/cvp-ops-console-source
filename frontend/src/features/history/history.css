@@ -31,8 +31,10 @@
 
 .history-kanban-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(255px, 255px));
   gap: 16px;
+  justify-content: start;
+  align-items: start;
 }
 
 .history-card {

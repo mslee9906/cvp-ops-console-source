@@ -1,5 +1,5 @@
 ﻿import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import type { FormEvent as ReactFormEvent, PointerEvent as ReactPointerEvent } from 'react'
+import type { FormEvent as ReactFormEvent, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react'
 import {
   Check,
   Copy,
@@ -364,10 +364,24 @@ export function WorkflowBoard({
   const [blockDragState, setBlockDragState] = useState<BlockPointerDragState | null>(null)
   const [resizingBlockId, setResizingBlockId] = useState('')
 
+  const readOnlyNormalizedWorkflow = useMemo(() => {
+    if (!isReadOnly || !readOnlyCard || !readOnlyWorkflow) {
+      return null
+    }
+    const normalized = normalizeWorkflowDocument(cloneValue(readOnlyWorkflow), readOnlyCard)
+    normalized.phases.forEach((phase) => {
+      phase.blocks.forEach((block) => {
+        block.editing = false
+      })
+    })
+    return normalized
+  }, [isReadOnly, readOnlyCard, readOnlyWorkflow])
+
   const selectedCard = useMemo(
-    () => cards.find((card) => card.id === selectedCardId) ?? null,
-    [cards, selectedCardId],
+    () => (isReadOnly ? readOnlyCard : cards.find((card) => card.id === selectedCardId) ?? null),
+    [cards, isReadOnly, readOnlyCard, selectedCardId],
   )
+  const activeWorkflow = isReadOnly ? readOnlyNormalizedWorkflow : workflow
   const filteredCards = useMemo(() => {
     const token = deferredCardFilter.trim().toLowerCase()
     if (!token) {
@@ -378,8 +392,8 @@ export function WorkflowBoard({
     )
   }, [cards, deferredCardFilter])
   const selectedPhase = useMemo(
-    () => workflow?.phases.find((phase) => phase.id === selectedPhaseId) ?? workflow?.phases[0] ?? null,
-    [selectedPhaseId, workflow],
+    () => activeWorkflow?.phases.find((phase) => phase.id === selectedPhaseId) ?? activeWorkflow?.phases[0] ?? null,
+    [activeWorkflow, selectedPhaseId],
   )
   const selectedPhaseLayoutMap = useMemo(() => {
     const layouts = new Map<string, BlockLayoutRect>()
@@ -412,15 +426,15 @@ export function WorkflowBoard({
   }, [selectedPhase, selectedPhaseLayoutMap])
   const selectedPhaseProgress = useMemo(() => (selectedPhase ? computePhaseProgress(selectedPhase) : 0), [selectedPhase])
   const workflowProgress = useMemo(
-    () => (workflow ? computeWorkflowProgress(workflow) : { percent: 0, done: 0, total: 0 }),
-    [workflow],
+    () => (activeWorkflow ? computeWorkflowProgress(activeWorkflow) : { percent: 0, done: 0, total: 0 }),
+    [activeWorkflow],
   )
   const hasExcludedPhases = useMemo(
-    () => workflow?.phases.some((phase) => !isPhaseIncludedInProgress(phase)) ?? false,
-    [workflow],
+    () => activeWorkflow?.phases.some((phase) => !isPhaseIncludedInProgress(phase)) ?? false,
+    [activeWorkflow],
   )
-  const workflowFingerprint = useMemo(() => (workflow ? JSON.stringify(workflow) : ''), [workflow])
-  const targetSummary = useMemo(() => summarizeTargets(workflow?.targets ?? []), [workflow?.targets])
+  const workflowFingerprint = useMemo(() => (activeWorkflow ? JSON.stringify(activeWorkflow) : ''), [activeWorkflow])
+  const targetSummary = useMemo(() => summarizeTargets(activeWorkflow?.targets ?? []), [activeWorkflow?.targets])
   const userDirectory = useMemo(() => {
     return new Map(users.map((user) => [user.id, user]))
   }, [users])
@@ -454,6 +468,59 @@ export function WorkflowBoard({
     return !selectedPhase.isCompleted && selectedPhaseProgress >= 100
   }, [selectedPhase, selectedPhaseProgress])
 
+  function handleStageLaneWheelEvent(
+    event:
+      | Pick<WheelEvent, 'deltaX' | 'deltaY' | 'preventDefault'>
+      | Pick<ReactWheelEvent<HTMLDivElement>, 'deltaX' | 'deltaY' | 'preventDefault'>,
+  ) {
+    const container = stageLaneRef.current
+    if (!container) {
+      return
+    }
+
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+      return
+    }
+
+    event.preventDefault()
+
+    const stageNodes = [...container.querySelectorAll<HTMLElement>('.workflow-stage-node')]
+    if (!stageNodes.length) {
+      return
+    }
+
+    const maxScrollLeft = container.scrollWidth - container.clientWidth
+    if (maxScrollLeft <= 0) {
+      return
+    }
+
+    const direction = event.deltaY > 0 ? 1 : -1
+    const containerRect = container.getBoundingClientRect()
+    const offsets = stageNodes.map((node) => {
+      const nodeRect = node.getBoundingClientRect()
+      const relativeLeft = nodeRect.left - containerRect.left + container.scrollLeft
+      return Math.max(0, Math.min(Math.round(relativeLeft), maxScrollLeft))
+    })
+    const currentOffset = container.scrollLeft
+    let nearestIndex = 0
+
+    offsets.forEach((offset, index) => {
+      if (Math.abs(offset - currentOffset) < Math.abs(offsets[nearestIndex] - currentOffset)) {
+        nearestIndex = index
+      }
+    })
+
+    const nextIndex = clamp(nearestIndex + direction, 0, offsets.length - 1)
+    if (nextIndex === nearestIndex && Math.abs(offsets[nextIndex] - currentOffset) < 1) {
+      return
+    }
+
+    container.scrollTo({
+      left: offsets[nextIndex],
+      behavior: 'smooth',
+    })
+  }
+
   useEffect(() => {
     if (isReadOnly) {
       setLoadingCards(false)
@@ -463,17 +530,13 @@ export function WorkflowBoard({
       setShowCardPicker(false)
       setCards(readOnlyCard ? [readOnlyCard] : [])
       setSelectedCardId(readOnlyCard?.id ?? null)
-      if (readOnlyCard && readOnlyWorkflow) {
-        const normalized = normalizeWorkflowDocument(cloneValue(readOnlyWorkflow), readOnlyCard)
-        normalized.phases.forEach((phase) => {
-          phase.blocks.forEach((block) => {
-            block.editing = false
-          })
-        })
-        saveFingerprintRef.current = JSON.stringify(normalized)
-        setWorkflow(normalized)
+      if (readOnlyNormalizedWorkflow) {
+        saveFingerprintRef.current = JSON.stringify(readOnlyNormalizedWorkflow)
+        setWorkflow(readOnlyNormalizedWorkflow)
         setSelectedPhaseId((current) =>
-          current && normalized.phases.some((phase) => phase.id === current) ? current : (normalized.phases[0]?.id ?? ''),
+          current && readOnlyNormalizedWorkflow.phases.some((phase) => phase.id === current)
+            ? current
+            : (readOnlyNormalizedWorkflow.phases[0]?.id ?? ''),
         )
       } else {
         setWorkflow(null)
@@ -483,7 +546,7 @@ export function WorkflowBoard({
       return
     }
     void bootstrap()
-  }, [isReadOnly, readOnlyCard, readOnlyWorkflow])
+  }, [isReadOnly, readOnlyCard, readOnlyNormalizedWorkflow])
 
   useEffect(() => {
     workflowRef.current = workflow
@@ -504,14 +567,14 @@ export function WorkflowBoard({
   }, [cards, selectedCardId])
 
   useEffect(() => {
-    if (!workflow?.phases.length) {
+    if (!activeWorkflow?.phases.length) {
       setSelectedPhaseId('')
       return
     }
-    if (!selectedPhaseId || !workflow.phases.some((phase) => phase.id === selectedPhaseId)) {
-      setSelectedPhaseId(workflow.phases[0].id)
+    if (!selectedPhaseId || !activeWorkflow.phases.some((phase) => phase.id === selectedPhaseId)) {
+      setSelectedPhaseId(activeWorkflow.phases[0].id)
     }
-  }, [selectedPhaseId, workflow])
+  }, [activeWorkflow, selectedPhaseId])
 
   useEffect(() => {
     if (!selectedCardId) {
@@ -550,46 +613,7 @@ export function WorkflowBoard({
     }
 
     const handleWheel = (event: WheelEvent) => {
-      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
-        return
-      }
-
-      const stageNodes = [...container.querySelectorAll<HTMLElement>('.workflow-stage-node')]
-      if (!stageNodes.length) {
-        return
-      }
-
-      const maxScrollLeft = container.scrollWidth - container.clientWidth
-      if (maxScrollLeft <= 0) {
-        return
-      }
-
-      const direction = event.deltaY > 0 ? 1 : -1
-      const containerRect = container.getBoundingClientRect()
-      const offsets = stageNodes.map((node) => {
-        const nodeRect = node.getBoundingClientRect()
-        const relativeLeft = nodeRect.left - containerRect.left + container.scrollLeft
-        return Math.max(0, Math.min(Math.round(relativeLeft), maxScrollLeft))
-      })
-      const currentOffset = container.scrollLeft
-      let nearestIndex = 0
-
-      offsets.forEach((offset, index) => {
-        if (Math.abs(offset - currentOffset) < Math.abs(offsets[nearestIndex] - currentOffset)) {
-          nearestIndex = index
-        }
-      })
-
-      const nextIndex = clamp(nearestIndex + direction, 0, offsets.length - 1)
-      if (nextIndex === nearestIndex && Math.abs(offsets[nextIndex] - currentOffset) < 1) {
-        return
-      }
-
-      event.preventDefault()
-      container.scrollTo({
-        left: offsets[nextIndex],
-        behavior: 'smooth',
-      })
+      handleStageLaneWheelEvent(event)
     }
 
     container.addEventListener('wheel', handleWheel, { passive: false })
@@ -597,7 +621,7 @@ export function WorkflowBoard({
     return () => {
       container.removeEventListener('wheel', handleWheel)
     }
-  }, [workflow?.phases.length])
+  }, [activeWorkflow?.phases.length])
 
   useEffect(() => {
     if (!selectedPhase || !blockBoardRef.current || blockDragState) {
@@ -2207,7 +2231,7 @@ export function WorkflowBoard({
   return (
     <section className={`workflow-shell ${compactMode ? 'compact' : ''}`}>
       {error ? <div className="workflow-message error">{error}</div> : null}
-        {loadingWorkflow || !workflow || !selectedCard ? (
+        {loadingWorkflow || !activeWorkflow || !selectedCard ? (
         <div className="workflow-state-panel">
           <strong>전체 진행률</strong>
           <p>선택한 작업 카드의 단계, 블록, 템플릿을 준비하고 있습니다.</p>
@@ -2218,8 +2242,8 @@ export function WorkflowBoard({
             <article className={`workflow-hero ${compactMode ? 'is-compact' : ''}`}>
               <div className="workflow-hero-top">
                 <div className="workflow-hero-main">
-                  <h2>{workflow.cardTitle}</h2>
-                  <p className="workflow-hero-summary">{workflow.summary}</p>
+                  <h2>{activeWorkflow.cardTitle}</h2>
+                  <p className="workflow-hero-summary">{activeWorkflow.summary}</p>
                 </div>
 
                 <div className="workflow-hero-side" ref={cardPickerRef}>
@@ -2293,23 +2317,23 @@ export function WorkflowBoard({
               <div className="workflow-meta-sheet">
                 <div className="workflow-meta-row">
                   <span>작업 코드</span>
-                  <strong>{workflow.ticketId}</strong>
+                  <strong>{activeWorkflow.ticketId}</strong>
                 </div>
                 <div className="workflow-meta-row">
                   <span>프로젝트명</span>
-                  <strong>{workflow.projectName}</strong>
+                  <strong>{activeWorkflow.projectName}</strong>
                 </div>
                 <div className="workflow-meta-row">
                   <span>생성자</span>
-                  <strong>{workflow.createdBy}</strong>
+                  <strong>{activeWorkflow.createdBy}</strong>
                 </div>
                 <div className="workflow-meta-row">
                   <span>마지막 갱신</span>
-                  <strong>{formatWorkflowDisplayTimestamp(workflow.lastUpdated)}</strong>
+                  <strong>{formatWorkflowDisplayTimestamp(activeWorkflow.lastUpdated)}</strong>
                 </div>
                 <div className="workflow-meta-row">
                   <span>실 담당자</span>
-                  <strong>{workflow.owner}</strong>
+                  <strong>{activeWorkflow.owner}</strong>
                 </div>
                 <div className="workflow-meta-row">
                   <span>작업 대상</span>
@@ -2351,7 +2375,7 @@ export function WorkflowBoard({
                 <div className="workflow-phase-progress-panel">
                   <p className="workflow-kicker">Phase Progress</p>
                   <div className="workflow-phase-progress-list">
-                    {workflow.phases.map((phase, index) => {
+                    {activeWorkflow.phases.map((phase, index) => {
                       const progress = computePhaseProgress(phase)
                       const phaseAssigneeLabel = getPhaseAssigneeLabel(phase)
                       const phaseIncludedInProgress = isPhaseIncludedInProgress(phase)
@@ -2412,7 +2436,7 @@ export function WorkflowBoard({
                             <span>템플릿</span>
                           </button>
                         ) : null}
-                        <span className="workflow-inline-chip">{workflow.templateName || '기본 템플릿'}</span>
+                        <span className="workflow-inline-chip">{activeWorkflow.templateName || '기본 템플릿'}</span>
                       </div>
                   </div>
                 </div>
@@ -2434,8 +2458,8 @@ export function WorkflowBoard({
               </div>
             </div>
 
-            <div ref={stageLaneRef} className="workflow-stage-lane">
-              {workflow.phases.map((phase, index) => {
+            <div ref={stageLaneRef} className="workflow-stage-lane" onWheel={handleStageLaneWheelEvent}>
+              {activeWorkflow.phases.map((phase, index) => {
                 const progress = computePhaseProgress(phase)
                 const phaseAssigneeLabel = getPhaseAssigneeLabel(phase)
                 return (
@@ -2467,7 +2491,7 @@ export function WorkflowBoard({
                         </span>
                       </div>
                     </article>
-                    {index < workflow.phases.length - 1 ? <div className="workflow-stage-arrow">→</div> : null}
+                    {index < activeWorkflow.phases.length - 1 ? <div className="workflow-stage-arrow">→</div> : null}
                   </div>
                 )
               })}
@@ -2582,7 +2606,7 @@ export function WorkflowBoard({
                           className="workflow-icon-button danger"
                           type="button"
                           onClick={handleDeletePhase}
-                          disabled={!canEdit || workflow.phases.length <= 1}
+                          disabled={!canEdit || activeWorkflow.phases.length <= 1}
                           aria-label="단계 삭제"
                         >
                           <Trash2 size={15} />
