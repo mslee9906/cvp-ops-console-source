@@ -30,7 +30,7 @@ const COLUMN_META: Array<{ key: KanbanColumnKey; label: string; tone: string }> 
 const DETAIL_STEP_META: Array<{ key: DetailStepKey; label: string; body: string }> = [
   { key: 'basic', label: '기본 정보', body: '카드 제목, 설명, 상태, 작업 유형 같은 기본 정보를 관리합니다.' },
   { key: 'target', label: '작업 대상', body: '기존 장비 연결이나 신규 장비 등록 등 실제 작업 대상을 관리합니다.' },
-  { key: 'manage', label: '작업 카드 관리', body: '완료 처리와 카드 삭제를 각각 확인하고 관리합니다.' },
+  { key: 'manage', label: '작업 카드 관리', body: '완료 처리와 카드 삭제를 각각 확인하고 관리합니다. 완료 메모는 완료 확인 오버레이에서 입력합니다.' },
 ]
 
 const EMPTY_CARD_INPUT: KanbanCardInput = {
@@ -1122,18 +1122,8 @@ export function KanbanBoard({ users }: Props) {
                   <section className="kanban-form">
                     <div className="kanban-note-card">
                       <strong>작업 완료</strong>
-                      <p>완료 처리된 카드는 작업 보드에서 제거되고 작업 이력 탭으로 이동합니다. 카드 삭제와는 별개로 동작합니다.</p>
+                      <p>완료 처리된 카드는 작업 보드에서 제거되고 작업 이력 탭으로 이동합니다. 완료 메모는 완료 확인 오버레이에서만 입력합니다.</p>
                     </div>
-
-                    <label className="kanban-field wide">
-                      <span>완료 메모</span>
-                      <AutoGrowTextarea
-                        value={completeNote}
-                        rows={6}
-                        onChange={(event) => setCompleteNote(event.target.value)}
-                        placeholder="작업 결과, 전달 메모, 참고 사항을 남길 수 있습니다."
-                      />
-                    </label>
 
                     <div className="kanban-note-card">
                       <strong>카드 삭제</strong>

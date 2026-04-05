@@ -15,7 +15,7 @@ import type {
 } from '../../types'
 import './workplan.css'
 
-type WorkPlanStepKey = 'planned_config' | 'snapshot' | 'reservation' | 'validation' | 'vmac_validation' | 'diff'
+type WorkPlanStepKey = 'planned_config' | 'snapshot' | 'reservation' | 'validation' | 'vmac_validation' | 'diff' | 'report'
 type VmacComparison = {
   vlan_id?: string
   vni?: string
@@ -29,6 +29,12 @@ type VmacComparison = {
 type VmacDetailBundle = {
   source?: string
   comparisons?: VmacComparison[]
+}
+
+const REPORT_STEP_META = {
+  key: 'report' as const,
+  label: '보고서 생성',
+  body: '작업 결과를 보고서 형식으로 정리하는 단계입니다. 현재는 추후 기능 추가를 위한 placeholder입니다.',
 }
 
 const WORK_PLAN_STEP_META: Array<{ key: WorkPlanStepKey; label: string; body: string }> = [
@@ -87,7 +93,7 @@ export function WorkPlanBoard() {
     [selectedCard, selectedTargetId],
   )
   const activeStepMeta = useMemo(
-    () => WORK_PLAN_STEP_META.find((step) => step.key === activeStep) ?? WORK_PLAN_STEP_META[0],
+    () => [...WORK_PLAN_STEP_META, REPORT_STEP_META].find((step) => step.key === activeStep) ?? WORK_PLAN_STEP_META[0],
     [activeStep],
   )
   const vmacValidationSection = useMemo(
@@ -550,7 +556,7 @@ export function WorkPlanBoard() {
 
               <section className="workplan-step-panel">
                 <p className="workplan-kicker">작업 계획 단계</p>
-                {WORK_PLAN_STEP_META.map((step) => (
+                {[...WORK_PLAN_STEP_META, REPORT_STEP_META].map((step) => (
                   <button
                     key={step.key}
                     className={`workplan-step-link ${activeStep === step.key ? 'active' : ''}`}
@@ -1029,6 +1035,23 @@ export function WorkPlanBoard() {
                           <p>Diff 불러오기를 누르면 기존 Snapshot Config와 예정 Config를 나란히 비교합니다.</p>
                         </div>
                       )}
+                    </section>
+                  ) : null}
+
+                  {activeStep === 'report' ? (
+                    <section className="workplan-stage-card tall">
+                      <div className="workplan-stage-card-head">
+                        <strong>보고서 생성</strong>
+                        <span className="workplan-stage-pill soft">준비 중</span>
+                      </div>
+                      <div className="workplan-validation-summary subtle">
+                        <strong>추후 기능 추가 예정</strong>
+                        <p>현재 단계는 자리만 준비된 상태입니다. 이후 작업 결과 요약, 검증 결과, Diff, 대상 장비 정보를 묶어 보고서로 생성하는 기능이 들어갈 예정입니다.</p>
+                      </div>
+                      <div className="workplan-empty-state">
+                        <strong>아직 실행 가능한 기능이 없습니다.</strong>
+                        <p>현재는 UI 위치만 확보된 placeholder 단계이며, 버튼이나 생성 기능은 추후 별도 요구사항에 맞춰 추가됩니다.</p>
+                      </div>
                     </section>
                   ) : null}
                 </div>
