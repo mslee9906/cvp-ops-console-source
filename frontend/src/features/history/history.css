@@ -90,6 +90,13 @@
   align-items: flex-start;
 }
 
+.history-overlay-head .kanban-ghost-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
 .history-overlay-copy {
   margin: 6px 0 0;
   color: var(--ink-600);
@@ -151,6 +158,10 @@
 
 .history-overlay-panel-compact {
   width: min(520px, 100%);
+}
+
+.history-overlay-panel-compact .history-overlay-head .kanban-ghost-button {
+  padding: 7px 11px;
 }
 
 .history-readonly-form textarea,

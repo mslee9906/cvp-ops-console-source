@@ -17,7 +17,7 @@ import { AutoGrowTextarea } from './AutoGrowTextarea'
 import { KanbanCardModal } from './KanbanCardModal'
 import './kanban.css'
 
-type DetailStepKey = 'basic' | 'target' | 'complete'
+type DetailStepKey = 'basic' | 'target' | 'manage'
 
 const COLUMN_META: Array<{ key: KanbanColumnKey; label: string; tone: string }> = [
   { key: 'blocked', label: '보류', tone: 'rose' },
@@ -30,7 +30,7 @@ const COLUMN_META: Array<{ key: KanbanColumnKey; label: string; tone: string }> 
 const DETAIL_STEP_META: Array<{ key: DetailStepKey; label: string; body: string }> = [
   { key: 'basic', label: '기본 정보', body: '카드 제목, 설명, 상태, 작업 유형 같은 기본 정보를 관리합니다.' },
   { key: 'target', label: '작업 대상', body: '기존 장비 연결이나 신규 장비 등록 등 실제 작업 대상을 관리합니다.' },
-  { key: 'complete', label: '작업 완료', body: '완료 메모를 남기고, 확인 후 작업 이력으로 이동합니다.' },
+  { key: 'manage', label: '작업 카드 관리', body: '완료 처리와 카드 삭제를 각각 확인하고 관리합니다.' },
 ]
 
 const EMPTY_CARD_INPUT: KanbanCardInput = {
@@ -71,6 +71,7 @@ export function KanbanBoard({ users }: Props) {
   const [newTargetDraft, setNewTargetDraft] = useState<KanbanTargetItem>(() => createEmptyTarget('new'))
   const [actionOverlayMessage, setActionOverlayMessage] = useState('')
   const [completeDialogCard, setCompleteDialogCard] = useState<KanbanCard | null>(null)
+  const [deleteDialogCard, setDeleteDialogCard] = useState<KanbanCard | null>(null)
   const [completeNote, setCompleteNote] = useState('')
   const targetDraftIdRef = useRef(-1)
 
@@ -161,7 +162,7 @@ export function KanbanBoard({ users }: Props) {
       setCards(sortCards(cardResponse))
       setDevices(deviceResponse)
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '?곸궠梨띈??筌먲퐢沅???釉띾쐞???? 嶺뚮쪇沅?쭛???鍮??')
+      setError(loadError instanceof Error ? loadError.message : '작업 보드 데이터를 불러오지 못했습니다.')
     } finally {
       setLoading(false)
     }
@@ -174,7 +175,7 @@ export function KanbanBoard({ users }: Props) {
       const response = await api.getKanbanCards()
       setCards(sortCards(response))
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '?곸궠梨띈??곸궠?獄?쓣紐??釉띾쐞???? 嶺뚮쪇沅?쭛???鍮??')
+      setError(loadError instanceof Error ? loadError.message : '작업 카드 목록을 불러오지 못했습니다.')
     } finally {
       setLoading(false)
     }
@@ -187,7 +188,7 @@ export function KanbanBoard({ users }: Props) {
       const response = await api.getDevices()
       setDevices(response)
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : '?縕???筌뤾퍒萸??ル벣遊???釉띾쐞???? 嶺뚮쪇沅?쭛???鍮??')
+      setError(loadError instanceof Error ? loadError.message : '장비 목록을 불러오지 못했습니다.')
     } finally {
       setDeviceLoading(false)
     }
@@ -216,6 +217,14 @@ export function KanbanBoard({ users }: Props) {
   function closeCompleteDialog() {
     setCompleteDialogCard(null)
     setCompleteNote('')
+  }
+
+  function openDeleteDialog(card: KanbanCard) {
+    setDeleteDialogCard(card)
+  }
+
+  function closeDeleteDialog() {
+    setDeleteDialogCard(null)
   }
 
   function openDetail(card: KanbanCard) {
@@ -248,10 +257,10 @@ export function KanbanBoard({ users }: Props) {
       setError('')
       const created = await api.createKanbanCard(normalizeCardInput(values))
       setCards((current) => sortCards([...current, created]))
-      setActionOverlayMessage('?곸궠?獄?쑚泥? ??諛댁뎽??琉????鍮??')
+      setActionOverlayMessage('작업 카드를 생성했습니다.')
       closeModal()
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : '?곸궠?獄?쓣紐???諛댁뎽??? 嶺뚮쪇沅?쭛???鍮??')
+      setError(submitError instanceof Error ? submitError.message : '작업 카드를 생성하지 못했습니다.')
     } finally {
       setSubmitting(false)
     }
@@ -266,32 +275,39 @@ export function KanbanBoard({ users }: Props) {
       if (selectedCardId === cardId) {
         setDetailDraft(toCardInput(updated))
       }
-      setActionOverlayMessage('?곸궠?獄?쑚泥? ???縕ョ뵳???곕????덈펲.')
+      setActionOverlayMessage('작업 카드를 저장했습니다.')
       closeModal()
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : '?곸궠?獄?쓣紐???瑜곸젧??? 嶺뚮쪇沅?쭛???鍮??')
+      setError(submitError instanceof Error ? submitError.message : '작업 카드를 저장하지 못했습니다.')
     } finally {
       setSubmitting(false)
     }
   }
 
-  async function handleDelete(cardId: number) {
-    if (!window.confirm('???곸궠?獄?쓣紐??????ル맪???')) {
+  async function handleDeleteCard() {
+    if (!deleteDialogCard) {
       return
     }
 
     try {
       setSubmitting(true)
       setError('')
-      await api.deleteKanbanCard(cardId)
-      setCards((current) => sortCards(current.filter((card) => card.id !== cardId)))
-      if (selectedCardId === cardId) {
+      await api.deleteKanbanCard(deleteDialogCard.id)
+      setCards((current) => sortCards(current.filter((card) => card.id !== deleteDialogCard.id)))
+      if (selectedCardId === deleteDialogCard.id) {
         closeDetail()
       }
-      setActionOverlayMessage('?곸궠?獄?쑚泥? ?????琉????鍮??')
+      if (editorCard?.id === deleteDialogCard.id) {
+        closeModal()
+      }
+      if (completeDialogCard?.id === deleteDialogCard.id) {
+        closeCompleteDialog()
+      }
+      setActionOverlayMessage('작업 카드를 삭제했습니다.')
+      closeDeleteDialog()
       closeModal()
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : '?곸궠?獄?쓣紐??????? 嶺뚮쪇沅?쭛???鍮??')
+      setError(deleteError instanceof Error ? deleteError.message : '작업 카드를 삭제하지 못했습니다.')
     } finally {
       setSubmitting(false)
     }
@@ -336,7 +352,7 @@ export function KanbanBoard({ users }: Props) {
       setDetailDraft(toCardInput(updated))
       setActionOverlayMessage(detailStepSuccessMessage(activeDetailStep))
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : '?곸궠?獄???⑤㈇??????繞③뇡?彛? 嶺뚮쪇沅?쭛???鍮??')
+      setError(submitError instanceof Error ? submitError.message : '작업 정보를 저장하지 못했습니다.')
     } finally {
       setSubmitting(false)
     }
@@ -364,7 +380,7 @@ export function KanbanBoard({ users }: Props) {
       setCards(sortCards(response))
     } catch (reorderError) {
       setCards(previousCards)
-      setError(reorderError instanceof Error ? reorderError.message : '?곸궠?獄???戮?맋?????繞③뇡?彛? 嶺뚮쪇沅?쭛???鍮??')
+      setError(reorderError instanceof Error ? reorderError.message : '작업 카드 순서를 변경하지 못했습니다.')
     }
   }
 
@@ -1102,10 +1118,10 @@ export function KanbanBoard({ users }: Props) {
                   </form>
                 ) : null}
 
-                {activeDetailStep === 'complete' ? (
+                {activeDetailStep === 'manage' ? (
                   <section className="kanban-form">
                     <div className="kanban-note-card">
-                      <strong>완료 처리 안내</strong>
+                      <strong>작업 완료</strong>
                       <p>완료 처리된 카드는 작업 보드에서 제거되고 작업 이력 탭으로 이동합니다. 카드 삭제와는 별개로 동작합니다.</p>
                     </div>
 
@@ -1119,11 +1135,23 @@ export function KanbanBoard({ users }: Props) {
                       />
                     </label>
 
-                    <div className="kanban-detail-actions end">
-                      <button className="kanban-primary-button" type="button" onClick={() => openCompleteDialog(selectedCard)}>
-                        <CheckCircle2 size={16} />
-                        <span>작업 완료</span>
-                      </button>
+                    <div className="kanban-note-card">
+                      <strong>카드 삭제</strong>
+                      <p>카드 삭제는 작업 이력으로 이동하지 않고, 현재 작업 보드에서 완전히 제거됩니다.</p>
+                    </div>
+
+                    <div className="kanban-detail-actions">
+                      <div className="kanban-inline-actions left">
+                        <button className="kanban-danger-button" type="button" onClick={() => openDeleteDialog(selectedCard)} disabled={submitting}>
+                          <span>카드 삭제</span>
+                        </button>
+                      </div>
+                      <div className="kanban-inline-actions">
+                        <button className="kanban-primary-button" type="button" onClick={() => openCompleteDialog(selectedCard)} disabled={submitting}>
+                          <CheckCircle2 size={16} />
+                          <span>작업 완료</span>
+                        </button>
+                      </div>
                     </div>
                   </section>
                 ) : null}
@@ -1151,7 +1179,7 @@ export function KanbanBoard({ users }: Props) {
             }
             return undefined
           }}
-          onDelete={editorCard ? () => handleDelete(editorCard.id) : undefined}
+          onDelete={editorCard ? () => openDeleteDialog(editorCard) : undefined}
           onComplete={editorCard ? () => openCompleteDialog(editorCard) : undefined}
         />
       ) : null}
@@ -1192,6 +1220,40 @@ export function KanbanBoard({ users }: Props) {
                 </button>
                 <button className="kanban-primary-button" type="button" onClick={() => void handleCompleteCard()} disabled={submitting}>
                   {submitting ? '완료 처리 중...' : '예, 완료합니다'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteDialogCard ? (
+        <div className="kanban-modal-backdrop" onClick={closeDeleteDialog}>
+          <div className="kanban-modal kanban-complete-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="kanban-modal-head">
+              <div>
+                <p className="kanban-kicker">Delete Card</p>
+                <h3>카드 삭제 확인</h3>
+              </div>
+              <button className="kanban-ghost-button" type="button" onClick={closeDeleteDialog} disabled={submitting}>
+                닫기
+              </button>
+            </div>
+
+            <div className="kanban-complete-copy">
+              <strong>{deleteDialogCard.title}</strong>
+              <p>정말 이 작업 카드를 삭제하시겠습니까?</p>
+              <p>삭제된 카드는 작업 이력으로 이동하지 않고 완전히 제거됩니다.</p>
+            </div>
+
+            <div className="kanban-modal-actions">
+              <span />
+              <div className="kanban-inline-actions">
+                <button className="kanban-ghost-button" type="button" onClick={closeDeleteDialog} disabled={submitting}>
+                  아니오
+                </button>
+                <button className="kanban-danger-button" type="button" onClick={() => void handleDeleteCard()} disabled={submitting}>
+                  {submitting ? '삭제 중...' : '예, 삭제합니다'}
                 </button>
               </div>
             </div>
