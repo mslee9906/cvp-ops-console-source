@@ -992,6 +992,21 @@
   color: var(--ink-600);
 }
 
+.kanban-note-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(17, 39, 43, 0.08);
+  background: rgba(245, 248, 252, 0.92);
+}
+
+.kanban-note-card p {
+  margin: 0;
+  color: var(--ink-600);
+  line-height: 1.6;
+}
+
 .kanban-action-overlay {
   position: fixed;
   inset: 0;

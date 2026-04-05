@@ -47,6 +47,10 @@ class KanbanService:
         card = self.repository.update_card(card_id, changes)
         return self._apply_workflow_progress(card) if card else None
 
+    def get_card(self, card_id: int) -> dict | None:
+        card = self.repository.get_card(card_id)
+        return self._apply_workflow_progress(card) if card else None
+
     def delete_card(self, card_id: int) -> bool:
         return self.repository.delete_card(card_id)
 

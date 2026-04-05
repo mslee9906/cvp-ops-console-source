@@ -214,6 +214,16 @@ class KanbanRepository:
         with self._connect() as connection:
             return self._get_card(connection, card_id)
 
+    def get_card_by_code(self, card_code: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT id FROM kanban_cards WHERE card_code = ?",
+                (card_code,),
+            ).fetchone()
+            if not row:
+                return None
+            return self._get_card(connection, int(row["id"]))
+
     def get_target(self, target_id: int) -> dict[str, Any] | None:
         with self._connect() as connection:
             row = connection.execute(

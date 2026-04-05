@@ -64,6 +64,17 @@ class HistoryService:
             return None
 
         archived_card = deepcopy(entry.get("archived_card") or {})
+        archived_card_code = str(entry.get("card_code") or archived_card.get("card_code") or "").strip()
+        if archived_card_code:
+            existing_card = self.kanban_repository.get_card_by_code(archived_card_code)
+            if existing_card:
+                self.repository.mark_restored(
+                    history_id,
+                    restored_card_id=int(existing_card["id"]),
+                    restored_by_user_id=self._coerce_optional_int(current_user.get("id")),
+                )
+                return self.repository.get_entry(history_id)
+
         if not archived_card:
             raise ValueError("History entry does not contain archived card data")
 
@@ -84,7 +95,7 @@ class HistoryService:
         }
         restored_card = self.kanban_repository.restore_card(
             payload,
-            card_code=str(entry.get("card_code") or archived_card.get("card_code") or ""),
+            card_code=archived_card_code,
             column_key="planned",
             created_at=str(archived_card.get("created_at") or ""),
             updated_at=self._now_iso(),

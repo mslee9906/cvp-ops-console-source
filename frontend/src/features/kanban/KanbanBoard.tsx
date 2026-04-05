@@ -17,7 +17,7 @@ import { AutoGrowTextarea } from './AutoGrowTextarea'
 import { KanbanCardModal } from './KanbanCardModal'
 import './kanban.css'
 
-type DetailStepKey = 'basic' | 'target'
+type DetailStepKey = 'basic' | 'target' | 'complete'
 
 const COLUMN_META: Array<{ key: KanbanColumnKey; label: string; tone: string }> = [
   { key: 'blocked', label: '보류', tone: 'rose' },
@@ -30,6 +30,7 @@ const COLUMN_META: Array<{ key: KanbanColumnKey; label: string; tone: string }> 
 const DETAIL_STEP_META: Array<{ key: DetailStepKey; label: string; body: string }> = [
   { key: 'basic', label: '기본 정보', body: '카드 제목, 설명, 상태, 작업 유형 같은 기본 정보를 관리합니다.' },
   { key: 'target', label: '작업 대상', body: '기존 장비 연결이나 신규 장비 등록 등 실제 작업 대상을 관리합니다.' },
+  { key: 'complete', label: '작업 완료', body: '완료 메모를 남기고, 확인 후 작업 이력으로 이동합니다.' },
 ]
 
 const EMPTY_CARD_INPUT: KanbanCardInput = {
@@ -129,6 +130,7 @@ export function KanbanBoard({ users }: Props) {
   useEffect(() => {
     if (selectedCard) {
       setDetailDraft(toCardInput(selectedCard))
+      setCompleteNote('')
       setEditingNewTargetIndex(null)
       setNewTargetDraft(createEmptyTarget(selectedCard.card_type === 'new' ? 'new' : 'existing'))
       setExistingBulkDraft('')
@@ -220,6 +222,7 @@ export function KanbanBoard({ users }: Props) {
     setSelectedCardId(card.id)
     setDetailDraft(toCardInput(card))
     setActiveDetailStep('basic')
+    setCompleteNote('')
     setTargetSearch('')
     setExistingBulkDraft('')
     setNewTargetBulkDraft('')
@@ -231,6 +234,7 @@ export function KanbanBoard({ users }: Props) {
     setSelectedCardId(null)
     setDetailDraft(null)
     setActiveDetailStep('basic')
+    setCompleteNote('')
     setTargetSearch('')
     setExistingBulkDraft('')
     setNewTargetBulkDraft('')
@@ -699,15 +703,9 @@ export function KanbanBoard({ users }: Props) {
                     <h3>{detailDraft.title}</h3>
                     <small className="kanban-summary-ticket">{selectedCard.card_code}</small>
                   </div>
-                  <div className="kanban-inline-actions">
-                    <button className="kanban-link-button" type="button" onClick={() => openEditModal(selectedCard)}>
-                      카드 수정
-                    </button>
-                    <button className="kanban-primary-button" type="button" onClick={() => openCompleteDialog(selectedCard)}>
-                      <CheckCircle2 size={16} />
-                      <span>작업 완료</span>
-                    </button>
-                  </div>
+                  <button className="kanban-link-button" type="button" onClick={() => openEditModal(selectedCard)}>
+                    카드 수정
+                  </button>
                 </div>
                 <div className="kanban-summary-row">
                   <span>담당자</span>
@@ -1102,6 +1100,32 @@ export function KanbanBoard({ users }: Props) {
                       </button>
                     </div>
                   </form>
+                ) : null}
+
+                {activeDetailStep === 'complete' ? (
+                  <section className="kanban-form">
+                    <div className="kanban-note-card">
+                      <strong>완료 처리 안내</strong>
+                      <p>완료 처리된 카드는 작업 보드에서 제거되고 작업 이력 탭으로 이동합니다. 카드 삭제와는 별개로 동작합니다.</p>
+                    </div>
+
+                    <label className="kanban-field wide">
+                      <span>완료 메모</span>
+                      <AutoGrowTextarea
+                        value={completeNote}
+                        rows={6}
+                        onChange={(event) => setCompleteNote(event.target.value)}
+                        placeholder="작업 결과, 전달 메모, 참고 사항을 남길 수 있습니다."
+                      />
+                    </label>
+
+                    <div className="kanban-detail-actions end">
+                      <button className="kanban-primary-button" type="button" onClick={() => openCompleteDialog(selectedCard)}>
+                        <CheckCircle2 size={16} />
+                        <span>작업 완료</span>
+                      </button>
+                    </div>
+                  </section>
                 ) : null}
 
               </div>

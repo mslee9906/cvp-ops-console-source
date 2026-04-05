@@ -6,15 +6,12 @@
 .history-toolbar,
 .history-card-head,
 .history-card-meta,
-.history-overlay-head,
-.history-overlay-actions,
 .history-inline-actions,
-.history-detail-head,
+.history-summary-row,
 .history-phase-head,
 .history-check-item,
 .history-link-item,
-.history-target-row,
-.history-summary-grid div {
+.history-target-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -34,7 +31,6 @@
 }
 
 .history-toolbar h3,
-.history-overlay-head h3,
 .history-phase-head strong,
 .history-block strong {
   margin: 0;
@@ -52,21 +48,46 @@
   line-height: 1.6;
 }
 
+.history-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.history-search input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+}
+
 .history-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
+}
+
+.history-grid.board-like {
+  align-items: start;
 }
 
 .history-card,
 .history-empty-state,
-.history-overlay-panel,
+.history-summary-card,
+.history-action-card,
 .history-note-card,
 .history-phase-card,
 .history-block,
-.history-config-card {
+.history-config-card,
+.history-readonly-sidebar,
+.history-readonly-main {
   border: 1px solid var(--line-soft);
-  border-radius: 20px;
+  border-radius: 22px;
   background: rgba(255, 255, 255, 0.96);
   box-shadow: var(--shadow-panel);
 }
@@ -86,10 +107,14 @@
 }
 
 .history-card-code,
-.history-card-meta,
-.history-overlay-head small {
+.history-card-meta {
   color: var(--ink-500);
   font-size: 0.82rem;
+}
+
+.history-card-body {
+  display: grid;
+  gap: 8px;
 }
 
 .history-type-chip {
@@ -111,64 +136,41 @@
   color: #005487;
 }
 
-.history-empty-state,
 .history-loading,
-.history-message {
+.history-message,
+.history-empty-state,
+.history-summary-card,
+.history-action-card,
+.history-note-card,
+.history-phase-card,
+.history-block,
+.history-config-card,
+.history-readonly-sidebar,
+.history-readonly-main {
   padding: 18px;
 }
 
-.history-empty-state {
-  display: grid;
-  gap: 8px;
-  place-items: start;
-}
-
-.history-loading,
-.history-message {
-  border-radius: 18px;
-  border: 1px solid var(--line-soft);
-  background: rgba(255, 255, 255, 0.94);
-}
-
 .history-message.error {
-  border-color: rgba(190, 83, 100, 0.2);
+  border: 1px solid rgba(190, 83, 100, 0.2);
+  border-radius: 18px;
   color: #962c3d;
   background: rgba(255, 237, 240, 0.92);
 }
 
-.history-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 70;
+.history-summary-layout,
+.history-readonly-layout {
   display: grid;
-  place-items: center;
-  padding: 20px;
-  background: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(8px);
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 16px;
 }
 
-.history-overlay-panel {
-  width: min(1120px, 100%);
-  max-height: calc(100vh - 40px);
-  overflow: auto;
-  display: grid;
-  gap: 18px;
-  padding: 22px;
-}
-
-.history-overlay-head {
-  align-items: flex-start;
-}
-
-.history-overlay-body,
-.history-detail-shell,
-.history-workflow-list,
-.history-block-list,
-.history-config-list,
-.history-checklist,
-.history-link-list {
+.history-summary-card,
+.history-action-card,
+.history-readonly-sidebar,
+.history-readonly-main {
   display: grid;
   gap: 14px;
+  align-content: start;
 }
 
 .history-summary-grid {
@@ -180,33 +182,60 @@
 .history-summary-grid div,
 .history-target-row,
 .history-check-item,
-.history-link-item {
+.history-link-item,
+.history-summary-row {
   padding: 12px 14px;
   border-radius: 16px;
   background: rgba(245, 248, 252, 0.92);
   border: 1px solid rgba(17, 39, 43, 0.08);
 }
 
-.history-summary-grid dt {
+.history-summary-grid dt,
+.history-summary-row span {
   color: var(--ink-500);
   font-size: 0.8rem;
 }
 
-.history-summary-grid dd {
+.history-summary-grid dd,
+.history-summary-row strong {
   margin: 0;
   font-weight: 600;
 }
 
-.history-note-card,
-.history-phase-card,
-.history-block,
-.history-config-card {
-  padding: 16px;
-}
-
+.history-action-stack,
+.history-workflow-list,
+.history-block-list,
+.history-config-list,
+.history-checklist,
+.history-link-list,
 .history-target-table {
   display: grid;
+  gap: 12px;
+}
+
+.history-ghost-button,
+.history-primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.96);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.history-ghost-button.full,
+.history-primary-button.full {
+  width: 100%;
+}
+
+.history-primary-button {
+  border-color: rgba(29, 177, 255, 0.2);
+  background: rgba(29, 177, 255, 0.1);
+  color: #005487;
 }
 
 .history-target-row.header {
@@ -250,8 +279,8 @@
 
 .history-table {
   width: 100%;
-  border-collapse: collapse;
   min-width: 420px;
+  border-collapse: collapse;
 }
 
 .history-table th,
@@ -266,25 +295,6 @@
   background: rgba(245, 248, 252, 0.92);
 }
 
-.history-primary-button,
-.history-ghost-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-radius: 14px;
-  border: 1px solid var(--line-soft);
-  background: rgba(255, 255, 255, 0.94);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.history-primary-button {
-  border-color: rgba(29, 177, 255, 0.2);
-  background: rgba(29, 177, 255, 0.1);
-  color: #005487;
-}
-
 .history-empty-inline {
   padding: 14px;
   border-radius: 14px;
@@ -293,19 +303,20 @@
 }
 
 @media (max-width: 960px) {
-  .history-summary-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .history-overlay-actions,
-  .history-inline-actions,
   .history-toolbar,
+  .history-inline-actions,
   .history-card-head,
   .history-card-meta,
-  .history-overlay-head,
   .history-phase-head,
-  .history-target-row {
+  .history-target-row,
+  .history-summary-row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .history-summary-layout,
+  .history-readonly-layout,
+  .history-summary-grid {
+    grid-template-columns: 1fr;
   }
 }

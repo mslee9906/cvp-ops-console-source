@@ -65,7 +65,7 @@ def restore_history(request: Request, history_id: int) -> WorkHistoryRestoreResp
         raise HTTPException(status_code=404, detail="History entry not found")
 
     restored_card_id = history.get("restored_card_id")
-    restored_card = request.app.state.kanban_service.update_card(int(restored_card_id), {}) if restored_card_id else None
+    restored_card = request.app.state.kanban_service.get_card(int(restored_card_id)) if restored_card_id else None
     restored_workflow_payload = None
     if restored_card_id:
         workflow_document = request.app.state.workflow_service.get_card_workflow(int(restored_card_id))
