@@ -48,14 +48,17 @@ const WORK_PLAN_STEP_META: Array<{ key: WorkPlanStepKey; label: string; body: st
 
 export function WorkPlanBoard() {
   const cardPickerRef = useRef<HTMLDivElement | null>(null)
+  const targetPickerRef = useRef<HTMLDivElement | null>(null)
   const [cards, setCards] = useState<KanbanCard[]>([])
   const [devices, setDevices] = useState<DeviceSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selectedCardId, setSelectedCardId] = useState<number | null>(null)
   const [showCardPicker, setShowCardPicker] = useState(false)
+  const [showTargetPicker, setShowTargetPicker] = useState(false)
   const [selectedTargetId, setSelectedTargetId] = useState<number | null>(null)
   const [cardFilter, setCardFilter] = useState('')
+  const [targetFilter, setTargetFilter] = useState('')
   const [linkFilter, setLinkFilter] = useState('')
   const [activeStep, setActiveStep] = useState<WorkPlanStepKey>('planned_config')
   const [saving, setSaving] = useState(false)
@@ -92,6 +95,19 @@ export function WorkPlanBoard() {
     () => selectedCard?.targets.find((target) => target.id === selectedTargetId) ?? null,
     [selectedCard, selectedTargetId],
   )
+  const filteredTargets = useMemo(() => {
+    const token = targetFilter.trim().toLowerCase()
+    const targets = selectedCard?.targets ?? []
+    if (!token) {
+      return targets
+    }
+    return targets.filter((target) =>
+      [target.display_name, target.mgmt_ip, target.model, target.role_hint, renderServiceStatus(target)]
+        .join(' ')
+        .toLowerCase()
+        .includes(token),
+    )
+  }, [selectedCard, targetFilter])
   const activeStepMeta = useMemo(
     () => [...WORK_PLAN_STEP_META, REPORT_STEP_META].find((step) => step.key === activeStep) ?? WORK_PLAN_STEP_META[0],
     [activeStep],
@@ -164,6 +180,8 @@ export function WorkPlanBoard() {
     if (!targets.length) {
       setSelectedTargetId(null)
       setPlannedConfigDraft('')
+      setShowTargetPicker(false)
+      setTargetFilter('')
       return
     }
     if (!selectedTargetId || !targets.some((target) => target.id === selectedTargetId)) {
@@ -225,6 +243,21 @@ export function WorkPlanBoard() {
     window.addEventListener('mousedown', handleOutsidePointer)
     return () => window.removeEventListener('mousedown', handleOutsidePointer)
   }, [showCardPicker])
+
+  useEffect(() => {
+    if (!showTargetPicker) {
+      return
+    }
+
+    function handleOutsidePointer(event: MouseEvent) {
+      if (!targetPickerRef.current?.contains(event.target as Node)) {
+        setShowTargetPicker(false)
+      }
+    }
+
+    window.addEventListener('mousedown', handleOutsidePointer)
+    return () => window.removeEventListener('mousedown', handleOutsidePointer)
+  }, [showTargetPicker])
 
   async function bootstrap() {
     try {
@@ -454,6 +487,17 @@ export function WorkPlanBoard() {
     setShowCardPicker(true)
   }
 
+  function handleTargetFilterChange(value: string) {
+    setTargetFilter(value)
+    setShowTargetPicker(true)
+  }
+
+  function handleSelectTarget(targetId: number | null) {
+    setSelectedTargetId(targetId)
+    setShowTargetPicker(false)
+    setTargetFilter('')
+  }
+
   return (
     <section className="workplan-shell">
       <div className="workplan-toolbar">
@@ -582,18 +626,61 @@ export function WorkPlanBoard() {
               </div>
 
               {selectedCard && selectedCard.targets.length > 0 ? (
-                <div className="workplan-target-switcher">
-                  {selectedCard.targets.map((target) => (
-                    <button
-                      key={target.id ?? `${target.display_name}-${target.cvp_device_id}`}
-                      className={`workplan-target-pill ${target.id === selectedTargetId ? 'active' : ''}`}
-                      type="button"
-                      onClick={() => setSelectedTargetId(target.id ?? null)}
-                    >
-                      <strong>{target.display_name || 'Unnamed Target'}</strong>
-                      <span>{renderServiceStatus(target)}</span>
+                <div className="workplan-target-selector-bar">
+                  <div ref={targetPickerRef} className="workplan-target-picker">
+                    <label className="workplan-filter selector">
+                      <Search size={16} />
+                      <input
+                        value={targetFilter}
+                        onFocus={() => setShowTargetPicker(true)}
+                        onChange={(event) => handleTargetFilterChange(event.target.value)}
+                        placeholder="대상 장비 검색"
+                      />
+                    </label>
+                    {showTargetPicker ? (
+                      <div className="workplan-card-list picker dropdown workplan-target-dropdown">
+                        {filteredTargets.length > 0 ? (
+                          filteredTargets.map((target) => (
+                            <button
+                              key={target.id ?? `${target.display_name}-${target.cvp_device_id}`}
+                              className={`workplan-target-option ${target.id === selectedTargetId ? 'active' : ''}`}
+                              type="button"
+                              onClick={() => handleSelectTarget(target.id ?? null)}
+                            >
+                              <div className="workplan-target-option-head">
+                                <strong>{target.display_name || 'Unnamed Target'}</strong>
+                                <span>{renderServiceStatus(target)}</span>
+                              </div>
+                              <p>{target.mgmt_ip || 'Mgmt IP 없음'}</p>
+                              <div className="workplan-card-link-meta">
+                                <small>{target.target_kind === 'new' ? '신규 장비' : '기존 장비'}</small>
+                                <small>{target.model || 'Model 없음'}</small>
+                              </div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="workplan-empty-state compact">
+                            <strong>검색 결과가 없습니다.</strong>
+                            <p>장비명, MGMT IP, 모델 기준으로 다시 검색해 주세요.</p>
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {selectedTarget ? (
+                    <button className="workplan-target-summary" type="button" onClick={() => setShowTargetPicker((open) => !open)}>
+                      <div className="workplan-target-summary-head">
+                        <strong>{selectedTarget.display_name || 'Unnamed Target'}</strong>
+                        <span>{renderServiceStatus(selectedTarget)}</span>
+                      </div>
+                      <div className="workplan-target-summary-meta">
+                        <small>{selectedTarget.mgmt_ip || 'Mgmt IP 없음'}</small>
+                        <small>{selectedTarget.model || 'Model 없음'}</small>
+                        <small>{selectedTarget.target_kind === 'new' ? '신규 장비' : '기존 장비'}</small>
+                      </div>
                     </button>
-                  ))}
+                  ) : null}
                 </div>
               ) : selectedCard ? (
                 <div className="workplan-empty-state">
