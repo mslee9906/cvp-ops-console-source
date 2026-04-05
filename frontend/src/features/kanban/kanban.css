@@ -969,12 +969,27 @@
   padding: 20px;
 }
 
+.kanban-complete-modal {
+  width: min(640px, 100%);
+}
+
 .kanban-modal-head {
   margin-bottom: 16px;
 }
 
 .kanban-modal-actions {
   margin-top: 8px;
+}
+
+.kanban-complete-copy {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.kanban-complete-copy p {
+  margin: 0;
+  color: var(--ink-600);
 }
 
 .kanban-action-overlay {

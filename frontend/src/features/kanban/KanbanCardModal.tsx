@@ -10,7 +10,6 @@ const columnOptions: Array<{ value: KanbanColumnKey; label: string }> = [
   { value: 'ready', label: '준비 완료' },
   { value: 'in_progress', label: '작업 중' },
   { value: 'verifying', label: '검증 중' },
-  { value: 'done', label: '완료' },
 ]
 
 const typeOptions: Array<{ value: KanbanCardType; label: string }> = [
@@ -33,9 +32,10 @@ type Props = {
   onClose: () => void
   onSubmit: (values: KanbanCardInput) => void | Promise<void>
   onDelete?: (() => void | Promise<void>) | undefined
+  onComplete?: (() => void | Promise<void>) | undefined
 }
 
-export function KanbanCardModal({ mode, initialValues, card, users, submitting, onClose, onSubmit, onDelete }: Props) {
+export function KanbanCardModal({ mode, initialValues, card, users, submitting, onClose, onSubmit, onDelete, onComplete }: Props) {
   const [values, setValues] = useState<KanbanCardInput>(initialValues)
 
   useEffect(() => {
@@ -164,11 +164,18 @@ export function KanbanCardModal({ mode, initialValues, card, users, submitting, 
           </label>
 
           <div className="kanban-modal-actions">
-            {mode === 'edit' && onDelete ? (
-              <button className="kanban-danger-button" type="button" onClick={() => void onDelete()} disabled={submitting}>
-                카드 삭제
-              </button>
-            ) : <span />}
+            <div className="kanban-inline-actions left">
+              {mode === 'edit' && onComplete ? (
+                <button className="kanban-ghost-button" type="button" onClick={() => void onComplete()} disabled={submitting}>
+                  작업 완료
+                </button>
+              ) : null}
+              {mode === 'edit' && onDelete ? (
+                <button className="kanban-danger-button" type="button" onClick={() => void onDelete()} disabled={submitting}>
+                  카드 삭제
+                </button>
+              ) : null}
+            </div>
             <div className="kanban-inline-actions">
               <button className="kanban-ghost-button" type="button" onClick={onClose} disabled={submitting}>
                 취소

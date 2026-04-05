@@ -1885,3 +1885,41 @@
     width: min(320px, calc(100vw - 2rem));
   }
 }
+
+.backup-note-grid,
+.backup-list {
+  display: grid;
+  gap: 12px;
+}
+
+.backup-note-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.backup-item-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.backup-item-card p {
+  margin: 4px 0 0;
+  color: var(--ink-500);
+  font-size: 0.84rem;
+}
+
+@media (max-width: 960px) {
+  .backup-note-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .backup-item-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

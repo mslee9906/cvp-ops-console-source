@@ -133,6 +133,34 @@ class KanbanRepository:
         ]
 
     def create_card(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._insert_card(payload)
+
+    def restore_card(
+        self,
+        payload: dict[str, Any],
+        *,
+        card_code: str,
+        column_key: str = "planned",
+        created_at: str = "",
+        updated_at: str = "",
+    ) -> dict[str, Any]:
+        restored_payload = dict(payload)
+        restored_payload["column_key"] = column_key
+        return self._insert_card(
+            restored_payload,
+            card_code_override=card_code,
+            created_at_override=created_at,
+            updated_at_override=updated_at,
+        )
+
+    def _insert_card(
+        self,
+        payload: dict[str, Any],
+        *,
+        card_code_override: str | None = None,
+        created_at_override: str = "",
+        updated_at_override: str = "",
+    ) -> dict[str, Any]:
         timestamp = _now_iso()
         checklist_items = payload.get("checklist_items") or []
         target_items = payload.get("targets") or []
@@ -140,7 +168,7 @@ class KanbanRepository:
 
         with self._connect() as connection:
             next_number = connection.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM kanban_cards").fetchone()[0]
-            card_code = f"KAN-{int(next_number):03d}"
+            card_code = str(card_code_override or f"KAN-{int(next_number):03d}")
             next_order = connection.execute(
                 "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM kanban_cards WHERE column_key = ?",
                 (payload["column_key"],),
@@ -149,6 +177,8 @@ class KanbanRepository:
             created_by_user_id = _normalize_optional_int(payload.get("created_by_user_id"))
             updated_by_user_id = _normalize_optional_int(payload.get("updated_by_user_id")) or created_by_user_id
             assignee = self._resolve_user_display_name(connection, assignee_user_id, str(payload.get("assignee", "") or ""))
+            created_at = str(created_at_override or timestamp)
+            updated_at = str(updated_at_override or timestamp)
             cursor = connection.execute(
                 """
                 INSERT INTO kanban_cards (
@@ -168,15 +198,15 @@ class KanbanRepository:
                     payload["card_type"],
                     payload["priority"],
                     int(next_order),
-                    timestamp,
-                    timestamp,
+                    created_at,
+                    updated_at,
                     str(payload.get("due_at", "") or "").strip(),
                 ),
             )
             card_id = int(cursor.lastrowid)
-            self._replace_checklist_items(connection, card_id, checklist_items, timestamp)
-            target_id_map = self._replace_target_items(connection, card_id, target_items, timestamp)
-            self._replace_planned_config_items(connection, card_id, planned_configs, timestamp, target_id_map)
+            self._replace_checklist_items(connection, card_id, checklist_items, updated_at)
+            target_id_map = self._replace_target_items(connection, card_id, target_items, updated_at)
+            self._replace_planned_config_items(connection, card_id, planned_configs, updated_at, target_id_map)
             connection.commit()
         return self.get_card(card_id) or {}
 

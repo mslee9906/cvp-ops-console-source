@@ -25,7 +25,6 @@ const COLUMN_META: Array<{ key: KanbanColumnKey; label: string; tone: string }> 
   { key: 'ready', label: '준비 완료', tone: 'teal' },
   { key: 'in_progress', label: '작업 중', tone: 'amber' },
   { key: 'verifying', label: '검증 중', tone: 'blue' },
-  { key: 'done', label: '완료', tone: 'teal' },
 ]
 
 const DETAIL_STEP_META: Array<{ key: DetailStepKey; label: string; body: string }> = [
@@ -70,6 +69,8 @@ export function KanbanBoard({ users }: Props) {
   const [editingNewTargetIndex, setEditingNewTargetIndex] = useState<number | null>(null)
   const [newTargetDraft, setNewTargetDraft] = useState<KanbanTargetItem>(() => createEmptyTarget('new'))
   const [actionOverlayMessage, setActionOverlayMessage] = useState('')
+  const [completeDialogCard, setCompleteDialogCard] = useState<KanbanCard | null>(null)
+  const [completeNote, setCompleteNote] = useState('')
   const targetDraftIdRef = useRef(-1)
 
   const deferredTargetSearch = useDeferredValue(targetSearch)
@@ -94,7 +95,7 @@ export function KanbanBoard({ users }: Props) {
   const groupedCards = useMemo(() => {
     return Object.fromEntries(
       COLUMN_META.map((meta) => [meta.key, sortCards(cards.filter((card) => card.column_key === meta.key))]),
-    ) as Record<KanbanColumnKey, KanbanCard[]>
+    ) as Record<string, KanbanCard[]>
   }, [cards])
 
   const targetRows = detailDraft?.targets ?? []
@@ -205,6 +206,16 @@ export function KanbanBoard({ users }: Props) {
     setEditorCard(null)
   }
 
+  function openCompleteDialog(card: KanbanCard) {
+    setCompleteDialogCard(card)
+    setCompleteNote('')
+  }
+
+  function closeCompleteDialog() {
+    setCompleteDialogCard(null)
+    setCompleteNote('')
+  }
+
   function openDetail(card: KanbanCard) {
     setSelectedCardId(card.id)
     setDetailDraft(toCardInput(card))
@@ -277,6 +288,31 @@ export function KanbanBoard({ users }: Props) {
       closeModal()
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : '?곸궠?獄?쓣紐??????? 嶺뚮쪇沅?쭛???鍮??')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleCompleteCard() {
+    if (!completeDialogCard) {
+      return
+    }
+
+    try {
+      setSubmitting(true)
+      setError('')
+      await api.completeKanbanCard(completeDialogCard.id, completeNote.trim())
+      setCards((current) => sortCards(current.filter((card) => card.id !== completeDialogCard.id)))
+      if (selectedCardId === completeDialogCard.id) {
+        closeDetail()
+      }
+      if (editorCard?.id === completeDialogCard.id) {
+        closeModal()
+      }
+      setActionOverlayMessage('작업을 이력으로 이동했습니다.')
+      closeCompleteDialog()
+    } catch (completeError) {
+      setError(completeError instanceof Error ? completeError.message : '작업 완료 처리에 실패했습니다.')
     } finally {
       setSubmitting(false)
     }
@@ -663,9 +699,15 @@ export function KanbanBoard({ users }: Props) {
                     <h3>{detailDraft.title}</h3>
                     <small className="kanban-summary-ticket">{selectedCard.card_code}</small>
                   </div>
-                  <button className="kanban-link-button" type="button" onClick={() => openEditModal(selectedCard)}>
-                    카드 수정
-                  </button>
+                  <div className="kanban-inline-actions">
+                    <button className="kanban-link-button" type="button" onClick={() => openEditModal(selectedCard)}>
+                      카드 수정
+                    </button>
+                    <button className="kanban-primary-button" type="button" onClick={() => openCompleteDialog(selectedCard)}>
+                      <CheckCircle2 size={16} />
+                      <span>작업 완료</span>
+                    </button>
+                  </div>
                 </div>
                 <div className="kanban-summary-row">
                   <span>담당자</span>
@@ -1086,7 +1128,51 @@ export function KanbanBoard({ users }: Props) {
             return undefined
           }}
           onDelete={editorCard ? () => handleDelete(editorCard.id) : undefined}
+          onComplete={editorCard ? () => openCompleteDialog(editorCard) : undefined}
         />
+      ) : null}
+
+      {completeDialogCard ? (
+        <div className="kanban-modal-backdrop" onClick={closeCompleteDialog}>
+          <div className="kanban-modal kanban-complete-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="kanban-modal-head">
+              <div>
+                <p className="kanban-kicker">Complete Card</p>
+                <h3>작업 완료 확인</h3>
+              </div>
+              <button className="kanban-ghost-button" type="button" onClick={closeCompleteDialog} disabled={submitting}>
+                닫기
+              </button>
+            </div>
+
+            <div className="kanban-complete-copy">
+              <strong>{completeDialogCard.title}</strong>
+              <p>정말 이 작업을 완료 처리하고 작업 이력으로 이동하시겠습니까?</p>
+            </div>
+
+            <label className="kanban-field wide">
+              <span>완료 메모</span>
+              <AutoGrowTextarea
+                value={completeNote}
+                onChange={(event) => setCompleteNote(event.target.value)}
+                placeholder="작업 완료 결과나 전달 메모를 남길 수 있습니다."
+                rows={5}
+              />
+            </label>
+
+            <div className="kanban-modal-actions">
+              <span />
+              <div className="kanban-inline-actions">
+                <button className="kanban-ghost-button" type="button" onClick={closeCompleteDialog} disabled={submitting}>
+                  아니오
+                </button>
+                <button className="kanban-primary-button" type="button" onClick={() => void handleCompleteCard()} disabled={submitting}>
+                  {submitting ? '완료 처리 중...' : '예, 완료합니다'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {actionOverlayMessage ? (

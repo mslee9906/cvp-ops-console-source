@@ -34,11 +34,13 @@ import { LoginScreen } from './features/auth/LoginScreen'
 import { UserSettingsModal } from './features/auth/UserSettingsModal'
 import { AutomationConsole } from './features/automation/AutomationConsole'
 import { EdmLinkManager } from './features/edm-links/EdmLinkManager'
+import { WorkHistoryBoard } from './features/history/WorkHistoryBoard'
 import { KanbanBoard } from './features/kanban/KanbanBoard'
 import { WorkflowBoard } from './features/workflow/WorkflowBoard'
 import { WorkPlanBoard } from './features/workplan/WorkPlanBoard'
 import type {
   AutomationSource,
+  BackupItem,
   CollectionProgressResponse,
   ConfigPreviewResponse,
   ConfigSearchMatch,
@@ -72,6 +74,7 @@ type ViewId =
   | 'automation_ip_tags'
   | 'automation_lldp_tags'
   | 'kanban'
+  | 'work_history'
   | 'work_tool'
   | 'work_plan'
 type ViewMeta = {
@@ -192,6 +195,13 @@ const viewMeta: Record<ViewId, ViewMeta> = {
     description: '작업 카드를 생성하고, 수정하고, 삭제하고, 드래그로 상태를 이동하는 보드입니다.',
     icon: Layers3,
   },
+  work_history: {
+    label: '작업 이력',
+    eyebrow: 'Archived Tasks',
+    title: '작업 이력',
+    description: '완료 처리된 작업 카드와 연결된 세부 정보, 워크플로우를 읽기 전용으로 보관하고 복원할 수 있습니다.',
+    icon: Clock3,
+  },
   work_tool: {
     label: '작업 툴',
     eyebrow: 'Tool Workspace',
@@ -210,7 +220,7 @@ const viewMeta: Record<ViewId, ViewMeta> = {
 
 const managementViews: ViewId[] = ['ip', 'bgp', 'vlan', 'vmac', 'vni', 'vrf', 'devices', 'config', 'edm_link']
 const automationViews: ViewId[] = ['automation_ip_tags', 'automation_lldp_tags']
-const kanbanViews: ViewId[] = ['kanban', 'work_tool', 'work_plan']
+const kanbanViews: ViewId[] = ['kanban', 'work_history', 'work_tool', 'work_plan']
 
 const initialLookupState = {
   loading: false,
@@ -290,6 +300,11 @@ function App() {
   const [overviewError, setOverviewError] = useState('')
   const [collectionProgress, setCollectionProgress] = useState<CollectionProgressResponse | null>(null)
   const [refreshError, setRefreshError] = useState('')
+  const [backups, setBackups] = useState<BackupItem[]>([])
+  const [backupsLoading, setBackupsLoading] = useState(false)
+  const [backupsError, setBackupsError] = useState('')
+  const [backupActionBusy, setBackupActionBusy] = useState(false)
+  const [backupActionMessage, setBackupActionMessage] = useState('')
 
   const [records, setRecords] = useState<Record<RecordScope, RecordListResponse>>(emptyRecordLists)
   const [recordLoading, setRecordLoading] = useState<Record<RecordScope, boolean>>(emptyRecordLoading)
@@ -356,7 +371,7 @@ function App() {
   const currentView = viewMeta[activeView]
   const currentScope = isRecordScope(activeView) ? activeView : null
   const activeConfigDevice = devices.find((item) => item.device_id === selectedDeviceId)
-  const showSnapshotRefreshPanels = !['kanban', 'work_tool', 'work_plan', 'edm_link'].includes(activeView)
+  const showSnapshotRefreshPanels = !['kanban', 'work_history', 'work_tool', 'work_plan', 'edm_link'].includes(activeView)
 
   const filteredDevices = useMemo(() => {
     const token = deferredDeviceSearch.trim().toLowerCase()
@@ -627,18 +642,27 @@ function App() {
     }
   }, [notificationPanelOpen, notifications.length, notificationUnreadCount, notificationsLoading, notificationsError])
 
+  useEffect(() => {
+    if (!backupActionMessage) {
+      return
+    }
+    const timer = window.setTimeout(() => setBackupActionMessage(''), 2200)
+    return () => window.clearTimeout(timer)
+  }, [backupActionMessage])
+
   async function initializeSession() {
     try {
       setAuthError('')
       const user = await api.getCurrentUser()
       setCurrentUser(user)
-      await Promise.all([loadUsers(), bootstrap(), loadNotifications()])
+      await Promise.all([loadUsers(), bootstrap(), loadNotifications(), loadBackups(user.role !== 'viewer')])
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         setCurrentUser(null)
         setUsers([])
         setNotifications([])
         setNotificationUnreadCount(0)
+        setBackups([])
         return
       }
       setAuthError(error instanceof Error ? error.message : '세션을 확인하지 못했습니다.')
@@ -651,6 +675,26 @@ function App() {
     const loadedUsers = await api.getUsers()
     setUsers(loadedUsers)
     return loadedUsers
+  }
+
+  async function loadBackups(enabled = currentUser?.role !== 'viewer') {
+    if (!enabled) {
+      setBackups([])
+      setBackupsError('')
+      return []
+    }
+    try {
+      setBackupsLoading(true)
+      setBackupsError('')
+      const response = await api.getBackups()
+      setBackups(response)
+      return response
+    } catch (error) {
+      setBackupsError(error instanceof Error ? error.message : '백업 목록을 불러오지 못했습니다.')
+      return []
+    } finally {
+      setBackupsLoading(false)
+    }
   }
 
   async function loadNotifications(showLoading = true) {
@@ -715,7 +759,7 @@ function App() {
       setAuthError('')
       const response = await api.login(username, password)
       setCurrentUser(response.user)
-      await Promise.all([loadUsers(), bootstrap(), loadNotifications()])
+      await Promise.all([loadUsers(), bootstrap(), loadNotifications(), loadBackups(response.user.role !== 'viewer')])
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : '로그인하지 못했습니다.')
     } finally {
@@ -732,6 +776,9 @@ function App() {
     } finally {
       setCurrentUser(null)
       setUsers([])
+      setBackups([])
+      setBackupsError('')
+      setBackupActionMessage('')
       setAccountModalOpen(false)
       setAuthError('')
       setNotifications([])
@@ -745,6 +792,38 @@ function App() {
       setSelectedIpAutomationDeviceIds([])
       setSelectedLldpAutomationSource('')
       setSelectedLldpAutomationDeviceIds([])
+    }
+  }
+
+  async function handleCreateBackup() {
+    try {
+      setBackupActionBusy(true)
+      setBackupsError('')
+      const created = await api.createBackup()
+      setBackupActionMessage(`백업을 생성했습니다. (${created.name})`)
+      await loadBackups(true)
+    } catch (error) {
+      setBackupsError(error instanceof Error ? error.message : '백업을 생성하지 못했습니다.')
+    } finally {
+      setBackupActionBusy(false)
+    }
+  }
+
+  async function handleRestoreBackup(name: string) {
+    const confirmed = window.confirm(`백업 ${name}으로 현재 DB와 설정을 복구하시겠습니까?`)
+    if (!confirmed) {
+      return
+    }
+    try {
+      setBackupActionBusy(true)
+      setBackupsError('')
+      const restored = await api.restoreBackup(name)
+      setBackupActionMessage(`백업을 복구했습니다. (${restored.name})`)
+      await Promise.all([bootstrap(), loadNotifications(), loadBackups(true)])
+    } catch (error) {
+      setBackupsError(error instanceof Error ? error.message : '백업을 복구하지 못했습니다.')
+    } finally {
+      setBackupActionBusy(false)
     }
   }
 
@@ -1308,7 +1387,19 @@ function App() {
         {overviewError ? <div className="message-banner error">{overviewError}</div> : null}
         {showSnapshotRefreshPanels && refreshError ? <div className="message-banner error">{refreshError}</div> : null}
 
-        {activeView === 'home' ? renderHome(overview) : null}
+        {activeView === 'home'
+          ? renderHome({
+              overview,
+              backups,
+              backupsLoading,
+              backupsError,
+              backupActionBusy,
+              backupActionMessage,
+              canManageBackups: currentUser.role !== 'viewer',
+              onCreateBackup: handleCreateBackup,
+              onRestoreBackup: handleRestoreBackup,
+            })
+          : null}
 
         {activeView === 'devices' ? (
           <section className="content-grid devices-mode">
@@ -2021,6 +2112,12 @@ function App() {
           </section>
         ) : null}
 
+        {activeView === 'work_history' ? (
+          <section className="stack-layout">
+            <WorkHistoryBoard />
+          </section>
+        ) : null}
+
         {activeView === 'work_tool' ? (
           <section className="stack-layout">
             <WorkPlanBoard />
@@ -2160,7 +2257,27 @@ function App() {
   )
 }
 
-function renderHome(overview: OverviewResponse | null) {
+function renderHome({
+  overview,
+  backups,
+  backupsLoading,
+  backupsError,
+  backupActionBusy,
+  backupActionMessage,
+  canManageBackups,
+  onCreateBackup,
+  onRestoreBackup,
+}: {
+  overview: OverviewResponse | null
+  backups: BackupItem[]
+  backupsLoading: boolean
+  backupsError: string
+  backupActionBusy: boolean
+  backupActionMessage: string
+  canManageBackups: boolean
+  onCreateBackup: () => void
+  onRestoreBackup: (name: string) => void
+}) {
   return (
     <section className="home-stack">
       <section className="overview-grid full-width">
@@ -2197,6 +2314,67 @@ function renderHome(overview: OverviewResponse | null) {
             <LegendItem status="review" title="검토 필요" body="정확히 같지는 않지만, 대역 또는 문맥이 겹칩니다. 운영 판단이 필요합니다." />
             <LegendItem status="not_available" title="사용 불가" body="Loopback 또는 관리망처럼 재사용을 막아야 하는 경우에 사용합니다." />
           </div>
+        </aside>
+      </section>
+
+      <section className="home-grid">
+        <article className="main-card">
+          <div className="card-head compact">
+            <div>
+              <p className="section-kicker">Backup Center</p>
+              <h3>DB / 설정 백업</h3>
+            </div>
+            {canManageBackups ? (
+              <button className="primary-action" type="button" onClick={onCreateBackup} disabled={backupActionBusy}>
+                <Database />
+                <span>{backupActionBusy ? '처리 중...' : '원클릭 백업'}</span>
+              </button>
+            ) : null}
+          </div>
+
+          {backupActionMessage ? <div className="message-banner success">{backupActionMessage}</div> : null}
+          {backupsError ? <div className="message-banner error">{backupsError}</div> : null}
+
+          <div className="backup-note-grid">
+            <GuideCard
+              title="백업 범위"
+              body="메인 DB, 이력 DB, snapshot config, backend config, .env, .env.example을 함께 백업합니다."
+            />
+            <GuideCard
+              title="복구 방식"
+              body="선택한 백업 세트를 현재 경로에 그대로 되돌립니다. 복구 후 화면을 새로 고치면 반영 상태를 다시 확인할 수 있습니다."
+            />
+          </div>
+        </article>
+
+        <aside className="side-card">
+          <div className="card-head compact">
+            <div>
+              <p className="section-kicker">Backup History</p>
+              <h3>백업 목록</h3>
+            </div>
+          </div>
+
+          {backupsLoading ? <div className="empty-state small">백업 목록을 불러오는 중입니다.</div> : null}
+
+          {!backupsLoading ? (
+            <div className="backup-list">
+              {backups.map((item) => (
+                <article key={item.name} className="backup-item-card">
+                  <div>
+                    <strong>{item.name}</strong>
+                    <p>{item.created_at}</p>
+                  </div>
+                  {canManageBackups ? (
+                    <button className="secondary-action" type="button" onClick={() => onRestoreBackup(item.name)} disabled={backupActionBusy}>
+                      복구
+                    </button>
+                  ) : null}
+                </article>
+              ))}
+              {!backups.length ? <div className="empty-state small">저장된 백업이 없습니다.</div> : null}
+            </div>
+          ) : null}
         </aside>
       </section>
     </section>

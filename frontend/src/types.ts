@@ -378,6 +378,46 @@ export interface CardReservationsResponse {
   vni: ResourceReservation[]
 }
 
+export interface WorkHistoryItem {
+  id: number
+  original_card_id: number
+  card_code: string
+  title: string
+  card_type: string
+  completed_note: string
+  completed_by_user_id?: number | null
+  completed_by_name: string
+  completed_at: string
+  restored_card_id?: number | null
+  restored_at: string
+  restored_by_user_id?: number | null
+  archived_card: KanbanCard
+  archived_workflow: WorkflowDocument
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkHistoryRestoreResponse {
+  history: WorkHistoryItem
+  restored_card: KanbanCard
+  restored_workflow?: WorkflowDocumentResponse | null
+}
+
+export interface BackupItem {
+  name: string
+  path: string
+  created_at: string
+}
+
+export interface BackupCreateResponse extends BackupItem {
+  files: string[]
+}
+
+export interface BackupRestoreResponse {
+  name: string
+  restored_at: string
+}
+
 export type WorkflowBlockType = 'table' | 'note' | 'checklist' | 'links'
 export type WorkflowTableMode = 'target' | 'custom'
 export type WorkflowColumnType = 'text' | 'textarea' | 'status'

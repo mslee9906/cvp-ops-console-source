@@ -7,6 +7,9 @@ import type {
   AutomationTargetMode,
   AutomationToolDetail,
   AutomationToolSummary,
+  BackupCreateResponse,
+  BackupItem,
+  BackupRestoreResponse,
   CollectionProgressResponse,
   CardReservationsResponse,
   ConfigPreviewResponse,
@@ -33,6 +36,8 @@ import type {
   VmacGroupListResponse,
   VniGroupListResponse,
   VrfGroupListResponse,
+  WorkHistoryItem,
+  WorkHistoryRestoreResponse,
   WorkflowDocument,
   WorkflowDocumentResponse,
   WorkflowPhaseCompleteResponse,
@@ -169,6 +174,11 @@ export const api = {
   deleteKanbanCard: async (cardId: number) => {
     await request<{ ok: boolean }>(`/api/kanban/cards/${cardId}`, { method: 'DELETE' })
   },
+  completeKanbanCard: (cardId: number, completedNote: string) =>
+    request<WorkHistoryItem>(`/api/history/cards/${cardId}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ completed_note: completedNote }),
+    }),
   reorderKanbanCards: (items: KanbanCardPosition[]) =>
     request<KanbanCard[]>('/api/kanban/cards/reorder', {
       method: 'POST',
@@ -249,6 +259,22 @@ export const api = {
   deleteWorkflowTemplate: async (templateId: number) => {
     await request<{ ok: boolean }>(`/api/workflows/templates/${templateId}`, { method: 'DELETE' })
   },
+  getWorkHistory: () => request<WorkHistoryItem[]>('/api/history'),
+  getWorkHistoryItem: (historyId: number) => request<WorkHistoryItem>(`/api/history/${historyId}`),
+  restoreWorkHistoryItem: (historyId: number) =>
+    request<WorkHistoryRestoreResponse>(`/api/history/${historyId}/restore`, {
+      method: 'POST',
+    }),
+  getBackups: () => request<BackupItem[]>('/api/backups'),
+  createBackup: () =>
+    request<BackupCreateResponse>('/api/backups', {
+      method: 'POST',
+    }),
+  restoreBackup: (name: string) =>
+    request<BackupRestoreResponse>('/api/backups/restore', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
   lookupIp: (query: string, vrf?: string) =>
     request<LookupResponse>(
       `/api/lookup/ip?q=${encodeURIComponent(query)}${vrf ? `&vrf=${encodeURIComponent(vrf)}` : ''}`,

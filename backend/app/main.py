@@ -10,8 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.automation_routes import router as automation_router
+from app.api.backup_routes import router as backup_router
 from app.api.auth_routes import SESSION_COOKIE_NAME, router as auth_router
 from app.api.edm_link_routes import router as edm_link_router
+from app.api.history_routes import router as history_router
 from app.api.kanban_routes import router as kanban_router
 from app.api.notification_routes import router as notification_router
 from app.api.reservation_routes import router as reservation_router
@@ -20,6 +22,7 @@ from app.api.routes import router
 from app.core.settings import get_settings
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.edm_link_repository import EdmLinkRepository
+from app.repositories.history_repository import HistoryRepository
 from app.repositories.kanban_repository import KanbanRepository
 from app.repositories.notification_repository import NotificationRepository
 from app.repositories.reservation_repository import ReservationRepository
@@ -27,8 +30,10 @@ from app.repositories.snapshot_repository import SnapshotRepository
 from app.repositories.workflow_repository import WorkflowRepository
 from app.services.auth_service import AuthService
 from app.services.automation_service import AutomationService
+from app.services.backup_service import BackupService
 from app.services.collection_service import CollectionService
 from app.services.edm_link_service import EdmLinkService
+from app.services.history_service import HistoryService
 from app.services.kanban_service import KanbanService
 from app.services.notification_service import NotificationService
 from app.services.query_service import QueryService
@@ -44,9 +49,11 @@ logging.basicConfig(
 
 
 settings = get_settings()
+history_db_path = settings.db_path.with_name("ops_console_history.db")
 repository = SnapshotRepository(settings.db_path)
 auth_repository = AuthRepository(settings.db_path)
 edm_link_repository = EdmLinkRepository(settings.db_path)
+history_repository = HistoryRepository(history_db_path)
 kanban_repository = KanbanRepository(settings.db_path)
 notification_repository = NotificationRepository(settings.db_path)
 reservation_repository = ReservationRepository(settings.db_path)
@@ -61,6 +68,14 @@ edm_link_service = EdmLinkService(edm_link_repository)
 kanban_service = KanbanService(kanban_repository, repository, workflow_repository, reservation_repository)
 notification_service = NotificationService(notification_repository)
 workflow_service = WorkflowService(workflow_repository, kanban_repository, notification_service)
+history_service = HistoryService(history_repository, kanban_repository, workflow_repository)
+backup_service = BackupService(
+    console_dir=settings.console_dir,
+    backend_dir=settings.backend_dir,
+    primary_db_path=settings.db_path,
+    history_db_path=history_db_path,
+    config_snapshot_dir=settings.config_dir,
+)
 
 app = FastAPI(
     title="CVP Ops Console API",
@@ -84,6 +99,8 @@ app.state.kanban_service = kanban_service
 app.state.notification_service = notification_service
 app.state.reservation_service = reservation_service
 app.state.workflow_service = workflow_service
+app.state.history_service = history_service
+app.state.backup_service = backup_service
 app.state.source_mode = "demo"
 app.state.settings = settings
 app.include_router(auth_router, prefix="/api/auth")
@@ -94,6 +111,8 @@ app.include_router(kanban_router, prefix="/api/kanban")
 app.include_router(notification_router, prefix="/api/notifications")
 app.include_router(reservation_router, prefix="/api/reservations")
 app.include_router(workflow_router, prefix="/api/workflows")
+app.include_router(history_router, prefix="/api/history")
+app.include_router(backup_router, prefix="/api/backups")
 
 
 @app.middleware("http")
@@ -116,6 +135,7 @@ def bootstrap_demo_snapshot() -> None:
     notification_service.initialize()
     reservation_service.initialize()
     workflow_service.initialize()
+    history_service.initialize()
     latest_job = collection_service.ensure_seed_data()
     reservation_service.reconcile_snapshot()
     app.state.source_mode = latest_job["source"]
