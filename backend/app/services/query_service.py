@@ -195,6 +195,64 @@ class QueryService:
             'items': items[:limit],
         }
 
+    def list_vmac_groups(
+        self,
+        limit: int = 200,
+        vmac: str | None = None,
+    ) -> dict[str, Any]:
+        rows = self.repository.get_vmac_entries(limit=None)
+        devices = {item['device_id']: item for item in self.repository.list_devices()}
+        vni_context = self._build_vlan_vni_context()
+        token = (vmac or '').strip().lower()
+        grouped: dict[str, list[dict[str, str]]] = {}
+
+        for row in rows:
+            vmac_value = str(row['vmac'] or '').strip().lower()
+            if not vmac_value:
+                continue
+            if token and token not in vmac_value:
+                continue
+
+            device = devices.get(row['device_id'], {})
+            vlan_key = (row['device_id'], str(row['vlan_id']))
+            grouped.setdefault(vmac_value, []).append(
+                {
+                    'device_id': row['device_id'],
+                    'hostname': row['hostname'],
+                    'mgmt_ip': str(device.get('mgmt_ip', '') or ''),
+                    'interface_name': str(row.get('interface_name') or ''),
+                    'vlan_id': str(row.get('vlan_id') or ''),
+                    'vni': str(vni_context['vni_by_vlan'].get(vlan_key, '') or ''),
+                }
+            )
+
+        items = []
+        for vmac_value, device_rows in grouped.items():
+            sorted_devices = sorted(
+                device_rows,
+                key=lambda item: (
+                    self._numeric_sort_key(item['vni']),
+                    self._numeric_sort_key(item['vlan_id']),
+                    item['hostname'].lower(),
+                ),
+            )
+            items.append(
+                {
+                    'vmac': vmac_value,
+                    'device_count': len({item['device_id'] for item in sorted_devices}),
+                    'vlan_ids': sorted({item['vlan_id'] for item in sorted_devices if item['vlan_id']}, key=self._numeric_sort_key),
+                    'vni_ids': sorted({item['vni'] for item in sorted_devices if item['vni']}, key=self._numeric_sort_key),
+                    'devices': sorted_devices,
+                }
+            )
+
+        items.sort(key=lambda item: item['vmac'])
+        return {
+            'scope': 'vmac',
+            'total_count': len(items),
+            'items': items[:limit],
+        }
+
     def list_vlan(self, limit: int = 200) -> dict[str, Any]:
         all_rows = self.repository.get_vlan_entries()
         vni_context = self._build_vlan_vni_context()

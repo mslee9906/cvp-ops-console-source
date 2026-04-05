@@ -10,6 +10,9 @@ IP_PREFIX_RE = re.compile(r"^ip address\s+(?P<cidr>\d+\.\d+\.\d+\.\d+/\d+)(?:\s+
 IP_MASK_RE = re.compile(
     r"^ip address\s+(?P<address>\d+\.\d+\.\d+\.\d+)\s+(?P<mask>\d+\.\d+\.\d+\.\d+)(?:\s+secondary)?$",
 )
+VMAC_RE = re.compile(r"^ip virtual-router mac-address\s+(?P<vmac>[0-9a-fA-F:\.]+)$")
+SVI_VLAN_RE = re.compile(r"^vlan(?P<vlan_id>\d+)$", re.IGNORECASE)
+VXLAN_VLAN_VNI_RE = re.compile(r"^vxlan vlan\s+(?P<vlan_id>\d+)\s+vni\s+(?P<vni>\d+)$", re.IGNORECASE)
 
 
 def reconstruct_config_lines(nodes: dict[str, dict[str, Any]]) -> str:
@@ -122,3 +125,106 @@ def extract_ip_records(device_id: str, hostname: str, config_text: str) -> list[
         )
 
     return records
+
+
+def extract_vmac_records(device_id: str, hostname: str, config_text: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    current_interface = ""
+    current_vlan_id = ""
+    global_vmac = ""
+    vxlan_vlan_ids: set[str] = set()
+
+    for raw_line in config_text.splitlines():
+        line = raw_line.rstrip()
+
+        match = INTERFACE_RE.match(line)
+        if match:
+            current_interface = match.group("name")
+            vlan_match = SVI_VLAN_RE.match(current_interface)
+            current_vlan_id = vlan_match.group("vlan_id") if vlan_match else ""
+            continue
+
+        if not current_interface:
+            stripped = line.strip()
+            vmac_match = VMAC_RE.match(stripped)
+            if vmac_match:
+                global_vmac = normalize_vmac(vmac_match.group("vmac"))
+            continue
+
+        if line and not line.startswith(" "):
+            current_interface = ""
+            current_vlan_id = ""
+            stripped = line.strip()
+            vmac_match = VMAC_RE.match(stripped)
+            if vmac_match:
+                global_vmac = normalize_vmac(vmac_match.group("vmac"))
+            continue
+
+        stripped = line.strip()
+        if current_interface.lower().startswith("vxlan"):
+            vxlan_match = VXLAN_VLAN_VNI_RE.match(stripped)
+            if vxlan_match:
+                vxlan_vlan_ids.add(vxlan_match.group("vlan_id"))
+
+        if not current_vlan_id:
+            continue
+
+        vmac_match = VMAC_RE.match(stripped)
+        if not vmac_match:
+            continue
+
+        normalized_vmac = normalize_vmac(vmac_match.group("vmac"))
+        if not normalized_vmac:
+            continue
+
+        records.append(
+            {
+                "device_id": device_id,
+                "hostname": hostname,
+                "interface_name": current_interface,
+                "vlan_id": current_vlan_id,
+                "vmac": normalized_vmac,
+                "source": "config",
+            }
+        )
+
+    if records:
+        return records
+
+    if global_vmac:
+        if vxlan_vlan_ids:
+            for vlan_id in sorted(vxlan_vlan_ids, key=lambda item: int(item)):
+                records.append(
+                    {
+                        "device_id": device_id,
+                        "hostname": hostname,
+                        "interface_name": f"Vlan{vlan_id}",
+                        "vlan_id": vlan_id,
+                        "vmac": global_vmac,
+                        "source": "config",
+                    }
+                )
+        else:
+            records.append(
+                {
+                    "device_id": device_id,
+                    "hostname": hostname,
+                    "interface_name": "global",
+                    "vlan_id": "",
+                    "vmac": global_vmac,
+                    "source": "config",
+                }
+            )
+
+    return records
+
+
+def normalize_vmac(raw_value: str) -> str:
+    token = str(raw_value or "").strip().lower()
+    if not token:
+        return ""
+
+    hex_only = "".join(character for character in token if character in "0123456789abcdef")
+    if len(hex_only) != 12:
+        return ""
+    return ":".join(hex_only[index : index + 2] for index in range(0, 12, 2))

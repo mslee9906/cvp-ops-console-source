@@ -53,6 +53,7 @@ import type {
   RecordScope,
   UserCreateInput,
   UserSummary,
+  VmacGroupListResponse,
   VniGroupListResponse,
   VrfGroupListResponse,
 } from './types'
@@ -62,6 +63,7 @@ type ViewId =
   | 'ip'
   | 'bgp'
   | 'vlan'
+  | 'vmac'
   | 'vni'
   | 'vrf'
   | 'devices'
@@ -126,6 +128,13 @@ const viewMeta: Record<ViewId, ViewMeta> = {
     title: 'VLAN 현황 조회',
     description: 'VLAN ID 또는 이름 기준으로 조회하고, 현재 스냅샷 기준 VLAN 목록을 확인합니다.',
     icon: Layers3,
+  },
+  vmac: {
+    label: 'vMAC',
+    eyebrow: 'Virtual Router MAC',
+    title: 'vMAC 현황 조회',
+    description: 'vMAC 값별로 어떤 장비와 VLAN/VNI 조합에 설정되어 있는지 그룹으로 확인합니다.',
+    icon: ShieldAlert,
   },
   vni: {
     label: 'VxLAN VNI',
@@ -199,7 +208,7 @@ const viewMeta: Record<ViewId, ViewMeta> = {
   },
 }
 
-const managementViews: ViewId[] = ['ip', 'bgp', 'vlan', 'vni', 'vrf', 'devices', 'config', 'edm_link']
+const managementViews: ViewId[] = ['ip', 'bgp', 'vlan', 'vmac', 'vni', 'vrf', 'devices', 'config', 'edm_link']
 const automationViews: ViewId[] = ['automation_ip_tags', 'automation_lldp_tags']
 const kanbanViews: ViewId[] = ['kanban', 'work_tool', 'work_plan']
 
@@ -321,6 +330,14 @@ function App() {
   const [selectedVni, setSelectedVni] = useState('')
   const [vniMemberFilter, setVniMemberFilter] = useState('')
 
+  const [vmacGroups, setVmacGroups] = useState<VmacGroupListResponse>({ scope: 'vmac', total_count: 0, items: [] })
+  const [vmacLoading, setVmacLoading] = useState(false)
+  const [vmacError, setVmacError] = useState('')
+  const [vmacLimit, setVmacLimit] = useState(DEFAULT_PAGE_SIZE)
+  const [vmacFilter, setVmacFilter] = useState('')
+  const [selectedVmac, setSelectedVmac] = useState('')
+  const [vmacMemberFilter, setVmacMemberFilter] = useState('')
+
   const [configSearchQuery, setConfigSearchQuery] = useState('')
   const [configSearchLimit, setConfigSearchLimit] = useState(DEFAULT_PAGE_SIZE)
   const [configSearchState, setConfigSearchState] = useState(initialConfigSearchState)
@@ -385,6 +402,22 @@ function App() {
     }
     return selectedVniGroup.devices.filter((device) => device.hostname.toLowerCase().includes(token))
   }, [selectedVniGroup, vniMemberFilter])
+  const selectedVmacGroup = useMemo(
+    () => vmacGroups.items.find((item) => item.vmac === selectedVmac) ?? null,
+    [selectedVmac, vmacGroups.items],
+  )
+  const filteredVmacDevices = useMemo(() => {
+    if (!selectedVmacGroup) {
+      return []
+    }
+    const token = vmacMemberFilter.trim().toLowerCase()
+    if (!token) {
+      return selectedVmacGroup.devices
+    }
+    return selectedVmacGroup.devices.filter((device) =>
+      [device.hostname, device.mgmt_ip, device.vlan_id, device.vni, device.interface_name].join(' ').toLowerCase().includes(token),
+    )
+  }, [selectedVmacGroup, vmacMemberFilter])
 
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
@@ -437,6 +470,21 @@ function App() {
   useEffect(() => {
     setVniMemberFilter('')
   }, [selectedVni])
+
+  useEffect(() => {
+    if (!vmacGroups.items.length) {
+      setSelectedVmac('')
+      return
+    }
+
+    if (!selectedVmac || !vmacGroups.items.some((item) => item.vmac === selectedVmac)) {
+      setSelectedVmac(vmacGroups.items[0].vmac)
+    }
+  }, [selectedVmac, vmacGroups.items])
+
+  useEffect(() => {
+    setVmacMemberFilter('')
+  }, [selectedVmac])
 
   useEffect(() => {
     if (!automationSources.length) {
@@ -754,6 +802,7 @@ function App() {
       loadRecord('ip', DEFAULT_PAGE_SIZE),
       loadRecord('bgp', DEFAULT_PAGE_SIZE),
       loadRecord('vlan', DEFAULT_PAGE_SIZE),
+      loadVmacGroups(DEFAULT_PAGE_SIZE),
       loadVniGroups(DEFAULT_PAGE_SIZE),
       loadVrfGroups(DEFAULT_PAGE_SIZE),
     ])
@@ -771,6 +820,7 @@ function App() {
           loadRecord('ip', recordLimits.ip),
           loadRecord('bgp', recordLimits.bgp),
           loadRecord('vlan', recordLimits.vlan),
+          loadVmacGroups(vmacLimit),
           loadVniGroups(vniLimit),
           loadVrfGroups(vrfLimit),
         ])
@@ -872,6 +922,20 @@ function App() {
       setVniError(error instanceof Error ? error.message : 'VNI 목록을 불러오지 못했습니다.')
     } finally {
       setVniLoading(false)
+    }
+  }
+
+  async function loadVmacGroups(limit = DEFAULT_PAGE_SIZE) {
+    try {
+      setVmacLimit(limit)
+      setVmacLoading(true)
+      setVmacError('')
+      const response = await api.getVmacGroups(limit, vmacFilter.trim())
+      setVmacGroups(response)
+    } catch (error) {
+      setVmacError(error instanceof Error ? error.message : 'vMAC 목록을 불러오지 못했습니다.')
+    } finally {
+      setVmacLoading(false)
     }
   }
 
@@ -1074,6 +1138,11 @@ function App() {
       return
     }
 
+    if (activeView === 'vmac') {
+      await loadVmacGroups(vmacLimit)
+      return
+    }
+
     if (activeView === 'vni') {
       await loadVniGroups(vniLimit)
       return
@@ -1134,7 +1203,7 @@ function App() {
           </button>
 
           <SidebarSection
-            title="작업 보드"
+            title="작업 관리"
             open={kanbanOpen}
             onToggle={() => setKanbanOpen((value) => !value)}
             items={kanbanViews}
@@ -1454,6 +1523,134 @@ function App() {
                 )}
               </div>
             </div>
+          </section>
+        ) : null}
+
+        {activeView === 'vmac' ? (
+          <section className="content-grid">
+            <div className="main-card">
+              <div className="card-head">
+                <div>
+                  <p className="section-kicker">vMAC Summary</p>
+                  <h3>vMAC 기준 장비 현황</h3>
+                </div>
+                <div className="toolbar-row">
+                  <div className="inline-filter">
+                    <Search />
+                    <input
+                      value={vmacFilter}
+                      onChange={(event) => setVmacFilter(event.target.value)}
+                      placeholder="vMAC 검색"
+                    />
+                  </div>
+                  <button className="secondary-action" onClick={() => void loadVmacGroups(DEFAULT_PAGE_SIZE)}>
+                    <RefreshCcw />
+                    <span>목록 다시 불러오기</span>
+                  </button>
+                </div>
+              </div>
+
+              <DisplayCount visible={vmacGroups.items.length} total={vmacGroups.total_count} />
+              {vmacError ? <div className="message-banner error">{vmacError}</div> : null}
+              {vmacLoading ? (
+                <PanelState title="vMAC 목록을 불러오는 중입니다." body="장비별 virtual-router mac-address 구성을 정리하고 있습니다." />
+              ) : vmacGroups.items.length > 0 ? (
+                <>
+                  <div className="table-shell compact-table-shell">
+                    <table className="data-table narrow">
+                      <thead>
+                        <tr>
+                          <th>vMAC</th>
+                          <th>장비 수</th>
+                          <th>VNI</th>
+                          <th>VLAN</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {vmacGroups.items.map((item) => (
+                          <tr
+                            key={item.vmac}
+                            className={item.vmac === selectedVmac ? 'selected' : ''}
+                            onClick={() => setSelectedVmac(item.vmac)}
+                          >
+                            <td className="mono-cell">{item.vmac}</td>
+                            <td>{item.device_count}</td>
+                            <td>{item.vni_ids.join(', ') || '-'}</td>
+                            <td>{item.vlan_ids.join(', ') || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <LoadMoreBar
+                    visible={vmacGroups.items.length}
+                    total={vmacGroups.total_count}
+                    onMore={() => void loadVmacGroups(vmacLimit + LOAD_MORE_STEP)}
+                  />
+                </>
+              ) : (
+                <PanelState title="표시할 vMAC이 없습니다." body="필터 조건에 맞는 vMAC이 없거나 아직 수집되지 않았습니다." />
+              )}
+            </div>
+
+            <aside className="side-card">
+              <div className="card-head compact">
+                <div>
+                  <p className="section-kicker">vMAC Device Members</p>
+                  <h3>{selectedVmacGroup?.vmac ?? 'vMAC을 선택하세요'}</h3>
+                </div>
+              </div>
+
+              {!selectedVmacGroup ? (
+                <PanelState title="장비 목록 대기 중" body="왼쪽 표에서 vMAC을 선택하면 설정된 장비와 VLAN/VNI 관계를 확인할 수 있습니다." />
+              ) : (
+                <>
+                  <div className="inline-filter member-filter">
+                    <Search />
+                    <input
+                      value={vmacMemberFilter}
+                      onChange={(event) => setVmacMemberFilter(event.target.value)}
+                      placeholder="Hostname / VLAN / VNI 검색"
+                    />
+                  </div>
+                  <div className="result-summary compact-summary">
+                    <div>
+                      <strong>연결된 VNI</strong>
+                      <p>{selectedVmacGroup.vni_ids.join(', ') || '-'}</p>
+                    </div>
+                    <div>
+                      <strong>연결된 VLAN</strong>
+                      <p>{selectedVmacGroup.vlan_ids.join(', ') || '-'}</p>
+                    </div>
+                  </div>
+                  <DisplayCount visible={filteredVmacDevices.length} total={selectedVmacGroup.device_count} />
+                  <div className="table-shell compact-table-shell">
+                    <table className="data-table narrow">
+                      <thead>
+                        <tr>
+                          <th>Hostname</th>
+                          <th>Mgmt IP</th>
+                          <th>Interface</th>
+                          <th>VLAN ID</th>
+                          <th>VNI</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredVmacDevices.map((device) => (
+                          <tr key={`${selectedVmacGroup.vmac}-${device.device_id}-${device.interface_name}`}>
+                            <td>{device.hostname}</td>
+                            <td className="mono-cell">{device.mgmt_ip || '-'}</td>
+                            <td>{device.interface_name || '-'}</td>
+                            <td className="mono-cell">{device.vlan_id || '-'}</td>
+                            <td className="mono-cell">{device.vni || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </aside>
           </section>
         ) : null}
 

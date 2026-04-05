@@ -10,6 +10,7 @@ from app.schemas.responses import (
     LookupResponse,
     OverviewResponse,
     RecordListResponse,
+    VmacGroupListResponse,
     VniGroupListResponse,
     VrfGroupListResponse,
 )
@@ -84,6 +85,18 @@ def list_vni_records(
     return request.app.state.query_service.list_vni_groups(
         limit=limit,
         vni=vni,
+    )
+
+
+@router.get('/records/vmac', response_model=VmacGroupListResponse)
+def list_vmac_records(
+    request: Request,
+    limit: int = Query(default=200, ge=1, le=10000),
+    vmac: str | None = Query(default=None),
+) -> VmacGroupListResponse:
+    return request.app.state.query_service.list_vmac_groups(
+        limit=limit,
+        vmac=vmac,
     )
 
 

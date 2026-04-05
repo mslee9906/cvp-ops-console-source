@@ -10,7 +10,7 @@ from typing import Any
 from app.core.cvp_connector import CVPConnector
 from app.core.path_config import get_field_mapping, get_telemetry_paths
 from app.core.settings import CVPSourceEndpoint, Settings
-from app.services.config_parser import extract_ip_records, reconstruct_config_lines
+from app.services.config_parser import extract_ip_records, extract_vmac_records, reconstruct_config_lines
 
 
 VALUE_RE = re.compile(r'"value"\s*:\s*"?([^"}]+)"?')
@@ -69,6 +69,7 @@ class CVPCollectorSuite:
             vnis: list[dict[str, Any]] = []
             configs: list[dict[str, Any]] = []
             ip_records: list[dict[str, Any]] = []
+            vmacs: list[dict[str, Any]] = []
 
             for index, device_id in enumerate(target_ids, start=1):
                 device = devices.get(
@@ -178,6 +179,10 @@ class CVPCollectorSuite:
                     for item in device_ip_records:
                         item['cvp_source'] = self.source.name
                     ip_records.extend(device_ip_records)
+                    device_vmac_records = extract_vmac_records(device_id, device['hostname'], config_text)
+                    for item in device_vmac_records:
+                        item['cvp_source'] = self.source.name
+                    vmacs.extend(device_vmac_records)
 
                 logger.info(
                     "Completed device %s/%s: source=%s hostname=%s vrfs=%s bgp=%s vlans=%s vnis=%s config=%s",
@@ -201,6 +206,7 @@ class CVPCollectorSuite:
             'vlans': vlans,
             'vnis': vnis,
             'ip_records': ip_records,
+            'vmacs': vmacs,
             'configs': configs,
         }
 

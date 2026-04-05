@@ -30,6 +30,7 @@ import type {
   ResourceReservation,
   UserCreateInput,
   UserSummary,
+  VmacGroupListResponse,
   VniGroupListResponse,
   VrfGroupListResponse,
   WorkflowDocument,
@@ -136,6 +137,8 @@ export const api = {
     ),
   getVniGroups: (limit = 200, vni = '') =>
     request<VniGroupListResponse>(`/api/records/vni?limit=${limit}${vni ? `&vni=${encodeURIComponent(vni)}` : ''}`),
+  getVmacGroups: (limit = 200, vmac = '') =>
+    request<VmacGroupListResponse>(`/api/records/vmac?limit=${limit}${vmac ? `&vmac=${encodeURIComponent(vmac)}` : ''}`),
   searchConfig: (query: string, limit = 200) =>
     request<ConfigSearchResponse>(`/api/search/config?q=${encodeURIComponent(query)}&limit=${limit}`),
   getEdmLinks: () => request<EdmLink[]>('/api/edm-links'),

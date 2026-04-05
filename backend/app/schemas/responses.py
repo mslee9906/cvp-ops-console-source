@@ -144,6 +144,29 @@ class VniGroupListResponse(BaseModel):
     items: list[VniGroupItem] = Field(default_factory=list)
 
 
+class VmacGroupDevice(BaseModel):
+    device_id: str
+    hostname: str
+    mgmt_ip: str = ""
+    interface_name: str = ""
+    vlan_id: str = ""
+    vni: str = ""
+
+
+class VmacGroupItem(BaseModel):
+    vmac: str
+    device_count: int
+    vlan_ids: list[str] = Field(default_factory=list)
+    vni_ids: list[str] = Field(default_factory=list)
+    devices: list[VmacGroupDevice] = Field(default_factory=list)
+
+
+class VmacGroupListResponse(BaseModel):
+    scope: str = "vmac"
+    total_count: int
+    items: list[VmacGroupItem] = Field(default_factory=list)
+
+
 class ConfigSearchLine(BaseModel):
     line_number: int
     text: str

@@ -165,6 +165,7 @@ class KanbanTargetSnapshotResponse(BaseModel):
     vrfs: list[dict] = Field(default_factory=list)
     vlans: list[dict] = Field(default_factory=list)
     vnis: list[dict] = Field(default_factory=list)
+    vmac_entries: list[dict] = Field(default_factory=list)
     ip_records: list[dict] = Field(default_factory=list)
 
 
@@ -179,6 +180,7 @@ class KanbanValidationSection(BaseModel):
     key: str
     title: str
     items: list[KanbanValidationMatch] = Field(default_factory=list)
+    details: dict = Field(default_factory=dict)
 
 
 class KanbanValidationResponse(BaseModel):

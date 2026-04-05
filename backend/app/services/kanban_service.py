@@ -10,7 +10,7 @@ from app.repositories.kanban_repository import KanbanRepository
 from app.repositories.reservation_repository import ReservationRepository
 from app.repositories.snapshot_repository import SnapshotRepository
 from app.repositories.workflow_repository import WorkflowRepository
-from app.services.config_parser import extract_ip_records
+from app.services.config_parser import extract_ip_records, extract_vmac_records
 
 
 ROUTER_BGP_RE = re.compile(r"^\s*router bgp (\S+)", re.MULTILINE)
@@ -120,6 +120,7 @@ class KanbanService:
             "vrfs": self.snapshot_repository.get_vrf_entries_for_device(device_id) if linked_device else [],
             "vlans": self.snapshot_repository.get_vlan_entries_for_device(device_id) if linked_device else [],
             "vnis": self.snapshot_repository.get_vni_entries_for_device(device_id) if linked_device else [],
+            "vmac_entries": self.snapshot_repository.get_vmac_entries_for_device(device_id) if linked_device else [],
             "ip_records": self.snapshot_repository.get_ip_records_for_device(device_id) if linked_device else [],
         }
 
@@ -132,6 +133,24 @@ class KanbanService:
         device_scope = str(target.get("cvp_device_id", "") or "").strip()
         synthetic_device_id = device_scope or f"planned-target-{target_id}"
         parsed_ip_records = extract_ip_records(synthetic_device_id, target["display_name"], resolved_config)
+        parsed_vmac_records = extract_vmac_records(synthetic_device_id, target["display_name"], resolved_config)
+        vmac_source = "planned_config"
+        if not parsed_vmac_records and device_scope:
+            snapshot_vmac_records = self.snapshot_repository.get_vmac_entries_for_device(device_scope)
+            if snapshot_vmac_records:
+                parsed_vmac_records = [
+                    {
+                        "device_id": str(item.get("device_id") or device_scope),
+                        "hostname": str(item.get("hostname") or target["display_name"]),
+                        "interface_name": str(item.get("interface_name") or ""),
+                        "vlan_id": str(item.get("vlan_id") or ""),
+                        "vmac": str(item.get("vmac") or ""),
+                        "source": "snapshot",
+                    }
+                    for item in snapshot_vmac_records
+                ]
+                vmac_source = "snapshot"
+        vmac_items, vmac_details = self._validate_vmac_consistency(target, parsed_vmac_records, vmac_source)
 
         sections = [
             {
@@ -153,6 +172,12 @@ class KanbanService:
                 "key": "ip_overlap",
                 "title": "기타 IP / 서브넷 중복",
                 "items": self._validate_general_ip_overlap(target, parsed_ip_records),
+            },
+            {
+                "key": "vmac_consistency",
+                "title": "vMAC 일치성 검증",
+                "items": vmac_items,
+                "details": vmac_details,
             },
         ]
 
@@ -258,6 +283,226 @@ class KanbanService:
                     )
 
         return items
+
+    def _validate_vmac_consistency(
+        self,
+        target: dict[str, Any],
+        parsed_vmac_records: list[dict[str, Any]],
+        comparison_source: str = "planned_config",
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        linked_device_id = str(target.get("cvp_device_id", "") or "").strip()
+        if not parsed_vmac_records:
+            return [], {
+                "source": comparison_source,
+                "comparisons": [
+                    {
+                        "vlan_id": "",
+                        "vni": "",
+                        "planned_vmac": "",
+                        "status": "info",
+                        "reason": "no_vmac_source",
+                        "candidate_vnis": [],
+                        "peers": [],
+                    }
+                ],
+            }
+
+        vni_rows = self.snapshot_repository.get_vni_entries(limit=None)
+        vmac_rows = self.snapshot_repository.get_vmac_entries(limit=None)
+        vni_by_device_vlan = {
+            (str(item.get("device_id") or ""), str(item.get("vlan_id") or "")): str(item.get("vni") or "")
+            for item in vni_rows
+            if str(item.get("device_id") or "").strip() and str(item.get("vlan_id") or "").strip()
+        }
+        vni_candidates_by_vlan: dict[str, set[str]] = {}
+        for item in vni_rows:
+            vlan_id = str(item.get("vlan_id") or "").strip()
+            vni = str(item.get("vni") or "").strip()
+            if vlan_id and vni:
+                vni_candidates_by_vlan.setdefault(vlan_id, set()).add(vni)
+
+        vmac_by_device_vlan = {
+            (str(item.get("device_id") or ""), str(item.get("vlan_id") or "")): str(item.get("vmac") or "")
+            for item in vmac_rows
+            if str(item.get("device_id") or "").strip() and str(item.get("vlan_id") or "").strip()
+        }
+
+        items: list[dict[str, Any]] = []
+        comparisons: list[dict[str, Any]] = []
+        seen_vlans: set[str] = set()
+
+        for record in parsed_vmac_records:
+            vlan_id = str(record.get("vlan_id") or "").strip()
+            planned_vmac = str(record.get("vmac") or "").strip().lower()
+            if not vlan_id or not planned_vmac or vlan_id in seen_vlans:
+                continue
+            seen_vlans.add(vlan_id)
+
+            resolved_vni = ""
+            if linked_device_id:
+                resolved_vni = vni_by_device_vlan.get((linked_device_id, vlan_id), "")
+
+            if not resolved_vni:
+                candidate_vnis = sorted(vni_candidates_by_vlan.get(vlan_id, set()), key=self._numeric_sort_key)
+                if len(candidate_vnis) > 1:
+                    items.append(
+                        {
+                            "title": f"VLAN {vlan_id} vMAC 비교 대상 확인 필요",
+                            "body": "같은 VLAN ID가 여러 VNI에 연결되어 있어 어떤 확장 그룹과 비교해야 하는지 자동으로 확정할 수 없습니다.",
+                            "severity": "warning",
+                            "details": {
+                                "vlan_id": vlan_id,
+                                "planned_vmac": planned_vmac,
+                                "candidate_vnis": candidate_vnis,
+                            },
+                        }
+                    )
+                    comparisons.append(
+                        {
+                            "vlan_id": vlan_id,
+                            "vni": "",
+                            "planned_vmac": planned_vmac,
+                            "status": "review",
+                            "reason": "multiple_candidate_vni",
+                            "candidate_vnis": candidate_vnis,
+                            "peers": [],
+                        }
+                    )
+                    continue
+                resolved_vni = candidate_vnis[0] if candidate_vnis else ""
+
+            if not resolved_vni:
+                comparisons.append(
+                    {
+                        "vlan_id": vlan_id,
+                        "vni": "",
+                        "planned_vmac": planned_vmac,
+                        "status": "info",
+                        "reason": "no_vni_context",
+                        "candidate_vnis": [],
+                        "peers": [],
+                    }
+                )
+                continue
+
+            peer_rows = []
+            seen_peers: set[tuple[str, str]] = set()
+            for item in vni_rows:
+                candidate_vni = str(item.get("vni") or "").strip()
+                candidate_vlan = str(item.get("vlan_id") or "").strip()
+                candidate_device_id = str(item.get("device_id") or "").strip()
+                if candidate_vni != resolved_vni or candidate_vlan != vlan_id:
+                    continue
+                if linked_device_id and candidate_device_id == linked_device_id:
+                    continue
+                dedupe_key = (candidate_device_id, candidate_vlan)
+                if dedupe_key in seen_peers:
+                    continue
+                seen_peers.add(dedupe_key)
+                peer_rows.append(item)
+
+            if not peer_rows:
+                comparisons.append(
+                    {
+                        "vlan_id": vlan_id,
+                        "vni": resolved_vni,
+                        "planned_vmac": planned_vmac,
+                        "status": "info",
+                        "reason": "no_peer_devices",
+                        "candidate_vnis": [],
+                        "peers": [],
+                    }
+                )
+                continue
+
+            mismatched_peers: list[dict[str, Any]] = []
+            missing_peers: list[dict[str, Any]] = []
+            matched_peers: list[dict[str, Any]] = []
+            for peer in peer_rows:
+                peer_device_id = str(peer.get("device_id") or "").strip()
+                peer_vmac = str(vmac_by_device_vlan.get((peer_device_id, vlan_id), "") or "").strip().lower()
+                peer_context = {
+                    "device_id": peer_device_id,
+                    "hostname": str(peer.get("hostname") or ""),
+                    "vni": resolved_vni,
+                    "vlan_id": vlan_id,
+                    "interface_name": f"Vlan{vlan_id}",
+                    "vmac": peer_vmac,
+                }
+                if not peer_vmac:
+                    missing_peers.append(peer_context)
+                    continue
+                if peer_vmac != planned_vmac:
+                    mismatched_peers.append(peer_context)
+                    continue
+                matched_peers.append(peer_context)
+
+            if mismatched_peers:
+                comparisons.append(
+                    {
+                        "vlan_id": vlan_id,
+                        "vni": resolved_vni,
+                        "planned_vmac": planned_vmac,
+                        "status": "error",
+                        "reason": "peer_mismatch",
+                        "candidate_vnis": [],
+                        "peers": matched_peers + mismatched_peers,
+                    }
+                )
+                items.append(
+                    {
+                        "title": f"VLAN {vlan_id} vMAC 불일치",
+                        "body": f"같은 VNI {resolved_vni}로 확장된 상대 장비와 vMAC 값이 다릅니다. 동일 L2 확장 장비는 같은 vMAC을 사용해야 합니다.",
+                        "severity": "error",
+                        "details": {
+                            "vlan_id": vlan_id,
+                            "vni": resolved_vni,
+                            "planned_vmac": planned_vmac,
+                            "matches": mismatched_peers,
+                        },
+                    }
+                )
+                continue
+
+            if missing_peers:
+                comparisons.append(
+                    {
+                        "vlan_id": vlan_id,
+                        "vni": resolved_vni,
+                        "planned_vmac": planned_vmac,
+                        "status": "warning",
+                        "reason": "peer_missing_vmac",
+                        "candidate_vnis": [],
+                        "peers": matched_peers + missing_peers,
+                    }
+                )
+                items.append(
+                    {
+                        "title": f"VLAN {vlan_id} 상대 장비 vMAC 확인 필요",
+                        "body": f"같은 VNI {resolved_vni}에 연결된 일부 상대 장비에 vMAC 설정이 없어 일치성 검증을 완전히 끝낼 수 없습니다.",
+                        "severity": "warning",
+                        "details": {
+                            "vlan_id": vlan_id,
+                            "vni": resolved_vni,
+                            "planned_vmac": planned_vmac,
+                            "matches": missing_peers,
+                        },
+                    }
+                )
+                continue
+
+            comparisons.append(
+                {
+                    "vlan_id": vlan_id,
+                    "vni": resolved_vni,
+                    "planned_vmac": planned_vmac,
+                    "status": "ok",
+                    "reason": "all_peers_match",
+                    "candidate_vnis": [],
+                    "peers": matched_peers,
+                }
+            )
+        return items, {"source": comparison_source, "comparisons": comparisons}
 
     def _validate_interface_addresses(
         self,
@@ -630,3 +875,7 @@ class KanbanService:
         if similarity >= 0.65:
             return 0.95
         return 2.2
+
+    def _numeric_sort_key(self, value: Any) -> tuple[int, str]:
+        token = str(value or "").strip()
+        return (0, f"{int(token):010d}") if token.isdigit() else (1, token.lower())

@@ -15,14 +15,29 @@ import type {
 } from '../../types'
 import './workplan.css'
 
-type WorkPlanStepKey = 'planned_config' | 'snapshot' | 'reservation' | 'diff' | 'validation'
+type WorkPlanStepKey = 'planned_config' | 'snapshot' | 'reservation' | 'validation' | 'vmac_validation' | 'diff'
+type VmacComparison = {
+  vlan_id?: string
+  vni?: string
+  planned_vmac?: string
+  status?: string
+  reason?: string
+  candidate_vnis?: string[]
+  peers?: Array<Record<string, unknown>>
+}
+
+type VmacDetailBundle = {
+  source?: string
+  comparisons?: VmacComparison[]
+}
 
 const WORK_PLAN_STEP_META: Array<{ key: WorkPlanStepKey; label: string; body: string }> = [
   { key: 'planned_config', label: '예정 Config', body: '대상 장비별 예정 Config를 입력하고 저장합니다.' },
   { key: 'snapshot', label: 'Snapshot', body: 'CVP 연결 여부를 정하고, 연결된 장비의 현재 snapshot을 확인합니다.' },
   { key: 'reservation', label: '예약', body: 'BGP AS와 VxLAN VNI 사용 예정 값을 카드 단위로 예약하고 상태를 공유합니다.' },
-  { key: 'diff', label: 'Diff', body: '기존 snapshot Config와 예정 Config를 나란히 비교합니다.' },
   { key: 'validation', label: '자동 검증', body: 'BGP ASN, Loopback, 일반 IP 중복 여부를 순차적으로 확인합니다.' },
+  { key: 'vmac_validation', label: 'vMAC 검증', body: '같은 VLAN/VNI L2 확장 장비 간 virtual-router MAC 일치 여부를 확인합니다.' },
+  { key: 'diff', label: 'Diff', body: '기존 snapshot Config와 예정 Config를 나란히 비교합니다.' },
 ]
 
 export function WorkPlanBoard() {
@@ -75,6 +90,33 @@ export function WorkPlanBoard() {
     () => WORK_PLAN_STEP_META.find((step) => step.key === activeStep) ?? WORK_PLAN_STEP_META[0],
     [activeStep],
   )
+  const vmacValidationSection = useMemo(
+    () => validationData?.sections.find((section) => section.key === 'vmac_consistency') ?? null,
+    [validationData],
+  )
+  const vmacDetailBundle = useMemo(() => {
+    const raw = vmacValidationSection?.details as VmacDetailBundle | undefined
+    return raw ?? {}
+  }, [vmacValidationSection])
+  const vmacComparisons = useMemo(() => {
+    const raw = vmacDetailBundle?.comparisons as unknown
+    if (!Array.isArray(raw)) {
+      return [] as VmacComparison[]
+    }
+    return raw
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+      .map((item) => ({
+        vlan_id: String(item.vlan_id ?? ''),
+        vni: String(item.vni ?? ''),
+        planned_vmac: String(item.planned_vmac ?? ''),
+        status: String(item.status ?? ''),
+        reason: String(item.reason ?? ''),
+        candidate_vnis: Array.isArray(item.candidate_vnis) ? item.candidate_vnis.map((value) => String(value)) : [],
+        peers: Array.isArray(item.peers)
+          ? item.peers.filter((peer): peer is Record<string, unknown> => Boolean(peer) && typeof peer === 'object' && !Array.isArray(peer))
+          : [],
+      }))
+  }, [vmacDetailBundle])
   const linkCandidates = useMemo(() => {
     const token = linkFilter.trim().toLowerCase()
     const currentDeviceId = selectedTarget?.cvp_device_id ?? ''
@@ -300,14 +342,14 @@ export function WorkPlanBoard() {
     await persistCardChanges({ planned_configs: nextConfigs }, '예정 Config가 저장되었습니다.')
   }
 
-  async function handleValidate() {
+  async function handleValidate(nextStep: WorkPlanStepKey = 'validation') {
     if (!selectedTarget?.id) {
       return
     }
     try {
       setValidationLoading(true)
       setValidationData(await api.validateKanbanConfig(selectedTarget.id, plannedConfigDraft))
-      setActiveStep('validation')
+      setActiveStep(nextStep)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : '검증에 실패했습니다.')
     } finally {
@@ -580,7 +622,7 @@ export function WorkPlanBoard() {
                           <button className="workplan-primary-button" type="button" onClick={() => void handleSavePlannedConfig()} disabled={saving}>
                             저장
                           </button>
-                          <button className="workplan-ghost-button" type="button" onClick={() => void handleValidate()} disabled={validationLoading}>
+                          <button className="workplan-ghost-button" type="button" onClick={() => void handleValidate('validation')} disabled={validationLoading}>
                             {validationLoading ? '검증 중...' : '검증 실행'}
                           </button>
                         </div>
@@ -779,7 +821,7 @@ export function WorkPlanBoard() {
                     <section className="workplan-stage-card tall">
                       <div className="workplan-stage-card-head">
                         <strong>자동 검증 결과</strong>
-                        <button className="workplan-ghost-button" type="button" onClick={() => void handleValidate()} disabled={validationLoading}>
+                        <button className="workplan-ghost-button" type="button" onClick={() => void handleValidate('validation')} disabled={validationLoading}>
                           {validationLoading ? '검증 중...' : '다시 검증'}
                         </button>
                       </div>
@@ -822,6 +864,101 @@ export function WorkPlanBoard() {
                         <div className="workplan-empty-state">
                           <strong>검증 결과가 아직 없습니다.</strong>
                           <p>예정 Config 단계에서 검증 실행을 누르면 여기에서 단계별 결과를 확인할 수 있습니다.</p>
+                        </div>
+                      )}
+                    </section>
+                  ) : null}
+
+                  {activeStep === 'vmac_validation' ? (
+                    <section className="workplan-stage-card tall">
+                      <div className="workplan-stage-card-head">
+                        <strong>vMAC 검증 결과</strong>
+                        <button className="workplan-ghost-button" type="button" onClick={() => void handleValidate('vmac_validation')} disabled={validationLoading}>
+                          {validationLoading ? '검증 중...' : '다시 검증'}
+                        </button>
+                      </div>
+                      <div className="workplan-validation-summary subtle">
+                        <strong>검증 기준</strong>
+                        <p>같은 VLAN과 같은 VNI로 연결된 장비가 있으면, 상대 장비의 virtual-router MAC과 현재 기준값이 같은지 확인합니다.</p>
+                        <p>현재 비교 기준: {formatVmacSourceLabel(vmacDetailBundle.source)}</p>
+                      </div>
+                      {validationData && validationData.target_id === selectedTarget.id && vmacValidationSection ? (
+                        <div className="workplan-validation-grid">
+                          <article className="workplan-validation-card">
+                            <div className="workplan-validation-head">
+                              <strong>{vmacValidationSection.title}</strong>
+                              <span>{vmacValidationSection.items.length}건</span>
+                            </div>
+                            {vmacValidationSection.items.length > 0 ? (
+                              vmacValidationSection.items.map((item, index) => (
+                                <div key={`vmac-${index}`} className={`workplan-validation-item ${item.severity}`}>
+                                  <div className="workplan-validation-item-head">
+                                    <span>{severityLabel(item.severity)}</span>
+                                    <strong>{item.title}</strong>
+                                  </div>
+                                  <p>{item.body}</p>
+                                  <ValidationMatchSummary item={item} />
+                                </div>
+                              ))
+                            ) : vmacComparisons.length > 0 && !vmacComparisons.every((comparison) => String(comparison.reason ?? '') === 'no_vmac_source') ? (
+                              <div className="workplan-validation-item ok">
+                                <div className="workplan-validation-item-head">
+                                  <CheckCircle2 size={16} />
+                                  <strong>문제 없음</strong>
+                                </div>
+                                <p>같은 VLAN/VNI L2 확장 장비와의 vMAC 불일치가 발견되지 않았습니다.</p>
+                              </div>
+                            ) : (
+                              <div className="workplan-validation-item info">
+                                <div className="workplan-validation-item-head">
+                                  <strong>검증 불가</strong>
+                                </div>
+                                <p>예정 Config 또는 현재 snapshot에서 비교 가능한 vMAC 기준값을 찾지 못했습니다.</p>
+                              </div>
+                            )}
+                          </article>
+                          <article className="workplan-validation-card">
+                            <div className="workplan-validation-head">
+                              <strong>검증 근거</strong>
+                              <span>{vmacComparisons.length}건</span>
+                            </div>
+                            {vmacComparisons.length > 0 ? (
+                              <div className="table-shell compact-table-shell">
+                                <table className="data-table narrow">
+                                  <thead>
+                                    <tr>
+                                      <th>상태</th>
+                                      <th>VLAN</th>
+                                      <th>VNI</th>
+                                      <th>예정 vMAC</th>
+                                      <th>비교 근거</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {vmacComparisons.map((comparison, index) => (
+                                      <tr key={`${comparison.vlan_id ?? 'none'}-${comparison.vni ?? 'none'}-${index}`}>
+                                        <td>{comparisonStatusLabel(comparison.status)}</td>
+                                        <td className="mono-cell">{String(comparison.vlan_id ?? '-') || '-'}</td>
+                                        <td className="mono-cell">{String(comparison.vni ?? '-') || '-'}</td>
+                                        <td className="mono-cell">{String(comparison.planned_vmac ?? '-') || '-'}</td>
+                                        <td>{formatVmacComparisonReason(comparison)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ) : (
+                              <div className="workplan-empty-state compact">
+                                <strong>표시할 비교 근거가 없습니다.</strong>
+                                <p>예정 Config에 vMAC이 없거나, 비교 가능한 L2 확장 peer가 아직 없습니다.</p>
+                              </div>
+                            )}
+                          </article>
+                        </div>
+                      ) : (
+                        <div className="workplan-empty-state">
+                          <strong>vMAC 검증 결과가 아직 없습니다.</strong>
+                          <p>예정 Config 단계에서 검증 실행을 누르면 여기에서 virtual-router MAC 비교 결과를 확인할 수 있습니다.</p>
                         </div>
                       )}
                     </section>
@@ -952,6 +1089,53 @@ function severityLabel(severity: string) {
   return '안내'
 }
 
+function comparisonStatusLabel(status: unknown) {
+  const token = String(status ?? '').toLowerCase()
+  if (token === 'error') return '불일치'
+  if (token === 'warning') return '검토'
+  if (token === 'ok') return '정상'
+  return '안내'
+}
+
+function formatVmacComparisonReason(comparison: Record<string, unknown>) {
+  const reason = String(comparison.reason ?? '')
+  const peers = Array.isArray(comparison.peers) ? comparison.peers : []
+  const candidateVnis = Array.isArray(comparison.candidate_vnis) ? comparison.candidate_vnis.map(String) : []
+
+  if (reason === 'all_peers_match') {
+    return peers.length > 0
+      ? peers.map((peer) => `${String((peer as Record<string, unknown>).hostname ?? '-')}=${String((peer as Record<string, unknown>).vmac ?? '-')}`).join(', ')
+      : '동일 VNI peer와 vMAC이 모두 일치합니다.'
+  }
+  if (reason === 'peer_mismatch') {
+    return peers.map((peer) => `${String((peer as Record<string, unknown>).hostname ?? '-')}=${String((peer as Record<string, unknown>).vmac ?? '-')}`).join(', ')
+  }
+  if (reason === 'peer_missing_vmac') {
+    return peers.map((peer) => `${String((peer as Record<string, unknown>).hostname ?? '-')}=${String((peer as Record<string, unknown>).vmac ?? '미설정')}`).join(', ')
+  }
+  if (reason === 'multiple_candidate_vni') {
+    return candidateVnis.length > 0 ? `비교 후보 VNI: ${candidateVnis.join(', ')}` : '후보 VNI를 자동 확정할 수 없습니다.'
+  }
+  if (reason === 'no_peer_devices') {
+    return '같은 VLAN/VNI에 비교 대상 peer 장비가 없습니다.'
+  }
+  if (reason === 'no_vni_context') {
+    return '예정 Config만으로 비교할 VNI를 확정할 수 없습니다.'
+  }
+  if (reason === 'no_vmac_source') {
+    return '예정 Config와 현재 snapshot 모두에서 비교 가능한 vMAC 값을 찾지 못했습니다.'
+  }
+  return '-'
+}
+
+function formatVmacSourceLabel(source: unknown) {
+  const token = String(source ?? '')
+  if (token === 'snapshot') {
+    return '링크된 장비의 현재 snapshot vMAC'
+  }
+  return '예정 Config의 vMAC'
+}
+
 function ValidationMatchSummary({ item }: { item: KanbanValidationResponse['sections'][number]['items'][number] }) {
   const matches = extractValidationMatches(item.details)
   if (!matches.length) {
@@ -990,6 +1174,9 @@ function extractValidationMatches(details: Record<string, unknown> | undefined) 
       address: String(entry.address ?? ''),
       network: String(entry.network ?? ''),
       asn: String(entry.asn ?? ''),
+      vlan_id: String(entry.vlan_id ?? ''),
+      vni: String(entry.vni ?? ''),
+      vmac: String(entry.vmac ?? ''),
     }))
 }
 
@@ -999,8 +1186,19 @@ function formatValidationMatchMeta(match: {
   address: string
   network: string
   asn: string
+  vlan_id: string
+  vni: string
+  vmac: string
 }) {
-  const parts = [match.interface_name, match.vrf, match.address || match.network, match.asn ? `AS ${match.asn}` : ''].filter(Boolean)
+  const parts = [
+    match.interface_name,
+    match.vrf,
+    match.address || match.network,
+    match.vlan_id ? `VLAN ${match.vlan_id}` : '',
+    match.vni ? `VNI ${match.vni}` : '',
+    match.vmac ? `vMAC ${match.vmac}` : '',
+    match.asn ? `AS ${match.asn}` : '',
+  ].filter(Boolean)
   return parts.join(' · ')
 }
 

@@ -132,6 +132,29 @@ export interface VniGroupListResponse {
   items: VniGroupItem[]
 }
 
+export interface VmacGroupDevice {
+  device_id: string
+  hostname: string
+  mgmt_ip: string
+  interface_name: string
+  vlan_id: string
+  vni: string
+}
+
+export interface VmacGroupItem {
+  vmac: string
+  device_count: number
+  vlan_ids: string[]
+  vni_ids: string[]
+  devices: VmacGroupDevice[]
+}
+
+export interface VmacGroupListResponse {
+  scope: 'vmac'
+  total_count: number
+  items: VmacGroupItem[]
+}
+
 export interface ConfigSearchLine {
   line_number: number
   text: string
@@ -290,6 +313,7 @@ export interface KanbanTargetSnapshotResponse {
   vrfs: Array<Record<string, DetailValue>>
   vlans: Array<Record<string, DetailValue>>
   vnis: Array<Record<string, DetailValue>>
+  vmac_entries: Array<Record<string, DetailValue>>
   ip_records: Array<Record<string, DetailValue>>
 }
 
@@ -304,6 +328,7 @@ export interface KanbanValidationSection {
   key: string
   title: string
   items: KanbanValidationMatch[]
+  details?: Record<string, DetailValue>
 }
 
 export interface KanbanValidationResponse {

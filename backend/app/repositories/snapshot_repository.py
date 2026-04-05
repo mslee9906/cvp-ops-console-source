@@ -61,6 +61,17 @@ CREATE TABLE IF NOT EXISTS vni_entries (
     FOREIGN KEY(device_id) REFERENCES devices(device_id)
 );
 
+CREATE TABLE IF NOT EXISTS vmac_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL,
+    hostname TEXT NOT NULL,
+    interface_name TEXT NOT NULL,
+    vlan_id TEXT NOT NULL,
+    vmac TEXT NOT NULL,
+    source TEXT NOT NULL,
+    FOREIGN KEY(device_id) REFERENCES devices(device_id)
+);
+
 CREATE TABLE IF NOT EXISTS ip_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     device_id TEXT NOT NULL,
@@ -145,6 +156,18 @@ CREATE TABLE IF NOT EXISTS vni_entries_raw (
     source_path TEXT
 );
 
+CREATE TABLE IF NOT EXISTS vmac_entries_raw (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    raw_device_key TEXT NOT NULL,
+    cvp_source TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    hostname TEXT NOT NULL,
+    interface_name TEXT NOT NULL,
+    vlan_id TEXT NOT NULL,
+    vmac TEXT NOT NULL,
+    source TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS ip_records_raw (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     raw_device_key TEXT NOT NULL,
@@ -190,6 +213,8 @@ CREATE INDEX IF NOT EXISTS idx_vlans_vlan_id ON vlans(vlan_id);
 CREATE INDEX IF NOT EXISTS idx_vlans_vlan_name ON vlans(vlan_name COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_vni_entries_vni ON vni_entries(vni);
 CREATE INDEX IF NOT EXISTS idx_vni_entries_vlan_id ON vni_entries(vlan_id);
+CREATE INDEX IF NOT EXISTS idx_vmac_entries_vmac ON vmac_entries(vmac);
+CREATE INDEX IF NOT EXISTS idx_vmac_entries_vlan_id ON vmac_entries(vlan_id);
 CREATE INDEX IF NOT EXISTS idx_ip_records_address ON ip_records(address);
 CREATE INDEX IF NOT EXISTS idx_ip_records_vrf ON ip_records(vrf COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_ip_records_hostname ON ip_records(hostname);
@@ -200,6 +225,7 @@ CREATE INDEX IF NOT EXISTS idx_bgp_entries_raw_asn ON bgp_entries_raw(asn);
 CREATE INDEX IF NOT EXISTS idx_vrfs_raw_name ON vrfs_raw(vrf_name COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_vlans_raw_vlan_id ON vlans_raw(vlan_id);
 CREATE INDEX IF NOT EXISTS idx_vni_entries_raw_vni ON vni_entries_raw(vni);
+CREATE INDEX IF NOT EXISTS idx_vmac_entries_raw_vmac ON vmac_entries_raw(vmac);
 CREATE INDEX IF NOT EXISTS idx_ip_records_raw_address ON ip_records_raw(address);
 """
 
@@ -587,6 +613,45 @@ class SnapshotRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def get_vmac_entries(
+        self,
+        vmac: str | None = None,
+        vlan_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        query = """
+            SELECT device_id, hostname, interface_name, vlan_id, vmac, source
+            FROM vmac_entries
+            WHERE 1 = 1
+        """
+        params: list[Any] = []
+        if vmac:
+            query += " AND vmac = ?"
+            params.append(vmac)
+        if vlan_id:
+            query += " AND vlan_id = ?"
+            params.append(vlan_id)
+        query += " ORDER BY vmac, hostname, interface_name"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_vmac_entries_for_device(self, device_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT device_id, hostname, interface_name, vlan_id, vmac, source
+                FROM vmac_entries
+                WHERE device_id = ?
+                ORDER BY vlan_id, interface_name
+                """,
+                (device_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def get_ip_records(self, vrf: str | None = None) -> list[dict[str, Any]]:
         query = """
             SELECT
@@ -642,6 +707,7 @@ class SnapshotRepository:
             DELETE FROM vrfs;
             DELETE FROM vlans;
             DELETE FROM vni_entries;
+            DELETE FROM vmac_entries;
             DELETE FROM ip_records;
             DELETE FROM devices;
             DELETE FROM config_snapshots;
@@ -649,6 +715,7 @@ class SnapshotRepository:
             DELETE FROM vrfs_raw;
             DELETE FROM vlans_raw;
             DELETE FROM vni_entries_raw;
+            DELETE FROM vmac_entries_raw;
             DELETE FROM ip_records_raw;
             DELETE FROM devices_raw;
             DELETE FROM config_snapshots_raw;
@@ -788,6 +855,27 @@ class SnapshotRepository:
                     item.get("source", "config"),
                 )
                 for item in snapshot.get("ip_records", [])
+            ],
+        )
+
+        cursor.executemany(
+            """
+            INSERT INTO vmac_entries_raw (
+                raw_device_key, cvp_source, device_id, hostname, interface_name, vlan_id, vmac, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    self._raw_device_key(item["cvp_source"], item["device_id"]),
+                    item["cvp_source"],
+                    item["device_id"],
+                    item["hostname"],
+                    item["interface_name"],
+                    str(item["vlan_id"]),
+                    item["vmac"],
+                    item.get("source", "config"),
+                )
+                for item in snapshot.get("vmacs", [])
             ],
         )
 
@@ -938,6 +1026,25 @@ class SnapshotRepository:
 
         cursor.executemany(
             """
+            INSERT INTO vmac_entries (
+                device_id, hostname, interface_name, vlan_id, vmac, source
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    item["device_id"],
+                    item["hostname"],
+                    item["interface_name"],
+                    str(item["vlan_id"]),
+                    item["vmac"],
+                    item.get("source", "config"),
+                )
+                for item in snapshot.get("vmacs", [])
+            ],
+        )
+
+        cursor.executemany(
+            """
             INSERT INTO config_snapshots (
                 device_id, hostname, config_hash, file_path, collected_at, line_count
             ) VALUES (?, ?, ?, ?, ?, ?)
@@ -1042,6 +1149,7 @@ class SnapshotRepository:
             "vlans": merge_rows(snapshot.get("vlans", [])),
             "vnis": merge_rows(snapshot.get("vnis", [])),
             "ip_records": merge_rows(snapshot.get("ip_records", [])),
+            "vmacs": merge_rows(snapshot.get("vmacs", [])),
             "configs": [],
         }
         return merged_snapshot, merged_metadata
@@ -1054,6 +1162,7 @@ class SnapshotRepository:
             "vlans": [],
             "vnis": [],
             "ip_records": [],
+            "vmacs": [],
             "configs": [],
         }
         for key in normalized:

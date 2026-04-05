@@ -116,7 +116,7 @@ class CollectionService:
             if self.reservation_service is not None:
                 self.reservation_service.reconcile_snapshot()
             logger.info(
-                "Snapshot refresh completed successfully. source=%s devices=%s bgp=%s vrfs=%s vlans=%s vnis=%s ip_records=%s configs=%s source_failures=%s",
+                "Snapshot refresh completed successfully. source=%s devices=%s bgp=%s vrfs=%s vlans=%s vnis=%s ip_records=%s vmacs=%s configs=%s source_failures=%s",
                 source,
                 len(snapshot.get('devices', [])),
                 len(snapshot.get('bgp', [])),
@@ -124,6 +124,7 @@ class CollectionService:
                 len(snapshot.get('vlans', [])),
                 len(snapshot.get('vnis', [])),
                 len(snapshot.get('ip_records', [])),
+                len(snapshot.get('vmacs', [])),
                 len(snapshot.get('configs', [])),
                 len(failure_details),
             )
@@ -269,11 +270,12 @@ class CollectionService:
             'vlans': [],
             'vnis': [],
             'ip_records': [],
+            'vmacs': [],
             'configs': [],
         }
 
     def _extend_snapshot(self, target: dict[str, Any], snapshot: dict[str, Any]) -> None:
-        for key in ('devices', 'bgp', 'vrfs', 'vlans', 'vnis', 'ip_records', 'configs'):
+        for key in ('devices', 'bgp', 'vrfs', 'vlans', 'vnis', 'ip_records', 'vmacs', 'configs'):
             target.setdefault(key, [])
             target[key].extend(snapshot.get(key, []))
 
