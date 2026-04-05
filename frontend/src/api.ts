@@ -261,10 +261,16 @@ export const api = {
   },
   getWorkHistory: () => request<WorkHistoryItem[]>('/api/history'),
   getWorkHistoryItem: (historyId: number) => request<WorkHistoryItem>(`/api/history/${historyId}`),
-  restoreWorkHistoryItem: (historyId: number) =>
+  restoreWorkHistoryItem: (historyId: number, options?: { delete_history?: boolean }) =>
     request<WorkHistoryRestoreResponse>(`/api/history/${historyId}/restore`, {
       method: 'POST',
+      body: JSON.stringify({ delete_history: Boolean(options?.delete_history) }),
     }),
+  deleteWorkHistoryItem: async (historyId: number) => {
+    await request<{ ok: boolean }>(`/api/history/${historyId}`, {
+      method: 'DELETE',
+    })
+  },
   getBackups: () => request<BackupItem[]>('/api/backups'),
   createBackup: () =>
     request<BackupCreateResponse>('/api/backups', {

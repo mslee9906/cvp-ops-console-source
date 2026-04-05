@@ -220,7 +220,7 @@ const viewMeta: Record<ViewId, ViewMeta> = {
 
 const managementViews: ViewId[] = ['ip', 'bgp', 'vlan', 'vmac', 'vni', 'vrf', 'devices', 'config', 'edm_link']
 const automationViews: ViewId[] = ['automation_ip_tags', 'automation_lldp_tags']
-const kanbanViews: ViewId[] = ['kanban', 'work_history', 'work_tool', 'work_plan']
+const kanbanViews: ViewId[] = ['kanban', 'work_tool', 'work_plan', 'work_history']
 
 const initialLookupState = {
   loading: false,

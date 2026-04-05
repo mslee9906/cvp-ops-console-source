@@ -398,7 +398,9 @@ export interface WorkHistoryItem {
 }
 
 export interface WorkHistoryRestoreResponse {
-  history: WorkHistoryItem
+  history_id: number
+  history_deleted: boolean
+  history?: WorkHistoryItem | null
   restored_card: KanbanCard
   restored_workflow?: WorkflowDocumentResponse | null
 }

@@ -13,6 +13,10 @@ type Props = {
 
 type HistoryViewMode = 'list' | 'detail' | 'workflow'
 type DetailStepKey = 'basic' | 'target' | 'complete'
+type ResultOverlay = {
+  title: string
+  body: string
+}
 
 const DETAIL_STEP_META: Array<{ key: DetailStepKey; label: string; body: string }> = [
   { key: 'basic', label: '기본 정보', body: '작업 카드의 기본 정보와 상태를 읽기 전용으로 확인합니다.' },
@@ -47,6 +51,10 @@ export function WorkHistoryBoard({ currentUser, users }: Props) {
   const [viewMode, setViewMode] = useState<HistoryViewMode>('list')
   const [activeDetailStep, setActiveDetailStep] = useState<DetailStepKey>('basic')
   const [restoring, setRestoring] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [restoreChoiceOpen, setRestoreChoiceOpen] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [resultOverlay, setResultOverlay] = useState<ResultOverlay | null>(null)
   const [message, setMessage] = useState('')
 
   const deferredSearch = useDeferredValue(search)
@@ -115,6 +123,8 @@ export function WorkHistoryBoard({ currentUser, users }: Props) {
 
   function closeSummary() {
     setOverlayOpen(false)
+    setRestoreChoiceOpen(false)
+    setDeleteConfirmOpen(false)
   }
 
   function openDetailView() {
@@ -137,24 +147,75 @@ export function WorkHistoryBoard({ currentUser, users }: Props) {
   function returnToList() {
     setViewMode('list')
     setOverlayOpen(false)
+    setRestoreChoiceOpen(false)
+    setDeleteConfirmOpen(false)
     setActiveDetailStep('basic')
   }
 
-  async function handleRestore(item: WorkHistoryItem) {
+  function openRestoreChoice() {
+    if (!selectedItem) {
+      return
+    }
+    setRestoreChoiceOpen(true)
+  }
+
+  function openDeleteConfirm() {
+    if (!selectedItem) {
+      return
+    }
+    setDeleteConfirmOpen(true)
+  }
+
+  async function handleRestore(item: WorkHistoryItem, deleteHistory: boolean) {
     try {
       setRestoring(true)
       setError('')
-      const response = await api.restoreWorkHistoryItem(item.id)
-      setItems((current) =>
-        current.map((entry) => (entry.id === item.id ? response.history : entry)),
-      )
+      const response = await api.restoreWorkHistoryItem(item.id, { delete_history: deleteHistory })
+      setItems((current) => {
+        if (response.history_deleted) {
+          return current.filter((entry) => entry.id !== item.id)
+        }
+        if (!response.history) {
+          return current
+        }
+        return current.map((entry) => (entry.id === item.id ? response.history! : entry))
+      })
       setOverlayOpen(false)
+      setRestoreChoiceOpen(false)
+      setDeleteConfirmOpen(false)
+      setSelectedItemId(response.history_deleted ? null : item.id)
       setViewMode('list')
-      setMessage('작업 보드로 복원했습니다.')
+      setResultOverlay({
+        title: '작업 보드로 복원했습니다.',
+        body: deleteHistory
+          ? `${response.restored_card.card_code} 카드를 작업 예정으로 복원했고, 이력 항목은 삭제했습니다.`
+          : `${response.restored_card.card_code} 카드를 작업 예정으로 복원했고, 이력은 유지했습니다.`,
+      })
     } catch (restoreError) {
       setError(restoreError instanceof Error ? restoreError.message : '작업 복원에 실패했습니다.')
     } finally {
       setRestoring(false)
+    }
+  }
+
+  async function handleDeleteHistory(item: WorkHistoryItem) {
+    try {
+      setDeleting(true)
+      setError('')
+      await api.deleteWorkHistoryItem(item.id)
+      setItems((current) => current.filter((entry) => entry.id !== item.id))
+      setSelectedItemId(null)
+      setOverlayOpen(false)
+      setDeleteConfirmOpen(false)
+      setRestoreChoiceOpen(false)
+      setResultOverlay({
+        title: '작업 이력을 삭제했습니다.',
+        body: `${item.card_code} 이력 항목을 완전히 삭제했습니다.`,
+      })
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : '작업 이력 삭제에 실패했습니다.')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -503,17 +564,108 @@ export function WorkHistoryBoard({ currentUser, users }: Props) {
             </label>
 
             <div className="history-overlay-actions">
-              <button className="kanban-ghost-button" type="button" onClick={openDetailView}>
-                <ClipboardList size={16} />
-                <span>자세히 보기</span>
+              <div className="history-overlay-actions-left">
+                <button className="kanban-danger-button" type="button" onClick={openDeleteConfirm} disabled={restoring || deleting}>
+                  <span>이력 삭제</span>
+                </button>
+              </div>
+              <div className="history-overlay-actions-right">
+                <button className="kanban-ghost-button" type="button" onClick={openDetailView}>
+                  <ClipboardList size={16} />
+                  <span>자세히 보기</span>
+                </button>
+                <button className="kanban-ghost-button" type="button" onClick={openWorkflowView}>
+                  <History size={16} />
+                  <span>워크플로우 보기</span>
+                </button>
+                <button className="kanban-primary-button" type="button" onClick={openRestoreChoice} disabled={restoring || deleting}>
+                  <RotateCcw size={16} />
+                  <span>작업 보드로 복원</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {restoreChoiceOpen && selectedItem ? (
+        <div className="history-overlay" onClick={() => setRestoreChoiceOpen(false)}>
+          <div className="history-overlay-backdrop" />
+          <div className="history-overlay-panel history-overlay-panel-compact" onClick={(event) => event.stopPropagation()}>
+            <div className="history-overlay-head">
+              <div>
+                <p className="kanban-kicker">Restore Options</p>
+                <h3>{selectedItem.card_code} 복원 방식 선택</h3>
+                <p className="history-overlay-copy">작업 예정 컬럼으로 복원할 때, 이력 항목을 유지할지 함께 삭제할지 선택합니다.</p>
+              </div>
+              <button className="kanban-ghost-button" type="button" onClick={() => setRestoreChoiceOpen(false)}>
+                닫기
               </button>
-              <button className="kanban-ghost-button" type="button" onClick={openWorkflowView}>
-                <History size={16} />
-                <span>워크플로우 보기</span>
-              </button>
-              <button className="kanban-primary-button" type="button" onClick={() => void handleRestore(selectedItem)} disabled={restoring}>
+            </div>
+
+            <div className="history-overlay-actions history-overlay-actions-stack">
+              <button
+                className="kanban-primary-button"
+                type="button"
+                onClick={() => void handleRestore(selectedItem, false)}
+                disabled={restoring}
+              >
                 <RotateCcw size={16} />
-                <span>{restoring ? '복원 중...' : '작업 보드로 복원'}</span>
+                <span>{restoring ? '복원 중...' : '이력 유지하면서 복원'}</span>
+              </button>
+              <button
+                className="kanban-danger-button"
+                type="button"
+                onClick={() => void handleRestore(selectedItem, true)}
+                disabled={restoring}
+              >
+                <RotateCcw size={16} />
+                <span>{restoring ? '복원 중...' : '이력 삭제 후 복원'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteConfirmOpen && selectedItem ? (
+        <div className="history-overlay" onClick={() => setDeleteConfirmOpen(false)}>
+          <div className="history-overlay-backdrop" />
+          <div className="history-overlay-panel history-overlay-panel-compact" onClick={(event) => event.stopPropagation()}>
+            <div className="history-overlay-head">
+              <div>
+                <p className="kanban-kicker">Delete History</p>
+                <h3>{selectedItem.card_code} 이력을 삭제할까요?</h3>
+                <p className="history-overlay-copy">이 작업은 되돌릴 수 없습니다. 카드 자체가 아니라 보관된 이력 항목만 삭제됩니다.</p>
+              </div>
+              <button className="kanban-ghost-button" type="button" onClick={() => setDeleteConfirmOpen(false)}>
+                닫기
+              </button>
+            </div>
+
+            <div className="history-overlay-actions history-overlay-actions-stack">
+              <button className="kanban-ghost-button" type="button" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>
+                취소
+              </button>
+              <button className="kanban-danger-button" type="button" onClick={() => void handleDeleteHistory(selectedItem)} disabled={deleting}>
+                <span>{deleting ? '삭제 중...' : '이력 삭제'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {resultOverlay ? (
+        <div className="history-overlay" onClick={() => setResultOverlay(null)}>
+          <div className="history-overlay-backdrop" />
+          <div className="history-overlay-panel history-overlay-panel-compact" onClick={(event) => event.stopPropagation()}>
+            <div className="history-overlay-head">
+              <div>
+                <p className="kanban-kicker">Result</p>
+                <h3>{resultOverlay.title}</h3>
+                <p className="history-overlay-copy">{resultOverlay.body}</p>
+              </div>
+              <button className="kanban-ghost-button" type="button" onClick={() => setResultOverlay(null)}>
+                닫기
               </button>
             </div>
           </div>

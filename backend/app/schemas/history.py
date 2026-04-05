@@ -12,6 +12,10 @@ class WorkHistoryCompleteRequest(BaseModel):
     completed_note: str = Field(default="", max_length=5000)
 
 
+class WorkHistoryRestoreRequest(BaseModel):
+    delete_history: bool = False
+
+
 class WorkHistoryItemResponse(BaseModel):
     id: int
     original_card_id: int
@@ -36,6 +40,8 @@ class WorkHistoryDetailResponse(WorkHistoryItemResponse):
 
 
 class WorkHistoryRestoreResponse(BaseModel):
-    history: WorkHistoryItemResponse
+    history_id: int
+    history_deleted: bool = False
+    history: WorkHistoryItemResponse | None = None
     restored_card: KanbanCardResponse
     restored_workflow: WorkflowDocumentResponse | None = None

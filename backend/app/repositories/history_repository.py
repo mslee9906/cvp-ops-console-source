@@ -133,6 +133,15 @@ class HistoryRepository:
             connection.commit()
         return self.get_entry(history_id)
 
+    def delete_entry(self, history_id: int) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM work_history_entries WHERE id = ?",
+                (history_id,),
+            )
+            connection.commit()
+        return cursor.rowcount > 0
+
     def _serialize_entry(self, row: sqlite3.Row) -> dict[str, Any]:
         return {
             "id": int(row["id"]),

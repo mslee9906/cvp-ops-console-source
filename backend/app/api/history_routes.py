@@ -6,6 +6,7 @@ from app.schemas.history import (
     WorkHistoryCompleteRequest,
     WorkHistoryDetailResponse,
     WorkHistoryItemResponse,
+    WorkHistoryRestoreRequest,
     WorkHistoryRestoreResponse,
 )
 from app.schemas.workflow import WorkflowDocumentResponse
@@ -58,14 +59,18 @@ def complete_card(request: Request, card_id: int, payload: WorkHistoryCompleteRe
 
 
 @router.post("/{history_id}/restore", response_model=WorkHistoryRestoreResponse)
-def restore_history(request: Request, history_id: int) -> WorkHistoryRestoreResponse:
+def restore_history(request: Request, history_id: int, payload: WorkHistoryRestoreRequest) -> WorkHistoryRestoreResponse:
     current_user = _require_editor(request)
-    history = request.app.state.history_service.restore_card(history_id, current_user)
-    if not history:
+    result = request.app.state.history_service.restore_card(
+        history_id,
+        current_user,
+        delete_history=payload.delete_history,
+    )
+    if not result:
         raise HTTPException(status_code=404, detail="History entry not found")
 
-    restored_card_id = history.get("restored_card_id")
-    restored_card = request.app.state.kanban_service.get_card(int(restored_card_id)) if restored_card_id else None
+    restored_card = result.get("restored_card")
+    restored_card_id = restored_card.get("id") if restored_card else None
     restored_workflow_payload = None
     if restored_card_id:
         workflow_document = request.app.state.workflow_service.get_card_workflow(int(restored_card_id))
@@ -74,7 +79,18 @@ def restore_history(request: Request, history_id: int) -> WorkHistoryRestoreResp
     if not restored_card:
         raise HTTPException(status_code=500, detail="Restored card could not be reloaded")
     return {
-        "history": history,
+        "history_id": history_id,
+        "history_deleted": bool(result.get("history_deleted")),
+        "history": result.get("history"),
         "restored_card": restored_card,
         "restored_workflow": restored_workflow_payload,
     }
+
+
+@router.delete("/{history_id}")
+def delete_history(request: Request, history_id: int) -> dict[str, bool]:
+    _require_editor(request)
+    deleted = request.app.state.history_service.delete_history(history_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="History entry not found")
+    return {"ok": True}

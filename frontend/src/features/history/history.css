@@ -122,8 +122,35 @@
 }
 
 .history-overlay-actions {
-  justify-content: flex-end;
+  justify-content: space-between;
   flex-wrap: wrap;
+}
+
+.history-overlay-actions-left,
+.history-overlay-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.history-overlay-actions-right {
+  justify-content: flex-end;
+  flex: 1;
+}
+
+.history-overlay-actions-stack {
+  justify-content: flex-end;
+}
+
+.history-overlay-actions-stack .kanban-primary-button,
+.history-overlay-actions-stack .kanban-danger-button,
+.history-overlay-actions-stack .kanban-ghost-button {
+  justify-content: center;
+}
+
+.history-overlay-panel-compact {
+  width: min(520px, 100%);
 }
 
 .history-readonly-form textarea,
@@ -150,6 +177,12 @@
   .history-detail-grid {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .history-overlay-actions-left,
+  .history-overlay-actions-right {
+    width: 100%;
+    justify-content: stretch;
   }
 
   .history-search {

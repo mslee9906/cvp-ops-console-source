@@ -58,22 +58,36 @@ class HistoryService:
         self.kanban_repository.delete_card(card_id)
         return history_entry
 
-    def restore_card(self, history_id: int, current_user: dict[str, Any]) -> dict[str, Any] | None:
+    def restore_card(
+        self,
+        history_id: int,
+        current_user: dict[str, Any],
+        *,
+        delete_history: bool = False,
+    ) -> dict[str, Any] | None:
         entry = self.repository.get_entry(history_id)
         if not entry:
             return None
 
         archived_card = deepcopy(entry.get("archived_card") or {})
         archived_card_code = str(entry.get("card_code") or archived_card.get("card_code") or "").strip()
+        response_history: dict[str, Any] | None = entry
         if archived_card_code:
             existing_card = self.kanban_repository.get_card_by_code(archived_card_code)
             if existing_card:
-                self.repository.mark_restored(
+                response_history = self.repository.mark_restored(
                     history_id,
                     restored_card_id=int(existing_card["id"]),
                     restored_by_user_id=self._coerce_optional_int(current_user.get("id")),
                 )
-                return self.repository.get_entry(history_id)
+                if delete_history:
+                    self.repository.delete_entry(history_id)
+                    response_history = None
+                return {
+                    "history": response_history,
+                    "history_deleted": bool(delete_history),
+                    "restored_card": existing_card,
+                }
 
         if not archived_card:
             raise ValueError("History entry does not contain archived card data")
@@ -110,12 +124,22 @@ class HistoryService:
             archived_workflow["lastUpdatedBy"] = self._user_label(current_user)
             self.workflow_repository.save_document(restored_card["id"], archived_workflow, timestamp=archived_workflow["lastUpdated"])
 
-        self.repository.mark_restored(
+        response_history = self.repository.mark_restored(
             history_id,
             restored_card_id=int(restored_card["id"]),
             restored_by_user_id=self._coerce_optional_int(current_user.get("id")),
         )
-        return self.repository.get_entry(history_id)
+        if delete_history:
+            self.repository.delete_entry(history_id)
+            response_history = None
+        return {
+            "history": response_history,
+            "history_deleted": bool(delete_history),
+            "restored_card": restored_card,
+        }
+
+    def delete_history(self, history_id: int) -> bool:
+        return self.repository.delete_entry(history_id)
 
     def _archive_done_cards(self) -> None:
         for card in self.kanban_repository.list_cards():
