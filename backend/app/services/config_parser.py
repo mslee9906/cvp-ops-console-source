@@ -136,57 +136,64 @@ def extract_vmac_records(device_id: str, hostname: str, config_text: str) -> lis
 
     for raw_line in config_text.splitlines():
         line = raw_line.rstrip()
+        stripped = line.strip()
 
-        match = INTERFACE_RE.match(line)
+        match = INTERFACE_RE.match(stripped)
         if match:
             current_interface = match.group("name")
             vlan_match = SVI_VLAN_RE.match(current_interface)
             current_vlan_id = vlan_match.group("vlan_id") if vlan_match else ""
             continue
 
+        # Planned config text is often pasted without EOS-style indentation.
+        # Keep parsing the current interface context for the specific lines we care
+        # about until the next explicit interface stanza appears.
+        if current_interface.lower().startswith("vxlan"):
+            vxlan_match = VXLAN_VLAN_VNI_RE.match(stripped)
+            if vxlan_match:
+                vxlan_vlan_ids.add(vxlan_match.group("vlan_id"))
+                continue
+
+        if current_vlan_id:
+            vmac_match = VMAC_RE.match(stripped)
+            if vmac_match:
+                normalized_vmac = normalize_vmac(vmac_match.group("vmac"))
+                if normalized_vmac:
+                    records.append(
+                        {
+                            "device_id": device_id,
+                            "hostname": hostname,
+                            "interface_name": current_interface,
+                            "vlan_id": current_vlan_id,
+                            "vmac": normalized_vmac,
+                            "source": "config",
+                        }
+                    )
+                continue
+
         if not current_interface:
-            stripped = line.strip()
             vmac_match = VMAC_RE.match(stripped)
             if vmac_match:
                 global_vmac = normalize_vmac(vmac_match.group("vmac"))
             continue
 
         if line and not line.startswith(" "):
+            if current_interface.lower().startswith("vxlan"):
+                vmac_match = VMAC_RE.match(stripped)
+                if vmac_match:
+                    global_vmac = normalize_vmac(vmac_match.group("vmac"))
+                # Keep the Vxlan interface context even without indentation so
+                # planned configs pasted from notes or tickets still parse.
+                continue
             current_interface = ""
             current_vlan_id = ""
-            stripped = line.strip()
             vmac_match = VMAC_RE.match(stripped)
             if vmac_match:
                 global_vmac = normalize_vmac(vmac_match.group("vmac"))
             continue
 
-        stripped = line.strip()
-        if current_interface.lower().startswith("vxlan"):
-            vxlan_match = VXLAN_VLAN_VNI_RE.match(stripped)
-            if vxlan_match:
-                vxlan_vlan_ids.add(vxlan_match.group("vlan_id"))
-
-        if not current_vlan_id:
+        if not current_interface:
             continue
-
-        vmac_match = VMAC_RE.match(stripped)
-        if not vmac_match:
-            continue
-
-        normalized_vmac = normalize_vmac(vmac_match.group("vmac"))
-        if not normalized_vmac:
-            continue
-
-        records.append(
-            {
-                "device_id": device_id,
-                "hostname": hostname,
-                "interface_name": current_interface,
-                "vlan_id": current_vlan_id,
-                "vmac": normalized_vmac,
-                "source": "config",
-            }
-        )
 
     if records:
         return records
