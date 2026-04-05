@@ -2114,7 +2114,7 @@ function App() {
 
         {activeView === 'work_history' ? (
           <section className="stack-layout">
-            <WorkHistoryBoard />
+            <WorkHistoryBoard currentUser={currentUser} users={users} />
           </section>
         ) : null}
 

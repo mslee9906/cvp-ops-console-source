@@ -1152,7 +1152,6 @@ export function KanbanBoard({ users }: Props) {
             return undefined
           }}
           onDelete={editorCard ? () => handleDelete(editorCard.id) : undefined}
-          onComplete={editorCard ? () => openCompleteDialog(editorCard) : undefined}
         />
       ) : null}
 

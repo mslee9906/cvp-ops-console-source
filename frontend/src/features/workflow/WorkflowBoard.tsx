@@ -69,6 +69,10 @@ type WorkflowBoardProps = {
     phaseId?: string | null
     token: number
   } | null
+  readOnlyCard?: KanbanCard | null
+  readOnlyWorkflow?: WorkflowDocument | null
+  onBack?: (() => void) | null
+  backLabel?: string
 }
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
@@ -308,8 +312,17 @@ function reflowPhaseBlocks(blocks: WorkflowBlock[]) {
   })
 }
 
-export function WorkflowBoard({ currentUser, users, focusRequest = null }: WorkflowBoardProps) {
-  const canEdit = currentUser?.role !== 'viewer'
+export function WorkflowBoard({
+  currentUser,
+  users,
+  focusRequest = null,
+  readOnlyCard = null,
+  readOnlyWorkflow = null,
+  onBack = null,
+  backLabel = '작업 이력으로 돌아가기',
+}: WorkflowBoardProps) {
+  const isReadOnly = Boolean(readOnlyCard && readOnlyWorkflow)
+  const canEdit = !isReadOnly && currentUser?.role !== 'viewer'
   const cardPickerRef = useRef<HTMLDivElement | null>(null)
   const blockBoardRef = useRef<HTMLDivElement | null>(null)
   const workflowRef = useRef<WorkflowDocument | null>(null)
@@ -442,8 +455,35 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
   }, [selectedPhase, selectedPhaseProgress])
 
   useEffect(() => {
+    if (isReadOnly) {
+      setLoadingCards(false)
+      setLoadingWorkflow(false)
+      setError('')
+      setTemplates([])
+      setShowCardPicker(false)
+      setCards(readOnlyCard ? [readOnlyCard] : [])
+      setSelectedCardId(readOnlyCard?.id ?? null)
+      if (readOnlyCard && readOnlyWorkflow) {
+        const normalized = normalizeWorkflowDocument(cloneValue(readOnlyWorkflow), readOnlyCard)
+        normalized.phases.forEach((phase) => {
+          phase.blocks.forEach((block) => {
+            block.editing = false
+          })
+        })
+        saveFingerprintRef.current = JSON.stringify(normalized)
+        setWorkflow(normalized)
+        setSelectedPhaseId((current) =>
+          current && normalized.phases.some((phase) => phase.id === current) ? current : (normalized.phases[0]?.id ?? ''),
+        )
+      } else {
+        setWorkflow(null)
+        setSelectedPhaseId('')
+      }
+      setEditingPhase(false)
+      return
+    }
     void bootstrap()
-  }, [])
+  }, [isReadOnly, readOnlyCard, readOnlyWorkflow])
 
   useEffect(() => {
     workflowRef.current = workflow
@@ -479,11 +519,17 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       setSelectedPhaseId('')
       return
     }
+    if (isReadOnly) {
+      return
+    }
     void loadCardWorkflow(selectedCardId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCardId])
+  }, [isReadOnly, selectedCardId])
 
   useEffect(() => {
+    if (isReadOnly) {
+      return
+    }
     if (!selectedCardId) {
       return
     }
@@ -495,7 +541,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
     }
     void loadCardWorkflow(selectedCardId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cards, selectedCardId])
+  }, [cards, isReadOnly, selectedCardId])
 
   useEffect(() => {
     const container = stageLaneRef.current
@@ -631,6 +677,9 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
   }, [blockDragState, selectedPhase])
 
   useEffect(() => {
+    if (isReadOnly) {
+      return
+    }
     if (!focusRequest?.cardId) {
       return
     }
@@ -645,7 +694,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusRequest?.token])
+  }, [focusRequest?.token, isReadOnly])
 
   useEffect(() => {
     if (!showCardPicker) {
@@ -2175,10 +2224,19 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
 
                 <div className="workflow-hero-side" ref={cardPickerRef}>
                   <div className="workflow-hero-card-picker">
+                    {onBack ? (
+                      <button className="workflow-ghost-button" type="button" onClick={onBack}>
+                        <span>{backLabel}</span>
+                      </button>
+                    ) : null}
                     <button
                       className={`workflow-selected-card ${showCardPicker ? 'open' : ''}`}
                       type="button"
-                      onClick={() => setShowCardPicker((current) => !current)}
+                      onClick={() => {
+                        if (!isReadOnly) {
+                          setShowCardPicker((current) => !current)
+                        }
+                      }}
                     >
                       <div>
                         <strong>{selectedCard?.title || '카드를 선택하세요.'}</strong>
@@ -2188,10 +2246,10 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                             : '워크플로우를 연결할 작업 카드를 선택합니다.'}
                         </span>
                       </div>
-                      <Search size={16} />
+                      {!isReadOnly ? <Search size={16} /> : null}
                     </button>
 
-                    {showCardPicker ? (
+                    {!isReadOnly && showCardPicker ? (
                       <div className="workflow-card-picker">
                         <label className="workflow-search-field">
                           <Search size={15} />
@@ -2348,12 +2406,14 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                     <div className="workflow-stage-title-row">
                       <h3>STAGE</h3>
                       <div className="workflow-inline-actions">
-                       <button className="workflow-ghost-button" type="button" onClick={() => setShowTemplateOverlay(true)}>
-                         <LayoutTemplate size={15} />
-                         <span>템플릿</span>
-                      </button>
-                      <span className="workflow-inline-chip">{workflow.templateName || '기본 템플릿'}</span>
-                    </div>
+                        {!isReadOnly ? (
+                          <button className="workflow-ghost-button" type="button" onClick={() => setShowTemplateOverlay(true)}>
+                            <LayoutTemplate size={15} />
+                            <span>템플릿</span>
+                          </button>
+                        ) : null}
+                        <span className="workflow-inline-chip">{workflow.templateName || '기본 템플릿'}</span>
+                      </div>
                   </div>
                 </div>
               <div className="workflow-head-actions">
@@ -2365,10 +2425,12 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                 >
                   <span>{compactMode ? '기본 보기' : '간소화'}</span>
                 </button>
-                <button className="workflow-primary-button workflow-stage-top-button" type="button" onClick={openPhaseOverlay} disabled={!canEdit}>
-                  <Plus size={15} />
-                  <span>단계 추가</span>
-                </button>
+                {!isReadOnly ? (
+                  <button className="workflow-primary-button workflow-stage-top-button" type="button" onClick={openPhaseOverlay} disabled={!canEdit}>
+                    <Plus size={15} />
+                    <span>단계 추가</span>
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -2441,7 +2503,7 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
 
                 <div className="workflow-head-actions workflow-detail-head-actions">
                   <div className="workflow-head-action-buttons">
-                    {editingPhase ? (
+                    {!isReadOnly && editingPhase ? (
                       <div className="workflow-head-phase-settings workflow-head-phase-settings-inline">
                         <label className="workflow-field workflow-phase-setting-field">
                           <span>담당자</span>
@@ -2474,55 +2536,59 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                         </label>
                       </div>
                     ) : null}
-                      <button
-                        className={`workflow-primary-button workflow-complete-button ${selectedPhase.isCompleted ? 'is-complete' : ''}`}
-                        type="button"
-                        onClick={() =>
-                          void (selectedPhase.isCompleted ? handleUncompleteSelectedPhase() : handleCompleteSelectedPhase())
-                        }
-                        disabled={
-                          completingPhase ||
-                          (selectedPhase.isCompleted ? !hasSelectedPhaseCompletionPermission : !canAttemptSelectedPhaseCompletion)
-                        }
-                        title={
-                          selectedPhase.isCompleted
-                            ? hasSelectedPhaseCompletionPermission
-                              ? '단계 완료를 취소합니다.'
-                              : '담당자 또는 admin만 완료 취소할 수 있습니다.'
-                            : canCompleteSelectedPhase
-                              ? '단계를 완료 처리합니다.'
-                              : selectedPhaseProgress < 100
-                              ? '진행률이 100%가 되면 완료할 수 있습니다.'
-                              : '담당자 또는 admin만 완료할 수 있습니다.'
-                        }
-                      >
-                        <Check size={15} />
-                        <span>
-                          {selectedPhase.isCompleted
-                            ? completingPhase
-                              ? '완료 취소 중...'
-                              : '완료 취소'
-                            : completingPhase
-                              ? '완료 처리 중...'
-                              : '단계 완료'}
-                        </span>
-                      </button>
-                    <button className="workflow-ghost-button" type="button" onClick={() => setShowAddOverlay(true)} disabled={!canEdit}>
-                      <Plus size={15} />
-                      <span>블록 추가</span>
-                    </button>
-                    <button className="workflow-icon-button" type="button" onClick={togglePhaseEditing} disabled={!canEdit} aria-label="단계 수정">
-                      {editingPhase ? <Check size={15} /> : <Pencil size={15} />}
-                    </button>
-                    <button
-                      className="workflow-icon-button danger"
-                      type="button"
-                      onClick={handleDeletePhase}
-                      disabled={!canEdit || workflow.phases.length <= 1}
-                      aria-label="단계 삭제"
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                    {!isReadOnly ? (
+                      <>
+                        <button
+                          className={`workflow-primary-button workflow-complete-button ${selectedPhase.isCompleted ? 'is-complete' : ''}`}
+                          type="button"
+                          onClick={() =>
+                            void (selectedPhase.isCompleted ? handleUncompleteSelectedPhase() : handleCompleteSelectedPhase())
+                          }
+                          disabled={
+                            completingPhase ||
+                            (selectedPhase.isCompleted ? !hasSelectedPhaseCompletionPermission : !canAttemptSelectedPhaseCompletion)
+                          }
+                          title={
+                            selectedPhase.isCompleted
+                              ? hasSelectedPhaseCompletionPermission
+                                ? '단계 완료를 취소합니다.'
+                                : '담당자 또는 admin만 완료 취소할 수 있습니다.'
+                              : canCompleteSelectedPhase
+                                ? '단계를 완료 처리합니다.'
+                                : selectedPhaseProgress < 100
+                                ? '진행률이 100%가 되면 완료할 수 있습니다.'
+                                : '담당자 또는 admin만 완료할 수 있습니다.'
+                          }
+                        >
+                          <Check size={15} />
+                          <span>
+                            {selectedPhase.isCompleted
+                              ? completingPhase
+                                ? '완료 취소 중...'
+                                : '완료 취소'
+                              : completingPhase
+                                ? '완료 처리 중...'
+                                : '단계 완료'}
+                          </span>
+                        </button>
+                        <button className="workflow-ghost-button" type="button" onClick={() => setShowAddOverlay(true)} disabled={!canEdit}>
+                          <Plus size={15} />
+                          <span>블록 추가</span>
+                        </button>
+                        <button className="workflow-icon-button" type="button" onClick={togglePhaseEditing} disabled={!canEdit} aria-label="단계 수정">
+                          {editingPhase ? <Check size={15} /> : <Pencil size={15} />}
+                        </button>
+                        <button
+                          className="workflow-icon-button danger"
+                          type="button"
+                          onClick={handleDeletePhase}
+                          disabled={!canEdit || workflow.phases.length <= 1}
+                          aria-label="단계 삭제"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -2594,24 +2660,28 @@ export function WorkflowBoard({ currentUser, users, focusRequest = null }: Workf
                               <Copy size={14} />
                             </button>
                           ) : null}
-                          <button
-                            className="workflow-icon-button"
-                            type="button"
-                            onClick={() => handleToggleBlockEditing(selectedPhase.id, block.id, !block.editing)}
-                            disabled={!canEdit}
-                            aria-label={block.editing ? '블록 편집 완료' : '블록 편집'}
-                          >
-                            {block.editing ? <Check size={15} /> : <Pencil size={15} />}
-                          </button>
-                          <button
-                            className="workflow-icon-button danger"
-                            type="button"
-                            onClick={() => handleDeleteBlock(selectedPhase.id, block.id)}
-                            disabled={!canEdit || selectedPhase.blocks.length <= 1}
-                            aria-label="블록 삭제"
-                          >
-                            <Trash2 size={15} />
-                          </button>
+                          {!isReadOnly ? (
+                            <>
+                              <button
+                                className="workflow-icon-button"
+                                type="button"
+                                onClick={() => handleToggleBlockEditing(selectedPhase.id, block.id, !block.editing)}
+                                disabled={!canEdit}
+                                aria-label={block.editing ? '블록 편집 완료' : '블록 편집'}
+                              >
+                                {block.editing ? <Check size={15} /> : <Pencil size={15} />}
+                              </button>
+                              <button
+                                className="workflow-icon-button danger"
+                                type="button"
+                                onClick={() => handleDeleteBlock(selectedPhase.id, block.id)}
+                                disabled={!canEdit || selectedPhase.blocks.length <= 1}
+                                aria-label="블록 삭제"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </>
+                          ) : null}
                         </div>
                       </div>
 

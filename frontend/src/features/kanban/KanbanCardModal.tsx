@@ -32,10 +32,9 @@ type Props = {
   onClose: () => void
   onSubmit: (values: KanbanCardInput) => void | Promise<void>
   onDelete?: (() => void | Promise<void>) | undefined
-  onComplete?: (() => void | Promise<void>) | undefined
 }
 
-export function KanbanCardModal({ mode, initialValues, card, users, submitting, onClose, onSubmit, onDelete, onComplete }: Props) {
+export function KanbanCardModal({ mode, initialValues, card, users, submitting, onClose, onSubmit, onDelete }: Props) {
   const [values, setValues] = useState<KanbanCardInput>(initialValues)
 
   useEffect(() => {
@@ -165,11 +164,6 @@ export function KanbanCardModal({ mode, initialValues, card, users, submitting, 
 
           <div className="kanban-modal-actions">
             <div className="kanban-inline-actions left">
-              {mode === 'edit' && onComplete ? (
-                <button className="kanban-ghost-button" type="button" onClick={() => void onComplete()} disabled={submitting}>
-                  작업 완료
-                </button>
-              ) : null}
               {mode === 'edit' && onDelete ? (
                 <button className="kanban-danger-button" type="button" onClick={() => void onDelete()} disabled={submitting}>
                   카드 삭제
