@@ -1,5 +1,6 @@
 ﻿import { useDeferredValue, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { GripVertical, Pencil, Plus, RefreshCcw, Trash2, X } from 'lucide-react'
+import { useRef, type PointerEvent as ReactPointerEvent } from 'react'
 import { ApiError, api } from '../../api'
 import type {
   BgpManagementItem,
@@ -28,19 +29,19 @@ type DisplayRow = {
   poolName: string
   sortKey: number
 }
-type AsnStripBlock = { asn: number; state: 'free' | 'used' | 'reserved'; tone: PoolTone; statusLabel: string }
 type StripSegment = {
   key: string
   start: number
   end: number
-  state: 'free' | 'used' | 'reserved'
+  state: 'used' | 'reserved'
   tone: PoolTone
   statusLabel: string
+  leftPct: number
+  widthPct: number
 }
+type AsnRange = { start: number; end: number }
 
 const STORAGE_KEY = 'cvp-ops-console.bgp-service-pools.v3'
-const MAX_PER_ASN_BLOCKS = 20000
-const COMPRESSED_SEGMENT_COUNT = 2000
 const toneOptions: Array<{ value: PoolTone; label: string }> = [
   { value: 'core', label: '코어' },
   { value: 'tenant', label: '테넌트' },
@@ -187,7 +188,8 @@ function buildManualRows(entries: BgpManagementManualEntry[], pools: ServicePool
   })
   return rows.filter((item): item is DisplayRow => item !== null).sort((left, right) => left.sortKey - right.sortKey)
 }
-function buildAsnBlocks(pool: ServicePool, rows: DisplayRow[]): AsnStripBlock[] {
+function buildOccupiedSegments(pool: ServicePool, rows: DisplayRow[]): StripSegment[] {
+  const total = Math.max(pool.rangeEnd - pool.rangeStart + 1, 1)
   const stateByAsn = new Map<number, 'used' | 'reserved'>()
   rows.forEach((row) => {
     const asnNumber = row.asnNumber
@@ -198,49 +200,37 @@ function buildAsnBlocks(pool: ServicePool, rows: DisplayRow[]): AsnStripBlock[] 
     }
     if (!stateByAsn.has(asnNumber)) stateByAsn.set(asnNumber, 'reserved')
   })
-  const blocks: AsnStripBlock[] = []
-  for (let asn = pool.rangeStart; asn <= pool.rangeEnd; asn += 1) {
-    const mapped = stateByAsn.get(asn)
-    const state: AsnStripBlock['state'] = mapped === 'used' ? 'used' : mapped === 'reserved' ? 'reserved' : 'free'
-    blocks.push({
-      asn,
-      state,
+  const asns = Array.from(stateByAsn.keys()).sort((left, right) => left - right)
+  if (!asns.length) return []
+  const segments: StripSegment[] = []
+  let cursorStart = asns[0]
+  let cursorEnd = asns[0]
+  let cursorState = stateByAsn.get(asns[0]) ?? 'reserved'
+  const flush = () => {
+    segments.push({
+      key: `seg-${cursorStart}-${cursorEnd}-${cursorState}`,
+      start: cursorStart,
+      end: cursorEnd,
+      state: cursorState,
       tone: pool.tone,
-      statusLabel: state === 'used' ? '사용중' : state === 'reserved' ? '예약/기타' : '미사용',
+      statusLabel: cursorState === 'used' ? '사용중' : '예약/기타',
+      leftPct: ((cursorStart - pool.rangeStart) / total) * 100,
+      widthPct: ((cursorEnd - cursorStart + 1) / total) * 100,
     })
   }
-  return blocks
-}
-function buildCompressedSegments(pool: ServicePool, rows: DisplayRow[]): StripSegment[] {
-  const total = Math.max(pool.rangeEnd - pool.rangeStart + 1, 1)
-  const segmentCount = Math.max(Math.min(COMPRESSED_SEGMENT_COUNT, total), 1)
-  const step = Math.max(Math.ceil(total / segmentCount), 1)
-  const segments: StripSegment[] = Array.from({ length: segmentCount }, (_, index) => {
-    const start = pool.rangeStart + index * step
-    const end = Math.min(pool.rangeEnd, start + step - 1)
-    return {
-      key: `seg-${start}-${end}`,
-      start,
-      end,
-      state: 'free',
-      tone: pool.tone,
-      statusLabel: '미사용',
+  for (let index = 1; index < asns.length; index += 1) {
+    const asn = asns[index]
+    const state = stateByAsn.get(asn) ?? 'reserved'
+    if (asn === cursorEnd + 1 && state === cursorState) {
+      cursorEnd = asn
+      continue
     }
-  })
-  rows.forEach((row) => {
-    if (row.asnNumber === null || !poolIncludesAsn(pool, row.asnNumber)) return
-    const index = Math.min(segments.length - 1, Math.floor((row.asnNumber - pool.rangeStart) / step))
-    const current = segments[index]
-    if (row.status === 'in_use') {
-      current.state = 'used'
-      current.statusLabel = '사용중'
-      return
-    }
-    if (current.state !== 'used') {
-      current.state = 'reserved'
-      current.statusLabel = '예약/기타'
-    }
-  })
+    flush()
+    cursorStart = asn
+    cursorEnd = asn
+    cursorState = state
+  }
+  flush()
   return segments
 }
 function buildPoolUsage(pool: ServicePool, rows: DisplayRow[]) {
@@ -274,6 +264,10 @@ export function BgpAsManagementPanel() {
   const [draggedPoolId, setDraggedPoolId] = useState<string | null>(null)
   const [dragOverPoolId, setDragOverPoolId] = useState<string | null>(null)
   const [hoveredBlock, setHoveredBlock] = useState<StripSegment | null>(null)
+  const [rangeFilter, setRangeFilter] = useState<AsnRange | null>(null)
+  const [rangeDragStart, setRangeDragStart] = useState<number | null>(null)
+  const [isRangeDragging, setIsRangeDragging] = useState(false)
+  const stripTrackRef = useRef<HTMLDivElement | null>(null)
   const deferredSearch = useDeferredValue(search)
 
   const defaultPool = useMemo(() => buildDefaultPool(snapshot), [snapshot])
@@ -284,34 +278,18 @@ export function BgpAsManagementPanel() {
   const allRows = useMemo(() => [...snapshotRows, ...manualRows].sort((left, right) => left.sortKey - right.sortKey), [manualRows, snapshotRows])
   const selectedPool = useMemo(() => pools.find((pool) => pool.id === selectedPoolId) ?? pools[0], [pools, selectedPoolId])
   const selectedPoolTotal = selectedPool ? Math.max(selectedPool.rangeEnd - selectedPool.rangeStart + 1, 0) : 0
-  const useDenseStrip = selectedPoolTotal <= MAX_PER_ASN_BLOCKS
   const poolRows = useMemo(() => (selectedPool ? allRows.filter((row) => poolIncludesAsn(selectedPool, row.asnNumber)) : allRows), [allRows, selectedPool])
-  const asnBlocks = useMemo(
-    () => (selectedPool && useDenseStrip ? buildAsnBlocks(selectedPool, poolRows) : []),
-    [poolRows, selectedPool, useDenseStrip],
-  )
-  const stripSegments = useMemo<StripSegment[]>(
-    () => {
-      if (!selectedPool) return []
-      if (useDenseStrip) {
-        return asnBlocks.map((block) => ({
-          key: `asn-${block.asn}`,
-          start: block.asn,
-          end: block.asn,
-          state: block.state,
-          tone: block.tone,
-          statusLabel: block.statusLabel,
-        }))
-      }
-      return buildCompressedSegments(selectedPool, poolRows)
-    },
-    [asnBlocks, poolRows, selectedPool, useDenseStrip],
-  )
+  const stripSegments = useMemo(() => (selectedPool ? buildOccupiedSegments(selectedPool, poolRows) : []), [poolRows, selectedPool])
 
   useEffect(() => { void loadSnapshot() }, [])
   useEffect(() => { savePools(customPools) }, [customPools])
   useEffect(() => { if (!pools.some((pool) => pool.id === selectedPoolId)) setSelectedPoolId(pools[0]?.id ?? 'default-all') }, [pools, selectedPoolId])
-  useEffect(() => { setHoveredBlock(null) }, [selectedPoolId])
+  useEffect(() => {
+    setHoveredBlock(null)
+    setRangeFilter(null)
+    setRangeDragStart(null)
+    setIsRangeDragging(false)
+  }, [selectedPoolId])
   useEffect(() => {
     if (!message) return
     const timer = window.setTimeout(() => setMessage(''), 2200)
@@ -405,10 +383,54 @@ export function BgpAsManagementPanel() {
     setCustomPools((current) => current.filter((item) => item.id !== pool.id).map((item, index) => ({ ...item, sortOrder: index })))
     if (selectedPoolId === pool.id) setSelectedPoolId('default-all')
   }
+  function resolveAsnByClientX(clientX: number): number | null {
+    if (!selectedPool || !stripTrackRef.current) return null
+    const rect = stripTrackRef.current.getBoundingClientRect()
+    if (rect.width <= 0) return null
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+    const total = Math.max(selectedPool.rangeEnd - selectedPool.rangeStart + 1, 1)
+    const offset = Math.round(ratio * (total - 1))
+    return Math.min(selectedPool.rangeEnd, Math.max(selectedPool.rangeStart, selectedPool.rangeStart + offset))
+  }
+  function handleStripPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    const startAsn = resolveAsnByClientX(event.clientX)
+    if (startAsn === null) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setHoveredBlock(null)
+    setIsRangeDragging(true)
+    setRangeDragStart(startAsn)
+    setRangeFilter({ start: startAsn, end: startAsn })
+  }
+  function handleStripPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!isRangeDragging || rangeDragStart === null) return
+    const currentAsn = resolveAsnByClientX(event.clientX)
+    if (currentAsn === null) return
+    setRangeFilter({
+      start: Math.min(rangeDragStart, currentAsn),
+      end: Math.max(rangeDragStart, currentAsn),
+    })
+  }
+  function handleStripPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!isRangeDragging) return
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    setIsRangeDragging(false)
+    setRangeDragStart(null)
+  }
+  function clearRangeFilter() {
+    setRangeFilter(null)
+    setRangeDragStart(null)
+    setIsRangeDragging(false)
+  }
 
   const filteredRows = poolRows.filter((row) => {
     if (viewMode === 'used' && row.status !== 'in_use') return false
     if (viewMode === 'reserved' && row.status === 'in_use') return false
+    if (rangeFilter) {
+      if (row.asnNumber === null) return false
+      if (row.asnNumber < rangeFilter.start || row.asnNumber > rangeFilter.end) return false
+    }
     const token = deferredSearch.trim().toLowerCase()
     if (!token) return true
     return [row.asn, row.statusLabel, row.deviceNames.join(' '), row.detailPrimary, row.detailSecondary, row.poolName].join(' ').toLowerCase().includes(token)
@@ -423,6 +445,17 @@ export function BgpAsManagementPanel() {
     const raw = ((midpoint - selectedPool.rangeStart + 0.5) / total) * 100
     return Math.min(96, Math.max(4, raw))
   }, [hoveredBlock, selectedPool])
+  const selectedRangeStyle = useMemo(() => {
+    if (!selectedPool || !rangeFilter) return null
+    const total = Math.max(selectedPool.rangeEnd - selectedPool.rangeStart + 1, 1)
+    const leftPct = ((rangeFilter.start - selectedPool.rangeStart) / total) * 100
+    const widthPct = ((rangeFilter.end - rangeFilter.start + 1) / total) * 100
+    return {
+      left: `${leftPct}%`,
+      width: `max(${Math.max(widthPct, 0.0001)}%, 2px)`,
+    }
+  }, [rangeFilter, selectedPool])
+  const rangeFilterLabel = rangeFilter ? `AS ${rangeFilter.start} - ${rangeFilter.end}` : ''
 
   return (
     <section className="bgp-proto-page">
@@ -456,8 +489,17 @@ export function BgpAsManagementPanel() {
                 <div className="bgp-proto-strip-shell">
                   <div className="bgp-proto-strip-axis">
                     <span className="bgp-proto-edge">{selectedPool.rangeStart}</span>
-                    <div className="bgp-proto-strip-track" onMouseLeave={() => setHoveredBlock(null)}>
-                      {hoveredBlock ? (
+                    <div
+                      ref={stripTrackRef}
+                      className={`bgp-proto-strip-track ${isRangeDragging ? 'dragging' : ''}`}
+                      onPointerDown={handleStripPointerDown}
+                      onPointerMove={handleStripPointerMove}
+                      onPointerUp={handleStripPointerUp}
+                      onPointerCancel={handleStripPointerUp}
+                      onMouseLeave={() => { if (!isRangeDragging) setHoveredBlock(null) }}
+                    >
+                      {selectedRangeStyle ? <div className="bgp-proto-strip-selection" style={selectedRangeStyle} /> : null}
+                      {hoveredBlock && !isRangeDragging ? (
                         <div className="bgp-proto-strip-tooltip" style={{ left: `${hoveredTooltipLeft}%` }}>
                           <strong>{hoveredBlock.start === hoveredBlock.end ? `AS ${hoveredBlock.start}` : `AS ${hoveredBlock.start} - ${hoveredBlock.end}`}</strong>
                           <span>{hoveredBlock.statusLabel}</span>
@@ -466,8 +508,9 @@ export function BgpAsManagementPanel() {
                       {stripSegments.map((segment) => (
                         <span
                           key={segment.key}
-                          className={`bgp-proto-asn-seg ${segment.state === 'free' ? 'available' : segment.state === 'used' ? `in-use ${segment.tone}` : 'reserved'} ${hoveredBlock?.key === segment.key ? 'active' : ''}`}
-                          onMouseEnter={() => setHoveredBlock(segment)}
+                          className={`bgp-proto-asn-seg ${segment.state === 'used' ? `in-use ${segment.tone}` : 'reserved'} ${hoveredBlock?.key === segment.key ? 'active' : ''}`}
+                          style={{ left: `${segment.leftPct}%`, width: `max(${Math.max(segment.widthPct, 0.0001)}%, 2px)` }}
+                          onMouseEnter={() => { if (!isRangeDragging) setHoveredBlock(segment) }}
                         />
                       ))}
                     </div>
@@ -495,13 +538,19 @@ export function BgpAsManagementPanel() {
                   <button className={`bgp-proto-view-button ${viewMode === 'used' ? 'active' : ''}`} type="button" onClick={() => setViewMode('used')}>사용중 ASN</button>
                   <button className={`bgp-proto-view-button ${viewMode === 'reserved' ? 'active' : ''}`} type="button" onClick={() => setViewMode('reserved')}>예약/기타</button>
                 </div>
+                {rangeFilter ? (
+                  <button className="ghost-action compact-action" type="button" onClick={clearRangeFilter}>
+                    <span>{rangeFilterLabel}</span>
+                    <span>해제</span>
+                  </button>
+                ) : null}
                 <button className="bgp-proto-manual-trigger" type="button" onClick={() => { resetManualForm(); setDrawerTab('form'); setDrawerOpen(true) }}>
                   <Plus size={14} />
                   <span>직접 추가</span>
                 </button>
               </div>
             </div>
-            <div className="bgp-proto-table-head"><span>{selectedPool?.name ?? 'BGP AS 전체 범위'} · 총 {formatCount(filteredRows.length)}건</span><span>표 헤더는 스크롤 중에도 상단에 고정됩니다.</span></div>
+            <div className="bgp-proto-table-head"><span>{selectedPool?.name ?? 'BGP AS 전체 범위'} · 총 {formatCount(filteredRows.length)}건</span><span>{rangeFilter ? `드래그 범위 필터: ${rangeFilterLabel}` : '표 헤더는 스크롤 중에도 상단에 고정됩니다.'}</span></div>
             <div className="bgp-proto-table-wrap bgp-table-shell">
               <table className="data-table">
                 <thead><tr><th>ASN</th><th>상태</th><th>장비 목록</th><th>상세</th><th>서비스 풀</th></tr></thead>
