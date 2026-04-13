@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BGP AS Management Draft</title>
+    <style>
+      :root {
+        --bg: #f3efe7;
+        --panel: rgba(255, 252, 247, 0.94);
+        --panel-strong: #fffdf8;
+        --ink: #1f2831;
+        --muted: #66727d;
+        --line: rgba(31, 40, 49, 0.12);
+        --shadow: 0 18px 40px rgba(37, 45, 54, 0.08);
+        --blue: #295d76;
+        --blue-soft: rgba(41, 93, 118, 0.12);
+        --amber: #c58d2f;
+        --amber-soft: rgba(197, 141, 47, 0.14);
+        --brick: #b55933;
+        --brick-soft: rgba(181, 89, 51, 0.14);
+        --plum: #705d7c;
+        --plum-soft: rgba(112, 93, 124, 0.14);
+        --ash: #d9cfbf;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "Pretendard", "Noto Sans KR", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(41, 93, 118, 0.14), transparent 28rem),
+          radial-gradient(circle at top right, rgba(197, 141, 47, 0.14), transparent 24rem),
+          linear-gradient(180deg, #f8f5ef 0%, #ece6dc 100%);
+      }
+
+      .page {
+        width: min(1520px, calc(100vw - 32px));
+        margin: 18px auto 28px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .hero, .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        box-shadow: var(--shadow);
+      }
+
+      .hero { padding: 28px; display: grid; gap: 20px; }
+      .hero-top { display: grid; grid-template-columns: 1.3fr 320px; gap: 18px; }
+      .eyebrow {
+        margin: 0 0 10px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        color: var(--blue);
+        font-weight: 800;
+      }
+      h1, h2, h3, p { margin: 0; }
+      h1 { font-size: clamp(30px, 4vw, 42px); line-height: 1.05; letter-spacing: -0.04em; }
+      .hero-copy p {
+        margin-top: 12px;
+        max-width: 840px;
+        color: var(--muted);
+        line-height: 1.65;
+        font-size: 15px;
+      }
+      .hero-note {
+        padding: 16px 18px;
+        border-radius: 18px;
+        background: linear-gradient(180deg, rgba(28, 36, 44, 0.98), rgba(42, 52, 61, 0.98));
+        color: rgba(247, 244, 238, 0.94);
+      }
+      .hero-note p { margin-top: 10px; color: rgba(247, 244, 238, 0.76); font-size: 13px; line-height: 1.6; }
+
+      .chip-row, .tag-row { display: flex; flex-wrap: wrap; gap: 8px; }
+      .chip, .tag {
+        display: inline-flex;
+        align-items: center;
+        min-height: 32px;
+        padding: 0 12px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.74);
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+      .metric {
+        padding: 16px;
+        border-radius: 18px;
+        background: var(--panel-strong);
+        border: 1px solid var(--line);
+      }
+      .metric span { display: block; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 800; }
+      .metric strong { display: block; margin-top: 10px; font-size: 30px; letter-spacing: -0.05em; }
+      .metric small { display: block; margin-top: 6px; color: var(--muted); font-size: 12px; }
+
+      .layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; }
+      .panel { padding: 20px; }
+      .panel-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
+      .panel-head p { margin-top: 6px; font-size: 13px; line-height: 1.55; color: var(--muted); }
+      .service-list { display: grid; gap: 12px; }
+      .service-card {
+        padding: 15px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: var(--panel-strong);
+        cursor: pointer;
+      }
+      .service-card.active { border-color: rgba(41, 93, 118, 0.28); box-shadow: 0 12px 26px rgba(41, 93, 118, 0.08); }
+      .service-card-top { display: flex; justify-content: space-between; gap: 10px; }
+      .service-card small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+      .bar {
+        margin: 12px 0 10px;
+        height: 10px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: #e8dfd1;
+        display: grid;
+        grid-auto-flow: column;
+      }
+      .seg-in_use { background: linear-gradient(90deg, #24556b, #39728b); }
+      .seg-reserved { background: linear-gradient(90deg, #ba852a, #d9a34b); }
+      .seg-free { background: linear-gradient(90deg, #d9cfbf, #ede6da); }
+      .seg-blocked { background: linear-gradient(90deg, #a95432, #c96d43); }
+      .seg-legacy { background: linear-gradient(90deg, #665573, #857093); }
+      .service-stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px 10px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .workspace { display: grid; gap: 16px; }
+      .toolbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 180px 180px;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      input, select, textarea {
+        width: 100%;
+        font: inherit;
+        color: var(--ink);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.8);
+      }
+      input, select { min-height: 42px; padding: 0 14px; }
+      textarea { min-height: 110px; padding: 12px 14px; resize: vertical; }
+
+      .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+      .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.68);
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .dot { width: 10px; height: 10px; border-radius: 50%; }
+      .dot.in_use { background: #356d86; }
+      .dot.reserved { background: #cc942f; }
+      .dot.free { background: #ddd3c5; border: 1px solid rgba(31, 40, 49, 0.12); }
+      .dot.blocked { background: #ba6037; }
+      .dot.legacy { background: #776684; }
+
+      .strip-grid {
+        display: grid;
+        grid-template-columns: repeat(10, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .asn-cell {
+        min-height: 82px;
+        padding: 12px 10px;
+        border-radius: 16px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        display: grid;
+        gap: 10px;
+      }
+      .asn-cell.active { border-color: rgba(31, 40, 49, 0.16); box-shadow: 0 10px 20px rgba(31, 40, 49, 0.08); }
+      .asn-cell.in_use { background: var(--blue-soft); }
+      .asn-cell.reserved { background: var(--amber-soft); }
+      .asn-cell.free { background: rgba(217, 207, 191, 0.44); }
+      .asn-cell.blocked { background: var(--brick-soft); }
+      .asn-cell.legacy { background: var(--plum-soft); }
+      .asn-id { font-size: 22px; font-weight: 800; letter-spacing: -0.05em; }
+      .asn-caption { font-size: 12px; line-height: 1.35; color: var(--muted); font-weight: 700; }
+      .mono { font-family: "Consolas", "SFMono-Regular", monospace; }
+
+      .bottom {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) 360px;
+        gap: 16px;
+      }
+      .table-wrap {
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--panel-strong);
+      }
+      table { width: 100%; border-collapse: collapse; }
+      thead th {
+        position: sticky;
+        top: 0;
+        padding: 12px 14px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        text-align: left;
+        color: var(--muted);
+        background: #f7f1e7;
+        border-bottom: 1px solid var(--line);
+      }
+      tbody td {
+        padding: 13px 14px;
+        font-size: 13px;
+        border-bottom: 1px solid rgba(31, 40, 49, 0.08);
+        vertical-align: top;
+      }
+      tbody tr { cursor: pointer; }
+      tbody tr.active, tbody tr:hover { background: rgba(41, 93, 118, 0.08); }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .pill-in_use { background: var(--blue-soft); color: var(--blue); }
+      .pill-reserved { background: var(--amber-soft); color: #9a6c18; }
+      .pill-free { background: rgba(123, 135, 145, 0.12); color: #62707a; }
+      .pill-blocked { background: var(--brick-soft); color: var(--brick); }
+      .pill-legacy { background: var(--plum-soft); color: var(--plum); }
+
+      .detail-stack { display: grid; gap: 14px; }
+      .detail-card, .meta-card, .future-card {
+        padding: 18px;
+        border-radius: 20px;
+        background: var(--panel-strong);
+        border: 1px solid var(--line);
+      }
+      .detail-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+      .detail-top p { margin-top: 6px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+      .kv-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .kv {
+        padding: 12px;
+        border-radius: 16px;
+        background: rgba(245, 240, 232, 0.82);
+      }
+      .kv span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 800; margin-bottom: 6px; }
+      .kv strong { font-size: 14px; line-height: 1.4; }
+      .button-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        padding: 0 14px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: white;
+        font-weight: 800;
+      }
+      .button.primary { background: linear-gradient(180deg, #24546a, #2f6680); color: white; border-color: rgba(36, 84, 106, 0.4); }
+      .button.warn { background: linear-gradient(180deg, #bc8428, #d49b37); color: white; border-color: rgba(188, 132, 40, 0.4); }
+      .future-card { background: linear-gradient(135deg, rgba(41, 93, 118, 0.98), rgba(31, 40, 49, 0.98)); color: rgba(247, 244, 238, 0.94); }
+      .future-card p { margin-top: 8px; color: rgba(247, 244, 238, 0.74); font-size: 13px; line-height: 1.6; }
+      .future-card .tag { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.12); color: rgba(247, 244, 238, 0.94); }
+
+      @media (max-width: 1220px) {
+        .metrics, .layout, .bottom, .hero-top { grid-template-columns: 1fr; }
+        .strip-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+      }
+
+      @media (max-width: 860px) {
+        .page { width: min(100vw - 18px, 100%); margin: 10px auto 22px; }
+        .hero, .panel { border-radius: 20px; padding: 16px; }
+        .metrics, .toolbar, .kv-grid { grid-template-columns: 1fr; }
+        .strip-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <section class="hero">
+        <div class="hero-top">
+          <div class="hero-copy">
+            <p class="eyebrow">BGP AS Control Draft</p>
+            <h1>BGP AS 탭을 "조회"에서 "운영 관리"로 올린 화면 초안</h1>
+            <p>
+              서비스 범위별 점유율, 비어 있는 ASN, 예약 상태, 특이사항, 태그,
+              담당 정보를 한 화면에서 보게 하는 방향입니다. 단순 조회 결과표보다
+              "어느 풀을 누가 어떻게 관리하는가"가 먼저 보이도록 구성했습니다.
+            </p>
+          </div>
+          <aside class="hero-note">
+            <h3>핵심 의도</h3>
+            <p>
+              범위 점유 strip, 상세 목록, 예약/메타데이터 편집 패널을 같이 둬서
+              현황 탭 자체가 관리 화면이 되도록 잡았습니다.
+            </p>
+          </aside>
+        </div>
+
+        <div class="chip-row">
+          <div class="chip">Snapshot 2026-04-10 09:20</div>
+          <div class="chip">Source CVP + Ops Metadata</div>
+          <div class="chip">Mode Draft Mock</div>
+        </div>
+
+        <div id="metrics" class="metrics"></div>
+      </section>
+
+      <section class="layout">
+        <aside class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>서비스 범위</h2>
+              <p>먼저 서비스별 풀 상태를 보고, 그 다음에 개별 ASN을 파고드는 구조입니다.</p>
+            </div>
+            <div class="chip">4 Ranges</div>
+          </div>
+          <div id="service-list" class="service-list"></div>
+        </aside>
+
+        <div class="workspace">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2 id="range-title">Selected Range</h2>
+                <p id="range-summary">선택된 서비스 범위의 점유 현황입니다.</p>
+              </div>
+              <div id="range-meta" class="chip-row"></div>
+            </div>
+
+            <div class="toolbar">
+              <input id="search-input" type="search" placeholder="AS 번호, 태그, VRF, 설명, 장비로 검색" />
+              <select id="status-filter">
+                <option value="all">전체 상태</option>
+                <option value="in_use">사용중</option>
+                <option value="reserved">예약</option>
+                <option value="free">비어있음</option>
+                <option value="blocked">차단</option>
+                <option value="legacy">레거시</option>
+              </select>
+              <select id="density-filter">
+                <option value="all">전체 표시</option>
+                <option value="focus">사용/예약/예외만</option>
+              </select>
+            </div>
+
+            <div class="legend">
+              <div class="legend-item"><span class="dot in_use"></span>사용중</div>
+              <div class="legend-item"><span class="dot reserved"></span>예약</div>
+              <div class="legend-item"><span class="dot free"></span>비어있음</div>
+              <div class="legend-item"><span class="dot blocked"></span>차단</div>
+              <div class="legend-item"><span class="dot legacy"></span>레거시</div>
+            </div>
+
+            <div id="strip-grid" class="strip-grid"></div>
+          </section>
+
+          <section class="bottom">
+            <div class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2>AS 상세 목록</h2>
+                  <p>조회 결과표가 아니라 운영자가 실제로 손대는 관리 목록을 의도했습니다.</p>
+                </div>
+                <div id="table-count" class="chip">0 Rows</div>
+              </div>
+
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>AS / 용도</th>
+                      <th>상태</th>
+                      <th>장비 / VRF</th>
+                      <th>태그</th>
+                      <th>특이사항</th>
+                    </tr>
+                  </thead>
+                  <tbody id="table-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <aside class="detail-stack">
+              <div id="detail-card" class="detail-card"></div>
+
+              <div class="meta-card">
+                <div class="panel-head">
+                  <div>
+                    <h3>관리 필드 초안</h3>
+                    <p>자유 태그만 두지 않고 고정 필드와 메모를 같이 둡니다.</p>
+                  </div>
+                </div>
+                <div class="kv-grid">
+                  <div class="kv"><span>Service</span><strong>DC Border</strong></div>
+                  <div class="kv"><span>Owner</span><strong>NW Core Team</strong></div>
+                  <div class="kv"><span>Ticket</span><strong class="mono">CHG-240410-17</strong></div>
+                  <div class="kv"><span>Reserved Until</span><strong>2026-04-28</strong></div>
+                </div>
+                <div style="margin-top: 12px">
+                  <textarea readonly>특이사항 메모 예시: Edge migration 중이라 기존 ASN은 유지하고 신규 advertising은 Secondary VRF에서만 사용. 자동 회수 금지.</textarea>
+                </div>
+                <div class="button-row">
+                  <div class="button primary">예약 생성</div>
+                  <div class="button warn">상태 변경</div>
+                  <div class="button">메타데이터 편집</div>
+                </div>
+              </div>
+
+              <div class="future-card">
+                <h3>다음 확장 포인트</h3>
+                <p>LLDP, DC 위치, 장비 역할, 서비스 구성도, VRF 관계 같은 데이터가 나중에 붙어도 구조가 버티도록 설계해야 합니다.</p>
+                <div class="tag-row" style="margin-top: 12px">
+                  <span class="tag">LLDP</span>
+                  <span class="tag">DC 위치</span>
+                  <span class="tag">장비 역할</span>
+                  <span class="tag">서비스 구성도</span>
+                  <span class="tag">VRF 관계</span>
+                </div>
+              </div>
+            </aside>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const ranges = [
+        { id: "border", name: "DC Border", owner: "NW Core Team", start: 1000, end: 1099, summary: "대외 연동 / border ASN 풀" },
+        { id: "tenant", name: "Tenant Access", owner: "Platform Team", start: 1100, end: 1249, summary: "tenant VRF / access ASN 풀" },
+        { id: "security", name: "Security Edge", owner: "Security Network", start: 1250, end: 1399, summary: "DMZ / 보안 장비용 ASN 풀" },
+        { id: "legacy", name: "Legacy Transit", owner: "Infra Ops", start: 1400, end: 1499, summary: "레거시 / 예외 운영 구간" },
+      ];
+
+      const statusLabel = { in_use: "사용중", reserved: "예약", free: "비어있음", blocked: "차단", legacy: "레거시" };
+
+      function buildRecords() {
+        const list = [];
+        ranges.forEach((range) => {
+          for (let asn = range.start; asn <= range.end; asn += 1) {
+            const offset = asn - range.start;
+            let status = "free";
+            if (offset % 23 === 0 || offset % 41 === 0) status = "blocked";
+            else if (range.id === "legacy" && offset % 9 === 0) status = "legacy";
+            else if (offset % 5 === 0 || offset % 7 === 0) status = "in_use";
+            else if (offset % 11 === 0 || offset % 13 === 0) status = "reserved";
+
+            const deviceCount = status === "in_use" ? (offset % 3) + 1 : status === "legacy" ? 2 : 0;
+            const devices =
+              deviceCount > 0
+                ? Array.from({ length: deviceCount }, (_, index) => `${range.name.split(" ")[0].toLowerCase()}-leaf-${(offset % 5) + index + 1}`)
+                : [];
+
+            const tags = [range.id];
+            if (status === "reserved") tags.push("planned");
+            if (status === "blocked") tags.push("blocked");
+            if (status === "legacy") tags.push("manual-review");
+            if (offset % 8 === 0) tags.push("important");
+
+            list.push({
+              asn,
+              rangeId: range.id,
+              service: range.name,
+              owner: range.owner,
+              status,
+              deviceCount,
+              devices,
+              vrf: deviceCount > 0 ? `${range.name.replace(/[^A-Za-z]/g, "").toUpperCase()}_${(offset % 4) + 1}` : "-",
+              tags,
+              note:
+                status === "reserved"
+                  ? "증설 예정"
+                  : status === "blocked"
+                    ? "재사용 금지"
+                    : status === "legacy"
+                      ? "legacy interop 유지"
+                      : status === "in_use"
+                        ? "정상 운영"
+                        : "할당 가능",
+              description:
+                status === "in_use"
+                  ? `${range.name} 용도 운영 중`
+                  : status === "reserved"
+                    ? `${range.name} 신규 예약`
+                    : status === "blocked"
+                      ? `${range.name} 정책상 차단`
+                      : status === "legacy"
+                        ? `${range.name} legacy 유지`
+                        : `${range.name} 가용 번호`,
+              reservedBy: status === "reserved" ? "mslee" : "-",
+              ticket: status === "reserved" ? `CHG-2404-${String(asn).slice(-2)}` : "-",
+            });
+          }
+        });
+        return list;
+      }
+
+      const records = buildRecords();
+      const state = { selectedRangeId: "security", selectedAsn: 1251, search: "", status: "all", density: "all" };
+
+      function getRangeRecords(rangeId) {
+        return records.filter((record) => record.rangeId === rangeId);
+      }
+
+      function countStatus(list) {
+        return list.reduce((acc, item) => {
+          acc[item.status] += 1;
+          return acc;
+        }, { in_use: 0, reserved: 0, free: 0, blocked: 0, legacy: 0 });
+      }
+
+      function pct(value, total) {
+        return total ? Math.round((value / total) * 100) : 0;
+      }
+
+      function visibleRecords() {
+        return getRangeRecords(state.selectedRangeId).filter((record) => {
+          const matchesStatus = state.status === "all" || record.status === state.status;
+          const matchesDensity = state.density === "all" || record.status !== "free";
+          const token = state.search.trim().toLowerCase();
+          const haystack = [record.asn, record.service, record.vrf, record.description, record.note, ...record.tags, ...record.devices].join(" ").toLowerCase();
+          const matchesSearch = token ? haystack.includes(token) : true;
+          return matchesStatus && matchesDensity && matchesSearch;
+        });
+      }
+
+      function renderMetrics() {
+        const counts = countStatus(records);
+        const total = records.length;
+        const metrics = [
+          ["전체 풀", total, `${ranges.length}개 서비스 범위`],
+          ["사용중", counts.in_use, `${pct(counts.in_use, total)}% 점유`],
+          ["예약", counts.reserved, "작업 예정 반영"],
+          ["비어있음", counts.free, "즉시 후보"],
+          ["예외", counts.blocked + counts.legacy, "차단 + 레거시"],
+        ];
+        document.getElementById("metrics").innerHTML = metrics.map(([label, value, note]) => `
+          <article class="metric">
+            <span>${label}</span>
+            <strong>${value}</strong>
+            <small>${note}</small>
+          </article>
+        `).join("");
+      }
+
+      function renderServiceList() {
+        document.getElementById("service-list").innerHTML = ranges.map((range) => {
+          const counts = countStatus(getRangeRecords(range.id));
+          const total = range.end - range.start + 1;
+          const active = range.id === state.selectedRangeId ? "active" : "";
+          return `
+            <article class="service-card ${active}" data-range-id="${range.id}">
+              <div class="service-card-top">
+                <div>
+                  <strong>${range.name}</strong>
+                  <small>${range.start} - ${range.end}</small>
+                </div>
+                <span class="status-pill pill-in_use">${pct(counts.in_use + counts.reserved, total)}% 관리중</span>
+              </div>
+              <div class="bar">
+                <span class="seg-in_use" style="width:${pct(counts.in_use, total)}%"></span>
+                <span class="seg-reserved" style="width:${pct(counts.reserved, total)}%"></span>
+                <span class="seg-free" style="width:${pct(counts.free, total)}%"></span>
+                <span class="seg-blocked" style="width:${pct(counts.blocked, total)}%"></span>
+                <span class="seg-legacy" style="width:${pct(counts.legacy, total)}%"></span>
+              </div>
+              <div class="service-stats">
+                <div>${counts.in_use} 사용중</div>
+                <div>${counts.reserved} 예약</div>
+                <div>${counts.free} 비어있음</div>
+                <div>${counts.blocked + counts.legacy} 예외</div>
+              </div>
+            </article>
+          `;
+        }).join("");
+
+        document.querySelectorAll(".service-card").forEach((card) => {
+          card.addEventListener("click", () => {
+            state.selectedRangeId = card.dataset.rangeId;
+            const first = visibleRecords()[0];
+            if (first) state.selectedAsn = first.asn;
+            render();
+          });
+        });
+      }
+
+      function renderStrip() {
+        const range = ranges.find((item) => item.id === state.selectedRangeId);
+        const counts = countStatus(getRangeRecords(state.selectedRangeId));
+        document.getElementById("range-title").textContent = `${range.name} AS 범위`;
+        document.getElementById("range-summary").textContent = `${range.summary} / ${range.start} - ${range.end} / ${range.owner}`;
+        document.getElementById("range-meta").innerHTML = `
+          <div class="chip">사용중 ${counts.in_use}</div>
+          <div class="chip">예약 ${counts.reserved}</div>
+          <div class="chip">가용 ${counts.free}</div>
+        `;
+
+        document.getElementById("strip-grid").innerHTML = visibleRecords().map((record) => {
+          const active = record.asn === state.selectedAsn ? "active" : "";
+          return `
+            <article class="asn-cell ${record.status} ${active}" data-asn="${record.asn}">
+              <div class="asn-id mono">${record.asn}</div>
+              <div class="asn-caption">${record.status === "free" ? "할당 가능" : record.description}</div>
+            </article>
+          `;
+        }).join("");
+
+        document.querySelectorAll(".asn-cell").forEach((cell) => {
+          cell.addEventListener("click", () => {
+            state.selectedAsn = Number(cell.dataset.asn);
+            renderTable();
+            renderDetail();
+            renderStrip();
+          });
+        });
+      }
+
+      function renderTable() {
+        const list = visibleRecords();
+        document.getElementById("table-count").textContent = `${list.length} Rows`;
+        document.getElementById("table-body").innerHTML = list.map((record) => `
+          <tr class="${record.asn === state.selectedAsn ? "active" : ""}" data-asn="${record.asn}">
+            <td><strong class="mono">AS ${record.asn}</strong><div>${record.description}</div></td>
+            <td><span class="status-pill pill-${record.status}">${statusLabel[record.status]}</span></td>
+            <td><div>${record.deviceCount} devices</div><div class="mono">${record.vrf}</div></td>
+            <td>${record.tags.map((tag) => `<span class="tag" style="margin:0 6px 6px 0">${tag}</span>`).join("")}</td>
+            <td>${record.note}</td>
+          </tr>
+        `).join("");
+
+        document.querySelectorAll("#table-body tr").forEach((row) => {
+          row.addEventListener("click", () => {
+            state.selectedAsn = Number(row.dataset.asn);
+            renderDetail();
+            renderStrip();
+            renderTable();
+          });
+        });
+      }
+
+      function renderDetail() {
+        const record = records.find((item) => item.asn === state.selectedAsn) || visibleRecords()[0];
+        if (!record) {
+          document.getElementById("detail-card").innerHTML = "<p>선택된 ASN이 없습니다.</p>";
+          return;
+        }
+        state.selectedAsn = record.asn;
+        document.getElementById("detail-card").innerHTML = `
+          <div class="detail-top">
+            <div>
+              <h3 class="mono">AS ${record.asn}</h3>
+              <p>${record.description}</p>
+            </div>
+            <span class="status-pill pill-${record.status}">${statusLabel[record.status]}</span>
+          </div>
+          <div class="tag-row" style="margin-top: 12px">
+            ${record.tags.map((tag) => `<span class="tag">${tag}</span>`).join("")}
+          </div>
+          <div class="kv-grid">
+            <div class="kv"><span>Service</span><strong>${record.service}</strong></div>
+            <div class="kv"><span>Owner</span><strong>${record.owner}</strong></div>
+            <div class="kv"><span>Device Count</span><strong>${record.deviceCount}</strong></div>
+            <div class="kv"><span>VRF</span><strong class="mono">${record.vrf}</strong></div>
+            <div class="kv"><span>Reserved By</span><strong>${record.reservedBy}</strong></div>
+            <div class="kv"><span>Ticket</span><strong class="mono">${record.ticket}</strong></div>
+          </div>
+          <div class="button-row">
+            <div class="button primary">예약 처리</div>
+            <div class="button warn">상태 변경</div>
+            <div class="button">메모 편집</div>
+          </div>
+        `;
+      }
+
+      function render() {
+        renderMetrics();
+        renderServiceList();
+        renderStrip();
+        renderTable();
+        renderDetail();
+      }
+
+      document.getElementById("search-input").addEventListener("input", (event) => {
+        state.search = event.target.value;
+        const first = visibleRecords()[0];
+        if (first) state.selectedAsn = first.asn;
+        renderStrip();
+        renderTable();
+        renderDetail();
+      });
+
+      document.getElementById("status-filter").addEventListener("change", (event) => {
+        state.status = event.target.value;
+        const first = visibleRecords()[0];
+        if (first) state.selectedAsn = first.asn;
+        renderStrip();
+        renderTable();
+        renderDetail();
+      });
+
+      document.getElementById("density-filter").addEventListener("change", (event) => {
+        state.density = event.target.value;
+        const first = visibleRecords()[0];
+        if (first) state.selectedAsn = first.asn;
+        renderStrip();
+        renderTable();
+        renderDetail();
+      });
+
+      render();
+    </script>
+  </body>
+</html>

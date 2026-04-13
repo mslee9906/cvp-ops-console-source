@@ -45,22 +45,46 @@ class CollectionService:
         desired_source = self._source_mode()
         logger.info("Startup bootstrap started. desired_source=%s", desired_source)
         if self.repository.is_empty():
-            logger.info("Snapshot database is empty. Running initial refresh during startup.")
-            return self.refresh()
+            logger.info("Snapshot database is empty. Queueing initial refresh in background.")
+            self.start_refresh()
+            return {
+                'job_name': 'refresh_snapshot',
+                'source': desired_source,
+                'status': 'running',
+                'start_time': '',
+                'end_time': '',
+                'error_message': '',
+            }
 
         overview = self.repository.get_overview()
         latest_job = overview.get('latest_job')
         if not latest_job:
-            logger.info("No previous collection job found. Running refresh during startup.")
-            return self.refresh()
+            logger.info("No previous collection job found. Queueing refresh in background.")
+            self.start_refresh()
+            return {
+                'job_name': 'refresh_snapshot',
+                'source': desired_source,
+                'status': 'running',
+                'start_time': '',
+                'end_time': '',
+                'error_message': '',
+            }
         if latest_job.get('source') != desired_source or latest_job.get('status') != 'success':
             logger.info(
-                "Snapshot refresh required during startup. previous_source=%s previous_status=%s desired_source=%s",
+                "Snapshot refresh required during startup. Queueing background refresh. previous_source=%s previous_status=%s desired_source=%s",
                 latest_job.get('source'),
                 latest_job.get('status'),
                 desired_source,
             )
-            return self.refresh()
+            self.start_refresh()
+            return {
+                'job_name': str(latest_job.get('job_name') or 'refresh_snapshot'),
+                'source': desired_source,
+                'status': str(latest_job.get('status') or 'running'),
+                'start_time': str(latest_job.get('start_time') or ''),
+                'end_time': str(latest_job.get('end_time') or ''),
+                'error_message': str(latest_job.get('error_message') or ''),
+            }
         logger.info("Existing successful snapshot found. Startup bootstrap finished without refresh.")
         return latest_job or {
             'job_name': 'unknown',

@@ -824,7 +824,7 @@ export function WorkPlanBoard() {
 
                   {activeStep === 'reservation' ? (
                     <section className="workplan-two-column">
-                      <article className="workplan-stage-card tall">
+                      <article className="workplan-stage-card tall workplan-bgp-reservation-card">
                         <div className="workplan-stage-card-head">
                           <strong>BGP AS 예약</strong>
                           <span className="workplan-stage-pill">카드 단위 예약</span>
@@ -1415,7 +1415,8 @@ function sortCards(cards: KanbanCard[]) {
     ['ready', 3],
     ['in_progress', 4],
     ['verifying', 5],
-    ['done', 6],
+    ['incident', 6],
+    ['done', 7],
   ])
 
   return [...cards].sort((left, right) => {
@@ -1437,6 +1438,7 @@ function columnLabel(columnKey: KanbanColumnKey) {
     ready: '준비 완료',
     in_progress: '작업 중',
     verifying: '검증 중',
+    incident: '장애',
     done: '완료',
   }
   return labels[columnKey]

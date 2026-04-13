@@ -932,6 +932,10 @@
   font-size: 15px;
 }
 
+.workplan-bgp-reservation-card {
+  display: none;
+}
+
 @media (max-width: 1200px) {
   .workplan-layout,
   .workplan-two-column,

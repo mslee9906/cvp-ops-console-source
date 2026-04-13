@@ -419,6 +419,63 @@ class SnapshotRepository:
             ).fetchone()
         return dict(row) if row else None
 
+    def find_raw_device_variants(
+        self,
+        *,
+        serial: str = "",
+        mgmt_ip: str = "",
+        hostname: str = "",
+    ) -> list[dict[str, Any]]:
+        conditions: list[str] = []
+        params: list[Any] = []
+        normalized_serial = str(serial or "").strip()
+        normalized_mgmt_ip = str(mgmt_ip or "").strip()
+        normalized_hostname = str(hostname or "").strip()
+
+        if normalized_serial:
+            conditions.append("lower(d.serial) = lower(?)")
+            params.append(normalized_serial)
+        if normalized_mgmt_ip:
+            conditions.append("lower(coalesce(d.mgmt_ip, '')) = lower(?)")
+            params.append(normalized_mgmt_ip)
+        if normalized_hostname:
+            conditions.append("lower(d.hostname) = lower(?)")
+            params.append(normalized_hostname)
+        if not conditions:
+            return []
+
+        query = f"""
+            SELECT
+                d.raw_device_key,
+                d.cvp_source,
+                d.device_id,
+                d.hostname,
+                d.serial,
+                d.mgmt_ip,
+                d.model,
+                d.site,
+                d.tags_json,
+                d.last_collected_at,
+                c.file_path AS config_file_path,
+                c.config_hash,
+                c.collected_at AS config_collected_at,
+                c.line_count
+            FROM devices_raw AS d
+            LEFT JOIN config_snapshots_raw AS c
+                ON c.raw_device_key = d.raw_device_key
+            WHERE {" OR ".join(conditions)}
+            ORDER BY d.cvp_source, d.hostname, d.device_id
+        """
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        variants: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["tags"] = json.loads(item.pop("tags_json"))
+            item["has_config"] = bool(item.get("config_hash"))
+            variants.append(item)
+        return variants
+
     def get_device_config(self, device_id: str) -> dict[str, Any] | None:
         with self._connect() as connection:
             row = connection.execute(
@@ -447,13 +504,34 @@ class SnapshotRepository:
         item["tags"] = json.loads(item.pop("tags_json"))
         return item
 
+    def find_device_by_hostname(self, hostname: str) -> dict[str, Any] | None:
+        normalized_hostname = str(hostname or "").strip()
+        if not normalized_hostname:
+            return None
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT device_id, hostname, serial, mgmt_ip, model, site, tags_json, last_collected_at
+                FROM devices
+                WHERE lower(hostname) = lower(?)
+                ORDER BY hostname, device_id
+                LIMIT 1
+                """,
+                (normalized_hostname,),
+            ).fetchone()
+        if not row:
+            return None
+        item = dict(row)
+        item["tags"] = json.loads(item.pop("tags_json"))
+        return item
+
     def get_bgp_entries(self, asn: str) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
                 """
                 SELECT device_id, hostname, vrf, asn, router_id, shutdown, source_path
                 FROM bgp_entries
-                WHERE asn = ?
+                WHERE asn = ? AND CAST(asn AS INTEGER) <> 0
                 ORDER BY hostname, vrf
                 """,
                 (asn,),
@@ -464,6 +542,7 @@ class SnapshotRepository:
         query = """
             SELECT device_id, hostname, vrf, asn, router_id, shutdown, source_path
             FROM bgp_entries
+            WHERE CAST(asn AS INTEGER) <> 0
             ORDER BY hostname, vrf
         """
         params: tuple[Any, ...] = ()

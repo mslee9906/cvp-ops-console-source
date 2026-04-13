@@ -3,13 +3,14 @@
 ## 1. 문서 목적
 이 문서는 portable 배포 폴더 안에 들어 있는 **CVP Ops Console** 프로그램의 목적, 구조, 실행 방식, 내부 동작, 저장 방식, 화면 구성, API, 한계, 유지보수 포인트를 가능한 한 빠짐없이 설명하기 위한 기술 설명서입니다.
 
-이 프로그램은 **CVP API를 이용해 CVP에 등록된 장비들의 현황과 정보를 읽어 와서, 사용자가 단순 조회와 확인을 수행할 수 있도록 돕는 읽기 전용 현황 관리 프로그램**입니다.
+이 프로그램은 **CVP API를 이용해 CVP에 등록된 장비들의 현황과 정보를 읽어 와서, 사용자가 조회, 작업 관리, 경량 모니터링을 함께 수행할 수 있도록 돕는 운영 포털 프로그램**입니다.
 
 ### 중요 전제
 - 이 프로그램은 CVP를 대체하지 않습니다.
 - 이 프로그램은 장비 설정을 변경하지 않습니다.
 - 이 프로그램은 Change Control, Provisioning, Config Push 같은 제어 기능을 수행하지 않습니다.
 - 이 프로그램은 현재 시점의 스냅샷을 수집하고, 그 결과를 조회 가능한 형태로 정리해 주는 보조 도구입니다.
+- 이 프로그램은 실시간 이벤트를 수신하고 저장하지만, CVP 전체를 대체하는 완전한 NMS는 아닙니다.
 - 이 프로그램의 판단 결과는 운영 판단 보조가 목적이며, 자동 승인 시스템이 아닙니다.
 
 ## 2. 프로그램이 하는 일
@@ -22,6 +23,8 @@
 - Config 본문은 파일로 따로 저장합니다.
 - 웹 UI를 통해 장비, IP, BGP, VLAN, VRF, Config를 조회할 수 있게 합니다.
 - 사용자가 신규 IP, VLAN, BGP ASN, VRF를 쓰기 전에 현재 사용 여부를 조회할 수 있게 돕습니다.
+- 선택한 CVP에 대해 실시간 이벤트를 수신하고, 이벤트 이력 DB에 저장합니다.
+- 경고 조건에 걸린 이벤트를 작업 보드의 `장애` 칸에 카드로 자동 생성합니다.
 
 ## 3. 이 portable 폴더가 왜 설치 없이 동작하는가
 이 폴더는 일반적인 소스코드 배포본이 아니라 **실행 가능한 런타임 묶음**입니다.
@@ -53,6 +56,7 @@ cvp-ops-console-portable/
 ├─ cloudvision-python-trunk/
 ├─ config/
 ├─ frontend/
+├─ monitoring-runtime/
 ├─ python/
 ├─ run-live.bat
 ├─ run-demo.bat
@@ -73,6 +77,9 @@ cvp-ops-console-portable/
 - `frontend/`
   - build 완료된 웹 UI 파일 보관
   - `frontend/dist` 내부에 `index.html`, `assets` 포함
+- `monitoring-runtime/`
+  - 모니터링용 gRPC 이벤트 수신 런타임
+  - `CVP_Monitoring/app`에서 필요한 모듈을 복사해 둔 폴더
 - `python/`
   - portable Python 런타임 전체
 - `run-live.bat`
@@ -103,6 +110,8 @@ cvp-ops-console-portable/
 - `backend/data/db/`
   - SQLite DB 파일 저장 위치
   - 기본 DB 파일명은 `ops_console.db`
+  - 작업 이력 DB는 `ops_console_history.db`
+  - 모니터링 DB는 `ops_console_monitoring.db`
 - `backend/data/configs/`
   - 장비별 running-config 파일 저장 위치
 - `backend/data/sample_snapshot.json`
@@ -822,7 +831,7 @@ refresh 시 갱신 대상:
 
 ### 현재 한계
 - 전체 refresh는 full snapshot 방식이라 대규모 장비 환경에서는 시간이 걸릴 수 있음
-- 실시간 streaming 감시 도구는 아님
+- 실시간 모니터링은 경량 이벤트 수신/이력/작업보드 연계 수준이며, 완전한 NMS는 아님
 - IP는 현재 config parsing 기반 v1 로직임
 - IPv6는 현재 지원하지 않음
 - DHCP/negotiated 주소는 수집하지 않음
@@ -880,7 +889,7 @@ refresh 시 갱신 대상:
 - CVP task 실행
 - config push
 - change control 승인/실행
-- 실시간 장애 탐지
+- 완전한 NMS 대체
 - 자동 치유
 - 완전한 IPAM 대체
 - 완전한 NMS 대체
@@ -888,6 +897,6 @@ refresh 시 갱신 대상:
 ## 35. 최종 요약
 이 프로그램은 다음 한 문장으로 설명할 수 있습니다.
 
-> CVP에 등록된 장비들의 상태와 주요 자원(IP, BGP ASN, VLAN, VRF, Config)을 읽기 전용 스냅샷으로 수집해, 사용자가 웹 화면에서 간단히 확인하고 신규 사용 가능성을 조회할 수 있게 해 주는 portable 운영 보조 콘솔이다.
+> CVP에 등록된 장비들의 상태와 주요 자원(IP, BGP ASN, VLAN, VRF, Config)을 스냅샷으로 수집하고, 실시간 이벤트를 경량 모니터링하며, 작업 보드와 연계해 운영자가 웹 화면에서 조회와 대응을 함께 수행할 수 있게 해 주는 portable 운영 콘솔이다.
 
-즉, 이 프로그램의 핵심은 **제어**가 아니라 **조회**, **자동 승인**이 아니라 **운영 판단 보조**, **실시간 감시**가 아니라 **현재 스냅샷 기반 현황 확인**입니다.
+즉, 이 프로그램의 핵심은 **제어**가 아니라 **조회와 운영 대응 보조**, **자동 승인**이 아니라 **운영 판단 보조**, **완전한 NMS**가 아니라 **현황/이벤트/작업 연계형 포털**입니다.

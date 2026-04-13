@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 import os
+import re
 
 
 def _read_bool(name: str, default: bool) -> bool:
@@ -18,11 +19,34 @@ def _read_csv(name: str) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def _read_mapping(name: str, default: dict[str, str] | None = None) -> dict[str, str]:
+    mapping = dict(default or {})
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return mapping
+    for item in re.split(r"[,\n;]+", raw):
+        key, separator, value = item.partition("=")
+        if not separator:
+            continue
+        normalized_key = key.strip()
+        normalized_value = value.strip()
+        if normalized_key and normalized_value:
+            mapping[normalized_key] = normalized_value
+    return mapping
+
+
 def _read_int(name: str, default: int) -> int:
     raw = os.getenv(name)
     if raw is None or not raw.strip():
         return default
     return int(raw.strip())
+
+
+def _prefer_existing_path(*candidates: Path) -> Path:
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
 
 
 def _split_host_port(raw_host: str, default_port: int) -> tuple[str, int]:
@@ -34,6 +58,13 @@ def _split_host_port(raw_host: str, default_port: int) -> tuple[str, int]:
         if port.isdigit():
             return name.strip(), int(port)
     return host, default_port
+
+
+LEGACY_WORKPLAN_SNAPSHOT_MAP = {
+    "10.172.152.33": "87f82434-86ec-4b32-97a4-1a35cb28fed5",
+    "10.172.152.36": "ac29deb8-7758-4631-aad5-3f85364b2163",
+    "10.172.64.252": "6cef45c4-97e2-4454-83be-c7943b9d350f",
+}
 
 
 @dataclass(frozen=True)
@@ -50,10 +81,14 @@ class Settings:
     project_root: Path
     db_path: Path
     config_dir: Path
+    workplan_template_path: Path
+    workplan_snapshot_template_map: dict[str, str]
+    workplan_snapshot_template_default: str
     sample_snapshot_path: Path
     telemetry_paths_path: Path
     field_mapping_path: Path
     cvp_library_root: Path
+    monitoring_app_root: Path
     use_mock_data: bool
     cvp_hosts: list[str]
     cvp_port: int
@@ -109,9 +144,20 @@ def get_settings() -> Settings:
     backend_dir = Path(__file__).resolve().parents[2]
     console_dir = backend_dir.parent
     project_root = console_dir.parent
+    default_cvp_library_root = _prefer_existing_path(
+        console_dir / "cloudvision-python-trunk",
+        project_root / "cloudvision-python-trunk",
+    )
+    default_monitoring_app_root = _prefer_existing_path(
+        console_dir / "monitoring-runtime" / "app",
+        project_root / "CVP_Monitoring" / "app",
+    )
 
     db_path = Path(os.getenv("OPS_CONSOLE_DB_PATH", backend_dir / "data" / "db" / "ops_console.db"))
     config_dir = Path(os.getenv("OPS_CONSOLE_CONFIG_DIR", backend_dir / "data" / "configs"))
+    workplan_template_path = Path(
+        os.getenv("OPS_CONSOLE_WORKPLAN_TEMPLATE", backend_dir / "data" / "workplan_template.xlsx"),
+    )
     sample_snapshot_path = Path(
         os.getenv("OPS_CONSOLE_SAMPLE_SNAPSHOT", backend_dir / "data" / "sample_snapshot.json"),
     )
@@ -128,12 +174,20 @@ def get_settings() -> Settings:
         project_root=project_root,
         db_path=db_path,
         config_dir=config_dir,
+        workplan_template_path=workplan_template_path,
+        workplan_snapshot_template_map=_read_mapping(
+            "OPS_CONSOLE_WORKPLAN_SNAPSHOT_MAP",
+            LEGACY_WORKPLAN_SNAPSHOT_MAP,
+        ),
+        workplan_snapshot_template_default=os.getenv(
+            "OPS_CONSOLE_WORKPLAN_SNAPSHOT_DEFAULT",
+            "ff7046bc-e60e-4d26-bde8-c97215f8417f",
+        ).strip(),
         sample_snapshot_path=sample_snapshot_path,
         telemetry_paths_path=telemetry_paths_path,
         field_mapping_path=field_mapping_path,
-        cvp_library_root=Path(
-            os.getenv("OPS_CONSOLE_CVP_LIBRARY_ROOT", project_root / "cloudvision-python-trunk"),
-        ),
+        cvp_library_root=Path(os.getenv("OPS_CONSOLE_CVP_LIBRARY_ROOT", str(default_cvp_library_root))),
+        monitoring_app_root=Path(os.getenv("OPS_CONSOLE_MONITORING_APP_ROOT", str(default_monitoring_app_root))),
         use_mock_data=_read_bool("OPS_CONSOLE_USE_MOCK", True),
         cvp_hosts=_read_csv("CVP_HOST"),
         cvp_port=_read_int("CVP_PORT", 443),

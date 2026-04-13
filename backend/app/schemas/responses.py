@@ -97,10 +97,73 @@ class CollectionProgressResponse(BaseModel):
     latest_job: CollectionJobSummary | None = None
 
 
+class WorkPlanProgressResponse(BaseModel):
+    job_id: str
+    card_id: int | None = None
+    project_name: str = ""
+    status: str
+    progress_percent: int
+    step: str
+    detail: str = ""
+    started_at: str = ""
+    updated_at: str = ""
+    finished_at: str = ""
+    filename: str = ""
+    error_message: str = ""
+    download_ready: bool = False
+
+
 class RecordListResponse(BaseModel):
     scope: str
     total_count: int
     items: list[LookupMatch] = Field(default_factory=list)
+
+
+class BgpManagementItem(BaseModel):
+    device_id: str
+    hostname: str
+    vrf: str
+    asn: str
+    router_id: str = ""
+    shutdown: bool = False
+
+
+class BgpManagementReservation(BaseModel):
+    id: int
+    kind: str
+    value: str
+    status: str = "reserved"
+    card_id: int
+    card_code: str = ""
+    card_title: str = ""
+    reserved_by_user_id: int | None = None
+    reserved_by_name: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    fulfilled_at: str = ""
+    cancelled_at: str = ""
+
+
+class BgpManagementManualEntry(BaseModel):
+    id: int
+    asn: str
+    entry_kind: str
+    device_names: list[str] = Field(default_factory=list)
+    note: str = ""
+    created_by_user_id: int | None = None
+    created_by_name: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class BgpManagementResponse(BaseModel):
+    scope: str = "bgp_management"
+    total_count: int
+    min_asn: int | None = None
+    max_asn: int | None = None
+    items: list[BgpManagementItem] = Field(default_factory=list)
+    reservations: list[BgpManagementReservation] = Field(default_factory=list)
+    manual_entries: list[BgpManagementManualEntry] = Field(default_factory=list)
 
 
 class VrfGroupDevice(BaseModel):

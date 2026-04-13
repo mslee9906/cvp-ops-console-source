@@ -68,6 +68,16 @@ def delete_kanban_card(request: Request, card_id: int) -> dict[str, bool]:
     return {"ok": True}
 
 
+@router.delete("/columns/{column_key}/cards")
+def clear_kanban_column_cards(request: Request, column_key: str) -> dict[str, int | bool]:
+    _require_editor(request)
+    try:
+        deleted = request.app.state.kanban_service.clear_column_cards(column_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "deleted": deleted}
+
+
 @router.get("/targets/{target_id}/snapshot", response_model=KanbanTargetSnapshotResponse)
 def get_kanban_target_snapshot(request: Request, target_id: int) -> KanbanTargetSnapshotResponse:
     snapshot = request.app.state.kanban_service.get_target_snapshot(target_id)

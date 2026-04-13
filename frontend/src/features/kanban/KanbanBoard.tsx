@@ -1,6 +1,6 @@
 ﻿import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ArrowLeft, CheckCircle2, GripVertical, Plus, RefreshCcw, Search } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ChevronDown, ChevronUp, GripVertical, Plus, RefreshCcw, Search, Trash2 } from 'lucide-react'
 
 import { api } from '../../api'
 import type {
@@ -25,6 +25,7 @@ const COLUMN_META: Array<{ key: KanbanColumnKey; label: string; tone: string }> 
   { key: 'ready', label: '준비 완료', tone: 'teal' },
   { key: 'in_progress', label: '작업 중', tone: 'amber' },
   { key: 'verifying', label: '검증 중', tone: 'blue' },
+  { key: 'incident', label: '장애', tone: 'rose' },
 ]
 
 const DETAIL_STEP_META: Array<{ key: DetailStepKey; label: string; body: string }> = [
@@ -67,6 +68,8 @@ export function KanbanBoard({ users }: Props) {
   const [targetSearch, setTargetSearch] = useState('')
   const [existingBulkDraft, setExistingBulkDraft] = useState('')
   const [newTargetBulkDraft, setNewTargetBulkDraft] = useState('')
+  const [existingBulkOpen, setExistingBulkOpen] = useState(false)
+  const [newBulkOpen, setNewBulkOpen] = useState(false)
   const [editingNewTargetIndex, setEditingNewTargetIndex] = useState<number | null>(null)
   const [newTargetDraft, setNewTargetDraft] = useState<KanbanTargetItem>(() => createEmptyTarget('new'))
   const [actionOverlayMessage, setActionOverlayMessage] = useState('')
@@ -136,6 +139,8 @@ export function KanbanBoard({ users }: Props) {
       setNewTargetDraft(createEmptyTarget(selectedCard.card_type === 'new' ? 'new' : 'existing'))
       setExistingBulkDraft('')
       setNewTargetBulkDraft('')
+      setExistingBulkOpen(false)
+      setNewBulkOpen(false)
     }
   }, [selectedCard])
 
@@ -235,6 +240,8 @@ export function KanbanBoard({ users }: Props) {
     setTargetSearch('')
     setExistingBulkDraft('')
     setNewTargetBulkDraft('')
+    setExistingBulkOpen(false)
+    setNewBulkOpen(false)
     setEditingNewTargetIndex(null)
     setNewTargetDraft(createEmptyTarget(card.card_type))
   }
@@ -247,6 +254,8 @@ export function KanbanBoard({ users }: Props) {
     setTargetSearch('')
     setExistingBulkDraft('')
     setNewTargetBulkDraft('')
+    setExistingBulkOpen(false)
+    setNewBulkOpen(false)
     setEditingNewTargetIndex(null)
     setNewTargetDraft(createEmptyTarget('new'))
   }
@@ -308,6 +317,29 @@ export function KanbanBoard({ users }: Props) {
       closeModal()
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : '작업 카드를 삭제하지 못했습니다.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleClearIncidentColumn() {
+    const incidentCards = groupedCards.incident ?? []
+    if (incidentCards.length === 0) {
+      return
+    }
+    const confirmed = window.confirm(`장애 칼럼의 카드 ${incidentCards.length}개를 모두 삭제하시겠습니까?`)
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setSubmitting(true)
+      setError('')
+      await api.clearKanbanColumnCards('incident')
+      await loadCards()
+      setActionOverlayMessage('장애 칼럼 카드를 모두 삭제했습니다.')
+    } catch (clearError) {
+      setError(clearError instanceof Error ? clearError.message : '장애 칼럼 카드를 삭제하지 못했습니다.')
     } finally {
       setSubmitting(false)
     }
@@ -591,7 +623,20 @@ export function KanbanBoard({ users }: Props) {
               <div className="kanban-column-head">
                 <div className="kanban-column-head-inner">
                   <span className={`kanban-pill ${columnMeta.tone}`}>{columnMeta.label}</span>
-                  <small>{cardsInColumn.length}개 카드</small>
+                  <div className="kanban-column-head-actions">
+                    <small>{cardsInColumn.length}개 카드</small>
+                    {columnMeta.key === 'incident' && cardsInColumn.length > 0 ? (
+                      <button
+                        className="kanban-danger-button compact"
+                        type="button"
+                        onClick={() => void handleClearIncidentColumn()}
+                        disabled={loading || submitting}
+                      >
+                        <Trash2 size={14} />
+                        <span>전체 삭제</span>
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 
@@ -896,23 +941,33 @@ export function KanbanBoard({ users }: Props) {
                       <div className="kanban-target-head">
                         <div>
                           <p className="kanban-kicker">Target Inventory</p>
-                          <h4>{detailDraft.card_type === 'new' ? '신규 장비 작업 대상' : '기존 장비 작업 대상'}</h4>
+                          <h4>작업 대상 구성</h4>
+                          <p className="kanban-target-helper">
+                            {detailDraft.card_type === 'new'
+                              ? '신규 장비 작업에도 기존 CVP 장비와 신규 등록 장비를 함께 추가할 수 있습니다.'
+                              : '기존 CVP 장비를 검색해 작업 대상으로 추가하고 관리합니다.'}
+                          </p>
                         </div>
                         <div className="kanban-inline-actions left">
-                          {detailDraft.card_type === 'existing' ? (
-                            <button className="kanban-ghost-button" type="button" onClick={() => void loadDevices()} disabled={deviceLoading}>
-                              <RefreshCcw size={16} />
-                              <span>{deviceLoading ? '장비 목록 불러오는 중...' : '장비 목록 새로고침'}</span>
-                            </button>
-                          ) : (
+                          <button className="kanban-ghost-button compact" type="button" onClick={() => void loadDevices()} disabled={deviceLoading}>
+                            <RefreshCcw size={15} />
+                            <span>{deviceLoading ? '장비 목록 불러오는 중...' : '장비 목록 새로고침'}</span>
+                          </button>
+                          {detailDraft.card_type === 'new' ? (
                             <button className="kanban-ghost-button" type="button" onClick={resetNewTargetEditor}>
                               입력 초기화
                             </button>
-                          )}
+                          ) : null}
                         </div>
                       </div>
 
-                      {detailDraft.card_type === 'existing' ? (
+                      <div className="kanban-target-section">
+                        <div className="kanban-target-section-head">
+                          <div>
+                            <strong>기존 장비 선택</strong>
+                            <p>Hostname, Mgmt IP, Model, Serial 기준으로 검색해 현재 작업 대상에 추가합니다.</p>
+                          </div>
+                        </div>
                         <div className="kanban-target-selector">
                           <label className="kanban-target-search">
                             <Search size={16} />
@@ -945,32 +1000,50 @@ export function KanbanBoard({ users }: Props) {
                               </div>
                             )}
                           </div>
-                          <div className="kanban-target-form-card">
+                          <div className="kanban-target-form-card compact">
                             <div className="kanban-target-editor-head">
                               <div>
                                 <strong>여러 장비 한 번에 추가</strong>
                                 <p>`hostname` 또는 `mgmt ip`를 한 줄에 하나씩 입력하면 선택 가능한 장비를 한 번에 추가합니다.</p>
                               </div>
-                              <button className="kanban-ghost-button" type="button" onClick={addExistingTargetsFromBulk}>
-                                <Plus size={16} />
-                                <span>일괄 추가</span>
+                              <button className="kanban-ghost-button compact" type="button" onClick={() => setExistingBulkOpen((current) => !current)}>
+                                {existingBulkOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                                <span>{existingBulkOpen ? '접기' : '열기'}</span>
                               </button>
                             </div>
-                            <label className="kanban-field wide">
-                              <span>일괄 입력</span>
-                              <AutoGrowTextarea
-                                value={existingBulkDraft}
-                                rows={4}
-                                onChange={(event) => setExistingBulkDraft(event.target.value)}
-                                placeholder={'leaf01\\nleaf02\\n10.10.10.11'}
-                              />
-                            </label>
+                            {existingBulkOpen ? (
+                              <>
+                                <label className="kanban-field wide">
+                                  <span>일괄 입력</span>
+                                  <AutoGrowTextarea
+                                    value={existingBulkDraft}
+                                    rows={3}
+                                    onChange={(event) => setExistingBulkDraft(event.target.value)}
+                                    placeholder={'leaf01\\nleaf02\\n10.10.10.11'}
+                                  />
+                                </label>
+                                <div className="kanban-target-card-actions">
+                                  <p className="kanban-target-helper">입력한 hostname 또는 관리 IP와 일치하는 장비만 추가됩니다.</p>
+                                  <button className="kanban-ghost-button compact" type="button" onClick={addExistingTargetsFromBulk}>
+                                    <Plus size={15} />
+                                    <span>일괄 추가</span>
+                                  </button>
+                                </div>
+                              </>
+                            ) : null}
                           </div>
                         </div>
-                      ) : null}
+                      </div>
 
                       {detailDraft.card_type === 'new' ? (
                         <div className="kanban-target-form-list">
+                          <div className="kanban-target-section">
+                            <div className="kanban-target-section-head">
+                              <div>
+                                <strong>신규 장비 등록</strong>
+                                <p>아직 CVP에 없는 장비를 직접 등록합니다. 신규 장비 행만 이후 수정할 수 있습니다.</p>
+                              </div>
+                            </div>
                           <div className="kanban-target-form-card">
                             <div className="kanban-target-editor-head">
                               <div>
@@ -1029,24 +1102,41 @@ export function KanbanBoard({ users }: Props) {
                                 />
                               </label>
                             </div>
-                            <label className="kanban-field wide">
-                              <span>신규 장비 일괄 입력</span>
-                              <AutoGrowTextarea
-                                value={newTargetBulkDraft}
-                                rows={4}
-                                onChange={(event) => setNewTargetBulkDraft(event.target.value)}
-                                placeholder={'LEAF-NEW-01,10.10.10.11,DCS-7280,Spine uplink\\nLEAF-NEW-02,10.10.10.12'}
-                              />
-                            </label>
-                            <div className="kanban-target-card-actions">
-                              <p className="kanban-target-helper">`hostname, mgmt ip, model, 역할 힌트` 순서로 한 줄에 한 대씩 입력할 수 있습니다.</p>
-                              <button className="kanban-ghost-button" type="button" onClick={addNewTargetsFromBulk}>
-                                <Plus size={16} />
-                                <span>일괄 등록</span>
-                              </button>
+                            <div className="kanban-target-form-card compact nested">
+                              <div className="kanban-target-editor-head">
+                                <div>
+                                  <strong>신규 장비 여러 대 한 번에 추가</strong>
+                                  <p>`hostname, mgmt ip, model, 역할 힌트` 순서로 한 줄에 한 대씩 입력합니다.</p>
+                                </div>
+                                <button className="kanban-ghost-button compact" type="button" onClick={() => setNewBulkOpen((current) => !current)}>
+                                  {newBulkOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                                  <span>{newBulkOpen ? '접기' : '열기'}</span>
+                                </button>
+                              </div>
+                              {newBulkOpen ? (
+                                <>
+                                  <label className="kanban-field wide">
+                                    <span>신규 장비 일괄 입력</span>
+                                    <AutoGrowTextarea
+                                      value={newTargetBulkDraft}
+                                      rows={3}
+                                      onChange={(event) => setNewTargetBulkDraft(event.target.value)}
+                                      placeholder={'LEAF-NEW-01,10.10.10.11,DCS-7280,Spine uplink\\nLEAF-NEW-02,10.10.10.12'}
+                                    />
+                                  </label>
+                                  <div className="kanban-target-card-actions">
+                                    <p className="kanban-target-helper">Hostname은 필수이며, 나머지는 비워 둘 수 있습니다.</p>
+                                    <button className="kanban-ghost-button compact" type="button" onClick={addNewTargetsFromBulk}>
+                                      <Plus size={15} />
+                                      <span>일괄 등록</span>
+                                    </button>
+                                  </div>
+                                </>
+                              ) : null}
                             </div>
                           </div>
-                          {targetRows.length === 0 ? (
+                          </div>
+                          {targetRows.filter((target) => target.target_kind === 'new').length === 0 ? (
                             <div className="kanban-target-empty">
                               <strong>등록된 신규 장비가 없습니다.</strong>
                               <p>위 입력 영역에서 한 대씩 추가하거나 여러 줄 입력으로 한 번에 등록하세요.</p>
@@ -1072,15 +1162,15 @@ export function KanbanBoard({ users }: Props) {
                             {targetRows.map((target, index) => (
                               <div
                                 key={target.id ?? `${target.display_name}-${index}`}
-                                className={`kanban-target-table-row ${detailDraft.card_type === 'new' && editingNewTargetIndex === index ? 'active' : ''} ${detailDraft.card_type === 'new' ? 'editable' : ''}`}
-                                onClick={detailDraft.card_type === 'new' ? () => startEditNewTarget(index) : undefined}
+                                className={`kanban-target-table-row ${target.target_kind === 'new' && editingNewTargetIndex === index ? 'active' : ''} ${target.target_kind === 'new' ? 'editable' : ''}`}
+                                onClick={target.target_kind === 'new' ? () => startEditNewTarget(index) : undefined}
                               >
                                 <span>{target.display_name || '-'}</span>
                                 <span>{target.mgmt_ip || '-'}</span>
                                 <span>{target.model || '-'}</span>
-                                <span>{target.cvp_device_id ? 'CVP 연결됨' : '수기 등록 대상'}</span>
+                                <span>{target.cvp_device_id ? 'CVP 연결됨' : target.target_kind === 'new' ? '신규 수기 등록' : '수기 등록 대상'}</span>
                                 <span>
-                                  {detailDraft.card_type === 'new' ? (
+                                  {target.target_kind === 'new' ? (
                                     <button
                                       className="kanban-link-button"
                                       type="button"

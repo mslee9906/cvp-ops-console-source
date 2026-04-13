@@ -16,15 +16,19 @@ from app.api.edm_link_routes import router as edm_link_router
 from app.api.history_routes import router as history_router
 from app.api.kanban_routes import router as kanban_router
 from app.api.notification_routes import router as notification_router
+from app.api.monitoring_routes import router as monitoring_router
 from app.api.reservation_routes import router as reservation_router
 from app.api.workflow_routes import router as workflow_router
+from app.api.workplan_routes import router as workplan_router
 from app.api.routes import router
 from app.core.settings import get_settings
 from app.repositories.auth_repository import AuthRepository
+from app.repositories.bgp_management_repository import BgpManagementRepository
 from app.repositories.edm_link_repository import EdmLinkRepository
 from app.repositories.history_repository import HistoryRepository
 from app.repositories.kanban_repository import KanbanRepository
 from app.repositories.notification_repository import NotificationRepository
+from app.repositories.monitoring_repository import MonitoringRepository
 from app.repositories.reservation_repository import ReservationRepository
 from app.repositories.snapshot_repository import SnapshotRepository
 from app.repositories.workflow_repository import WorkflowRepository
@@ -36,9 +40,11 @@ from app.services.edm_link_service import EdmLinkService
 from app.services.history_service import HistoryService
 from app.services.kanban_service import KanbanService
 from app.services.notification_service import NotificationService
+from app.services.monitoring_service import MonitoringService
 from app.services.query_service import QueryService
 from app.services.reservation_service import ReservationService
 from app.services.workflow_service import WorkflowService
+from app.services.workplan_service import WorkPlanService
 from app.storage.config_files import ConfigFileManager
 
 
@@ -50,30 +56,36 @@ logging.basicConfig(
 
 settings = get_settings()
 history_db_path = settings.db_path.with_name("ops_console_history.db")
+monitoring_db_path = settings.db_path.with_name("ops_console_monitoring.db")
 repository = SnapshotRepository(settings.db_path)
 auth_repository = AuthRepository(settings.db_path)
 edm_link_repository = EdmLinkRepository(settings.db_path)
 history_repository = HistoryRepository(history_db_path)
+monitoring_repository = MonitoringRepository(monitoring_db_path)
 kanban_repository = KanbanRepository(settings.db_path)
 notification_repository = NotificationRepository(settings.db_path)
 reservation_repository = ReservationRepository(settings.db_path)
+bgp_management_repository = BgpManagementRepository(settings.db_path)
 workflow_repository = WorkflowRepository(settings.db_path)
 file_manager = ConfigFileManager(settings.config_dir)
 reservation_service = ReservationService(reservation_repository, kanban_repository, repository)
 collection_service = CollectionService(repository, file_manager, settings, reservation_service=reservation_service)
-query_service = QueryService(repository, reservation_repository)
+query_service = QueryService(repository, reservation_repository, bgp_management_repository)
 auth_service = AuthService(auth_repository, settings)
 automation_service = AutomationService(repository, settings)
 edm_link_service = EdmLinkService(edm_link_repository)
 kanban_service = KanbanService(kanban_repository, repository, workflow_repository, reservation_repository)
 notification_service = NotificationService(notification_repository)
+monitoring_service = MonitoringService(monitoring_repository, settings, kanban_service)
 workflow_service = WorkflowService(workflow_repository, kanban_repository, notification_service)
 history_service = HistoryService(history_repository, kanban_repository, workflow_repository)
+workplan_service = WorkPlanService(kanban_service, settings)
 backup_service = BackupService(
     console_dir=settings.console_dir,
     backend_dir=settings.backend_dir,
     primary_db_path=settings.db_path,
     history_db_path=history_db_path,
+    monitoring_db_path=monitoring_db_path,
     config_snapshot_dir=settings.config_dir,
 )
 
@@ -97,9 +109,12 @@ app.state.automation_service = automation_service
 app.state.edm_link_service = edm_link_service
 app.state.kanban_service = kanban_service
 app.state.notification_service = notification_service
+app.state.monitoring_service = monitoring_service
 app.state.reservation_service = reservation_service
+app.state.bgp_management_repository = bgp_management_repository
 app.state.workflow_service = workflow_service
 app.state.history_service = history_service
+app.state.workplan_service = workplan_service
 app.state.backup_service = backup_service
 app.state.source_mode = "demo"
 app.state.settings = settings
@@ -109,8 +124,10 @@ app.include_router(automation_router, prefix="/api/automation")
 app.include_router(edm_link_router, prefix="/api/edm-links")
 app.include_router(kanban_router, prefix="/api/kanban")
 app.include_router(notification_router, prefix="/api/notifications")
+app.include_router(monitoring_router, prefix="/api/monitoring")
 app.include_router(reservation_router, prefix="/api/reservations")
 app.include_router(workflow_router, prefix="/api/workflows")
+app.include_router(workplan_router, prefix="/api/workplans")
 app.include_router(history_router, prefix="/api/history")
 app.include_router(backup_router, prefix="/api/backups")
 
@@ -133,12 +150,20 @@ def bootstrap_demo_snapshot() -> None:
     edm_link_service.initialize()
     kanban_service.initialize()
     notification_service.initialize()
+    monitoring_service.initialize()
     reservation_service.initialize()
+    bgp_management_repository.initialize()
     workflow_service.initialize()
     history_service.initialize()
     latest_job = collection_service.ensure_seed_data()
     reservation_service.reconcile_snapshot()
+    monitoring_service.start()
     app.state.source_mode = latest_job["source"]
+
+
+@app.on_event("shutdown")
+def shutdown_monitoring() -> None:
+    monitoring_service.shutdown()
 
 
 @app.get("/health")

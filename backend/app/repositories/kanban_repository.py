@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS kanban_cards (
     assignee TEXT NOT NULL DEFAULT '',
     assignee_user_id INTEGER,
     created_by_user_id INTEGER,
+    created_by_label TEXT NOT NULL DEFAULT '',
     updated_by_user_id INTEGER,
     column_key TEXT NOT NULL,
     card_type TEXT NOT NULL,
@@ -97,7 +98,7 @@ class KanbanRepository:
                     COALESCE(assignee_user.display_name, c.assignee, '') AS assignee,
                     c.assignee_user_id,
                     c.created_by_user_id,
-                    COALESCE(created_user.display_name, '') AS created_by_name,
+                    COALESCE(created_user.display_name, c.created_by_label, '') AS created_by_name,
                     c.updated_by_user_id,
                     COALESCE(updated_user.display_name, '') AS updated_by_name,
                     c.column_key,
@@ -177,14 +178,15 @@ class KanbanRepository:
             created_by_user_id = _normalize_optional_int(payload.get("created_by_user_id"))
             updated_by_user_id = _normalize_optional_int(payload.get("updated_by_user_id")) or created_by_user_id
             assignee = self._resolve_user_display_name(connection, assignee_user_id, str(payload.get("assignee", "") or ""))
+            created_by_label = str(payload.get("created_by_label", "") or "").strip()
             created_at = str(created_at_override or timestamp)
             updated_at = str(updated_at_override or timestamp)
             cursor = connection.execute(
                 """
                 INSERT INTO kanban_cards (
-                    card_code, title, description, assignee, assignee_user_id, created_by_user_id, updated_by_user_id,
+                    card_code, title, description, assignee, assignee_user_id, created_by_user_id, created_by_label, updated_by_user_id,
                     column_key, card_type, priority, sort_order, created_at, updated_at, due_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card_code,
@@ -193,6 +195,7 @@ class KanbanRepository:
                     assignee,
                     assignee_user_id,
                     created_by_user_id,
+                    created_by_label,
                     updated_by_user_id,
                     payload["column_key"],
                     payload["card_type"],
@@ -382,6 +385,20 @@ class KanbanRepository:
             connection.commit()
         return cursor.rowcount > 0
 
+    def delete_cards_by_column(self, column_key: str) -> int:
+        normalized_column_key = str(column_key or "").strip()
+        if not normalized_column_key:
+            return 0
+
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM kanban_cards WHERE column_key = ?",
+                (normalized_column_key,),
+            )
+            self._normalize_column_orders(connection, {normalized_column_key})
+            connection.commit()
+            return int(cursor.rowcount or 0)
+
     def reorder_cards(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not items:
             return self.list_cards()
@@ -436,7 +453,7 @@ class KanbanRepository:
                 COALESCE(assignee_user.display_name, c.assignee, '') AS assignee,
                 c.assignee_user_id,
                 c.created_by_user_id,
-                COALESCE(created_user.display_name, '') AS created_by_name,
+                COALESCE(created_user.display_name, c.created_by_label, '') AS created_by_name,
                 c.updated_by_user_id,
                 COALESCE(updated_user.display_name, '') AS updated_by_name,
                 c.column_key,
@@ -935,6 +952,8 @@ class KanbanRepository:
             connection.execute("ALTER TABLE kanban_cards ADD COLUMN assignee_user_id INTEGER")
         if "created_by_user_id" not in card_columns:
             connection.execute("ALTER TABLE kanban_cards ADD COLUMN created_by_user_id INTEGER")
+        if "created_by_label" not in card_columns:
+            connection.execute("ALTER TABLE kanban_cards ADD COLUMN created_by_label TEXT NOT NULL DEFAULT ''")
         if "updated_by_user_id" not in card_columns:
             connection.execute("ALTER TABLE kanban_cards ADD COLUMN updated_by_user_id INTEGER")
 
@@ -989,7 +1008,8 @@ CASE c.column_key
     WHEN 'ready' THEN 3
     WHEN 'in_progress' THEN 4
     WHEN 'verifying' THEN 5
-    WHEN 'done' THEN 6
+    WHEN 'incident' THEN 6
+    WHEN 'done' THEN 7
     ELSE 99
 END
 """

@@ -9,3 +9,4 @@ protobuf>=5.28.3,<6.0dev
 pyavd-utils==0.0.1
 requests>=2.20.1
 typing-extensions>=4.2.0
+xlwings==0.35.0

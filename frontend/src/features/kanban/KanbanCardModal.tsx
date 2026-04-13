@@ -10,6 +10,7 @@ const columnOptions: Array<{ value: KanbanColumnKey; label: string }> = [
   { value: 'ready', label: '준비 완료' },
   { value: 'in_progress', label: '작업 중' },
   { value: 'verifying', label: '검증 중' },
+  { value: 'incident', label: '장애' },
 ]
 
 const typeOptions: Array<{ value: KanbanCardType; label: string }> = [

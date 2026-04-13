@@ -3,13 +3,14 @@
 1. 문서 목적
 이 문서는 portable 배포 폴더 안에 들어 있는 CVP Ops Console 프로그램의 목적, 구조, 실행 방식, 내부 동작, 저장 방식, 화면 구성, API, 한계, 유지보수 포인트를 가능한 한 빠짐없이 설명하기 위한 기술 설명서입니다.
 
-이 프로그램은 'CVP API를 이용해 CVP에 등록된 장비들의 현황과 정보를 읽어 와서, 사용자가 단순 조회와 확인을 수행할 수 있도록 돕는 읽기 전용 현황 관리 프로그램'입니다.
+이 프로그램은 'CVP API를 이용해 CVP에 등록된 장비들의 현황과 정보를 읽어 와서, 사용자가 조회, 작업 관리, 경량 모니터링을 함께 수행할 수 있도록 돕는 운영 포털 프로그램'입니다.
 
 중요한 전제는 다음과 같습니다.
 - 이 프로그램은 CVP를 대체하지 않습니다.
 - 이 프로그램은 장비 설정을 변경하지 않습니다.
 - 이 프로그램은 Change Control, Provisioning, Config Push 같은 제어 기능을 수행하지 않습니다.
 - 이 프로그램은 현재 시점의 스냅샷을 수집하고, 그 결과를 조회 가능한 형태로 정리해 주는 보조 도구입니다.
+- 이 프로그램은 실시간 이벤트를 수신하고 저장하지만, CVP 전체를 대체하는 완전한 NMS는 아닙니다.
 - 이 프로그램의 판단 결과는 '운영 판단 보조'가 목적이며, 자동 승인 시스템이 아닙니다.
 
 2. 프로그램이 하는 일
@@ -21,6 +22,8 @@
 - Config 본문은 파일로 따로 저장합니다.
 - 웹 UI를 통해 장비, IP, BGP, VLAN, VRF, Config를 조회할 수 있게 합니다.
 - 사용자가 신규 IP, VLAN, BGP ASN, VRF를 쓰기 전에 현재 사용 여부를 조회할 수 있게 돕습니다.
+- 선택한 CVP에 대해 실시간 이벤트를 수신하고, 이벤트 이력 DB에 저장합니다.
+- 경고 조건에 걸린 이벤트를 작업 보드의 장애 칸에 카드로 자동 생성합니다.
 
 3. 이 portable 폴더가 왜 설치 없이 동작하는가
 이 폴더는 일반적인 소스코드 배포본이 아니라 '실행 가능한 런타임 묶음'입니다.
@@ -56,6 +59,9 @@
 - frontend/
   - build 완료된 웹 UI 파일 보관
   - frontend/dist 내부에 index.html, assets 포함
+- monitoring-runtime/
+  - 모니터링용 gRPC 이벤트 수신 런타임
+  - CVP_Monitoring/app에서 필요한 모듈을 복사해 둔 폴더
 - python/
   - portable Python 런타임 전체
 - run-live.bat
@@ -85,6 +91,8 @@ FastAPI 애플리케이션이 여기서 실행됩니다.
 - backend/data/db/
   - SQLite DB 파일 저장 위치
   - 기본 DB 파일명은 ops_console.db
+  - 작업 이력 DB는 ops_console_history.db
+  - 모니터링 DB는 ops_console_monitoring.db
 - backend/data/configs/
   - 장비별 running-config 파일 저장 위치
 - backend/data/sample_snapshot.json

@@ -81,6 +81,39 @@ export interface RecordListResponse {
   items: LookupMatch[]
 }
 
+export interface BgpManagementItem {
+  device_id: string
+  hostname: string
+  vrf: string
+  asn: string
+  router_id: string
+  shutdown: boolean
+}
+
+export type BgpManagementManualEntryKind = 'reserved' | 'custom'
+
+export interface BgpManagementManualEntry {
+  id: number
+  asn: string
+  entry_kind: BgpManagementManualEntryKind
+  device_names: string[]
+  note: string
+  created_by_user_id?: number | null
+  created_by_name: string
+  created_at: string
+  updated_at: string
+}
+
+export interface BgpManagementResponse {
+  scope: 'bgp_management'
+  total_count: number
+  min_asn: number | null
+  max_asn: number | null
+  items: BgpManagementItem[]
+  reservations: ResourceReservation[]
+  manual_entries: BgpManagementManualEntry[]
+}
+
 export interface ConfigPreviewResponse {
   device_id: string
   hostname: string
@@ -222,7 +255,7 @@ export interface UserCreateInput {
   role: UserRole
 }
 
-export type KanbanColumnKey = 'blocked' | 'planned' | 'ready' | 'in_progress' | 'verifying' | 'done'
+export type KanbanColumnKey = 'blocked' | 'planned' | 'ready' | 'in_progress' | 'verifying' | 'incident' | 'done'
 export type KanbanCardType = 'existing' | 'new'
 export type KanbanPriority = 'high' | 'medium' | 'low'
 export type KanbanTargetKind = 'existing' | 'new'
@@ -403,6 +436,26 @@ export interface WorkHistoryRestoreResponse {
   history?: WorkHistoryItem | null
   restored_card: KanbanCard
   restored_workflow?: WorkflowDocumentResponse | null
+}
+
+export interface WorkPlanExportRequest {
+  project_name: string
+}
+
+export interface WorkPlanProgressResponse {
+  job_id: string
+  card_id: number | null
+  project_name: string
+  status: string
+  progress_percent: number
+  step: string
+  detail: string
+  started_at: string
+  updated_at: string
+  finished_at: string
+  filename: string
+  error_message: string
+  download_ready: boolean
 }
 
 export interface BackupItem {
@@ -662,4 +715,89 @@ export interface NotificationItem {
 export interface NotificationListResponse {
   items: NotificationItem[]
   unread_count: number
+}
+
+export type MonitoringSeverity = 'critical' | 'warning' | 'info'
+export type MonitoringStatus = 'active' | 'resolved'
+export type MonitoringSourceRuntime = 'connecting' | 'connected' | 'error' | 'paused'
+
+export interface MonitoringSourceConfigInput {
+  name: string
+  host: string
+  port: number
+  username: string
+  password: string
+  enabled: boolean
+}
+
+export interface MonitoringSourceConfig extends MonitoringSourceConfigInput {
+  id: number
+  status: MonitoringSourceRuntime
+  status_detail: string
+  last_event_at: string
+  last_connected_at: string
+  created_at: string
+  updated_at: string
+}
+
+export interface MonitoringEventItem {
+  id: number
+  source_id: number
+  source_name: string
+  source_host: string
+  source_port: number
+  event_id: string
+  stream_type: number
+  occurred_at: string
+  stored_at: string
+  occurred_unix_ms: number
+  severity: MonitoringSeverity
+  event_type: string
+  title: string
+  description: string
+  message: string
+  hostname: string
+  interface_name: string
+  comp_name: string
+  hostname1: string
+  hostname2: string
+  device_id: string
+  device_id2: string
+  l2_peer: string
+  is_l2_internal: boolean
+  maintenance_name: string
+  overlay: boolean
+  status: MonitoringStatus
+  acknowledged_at: string
+  bootstrap_suppressed: boolean
+  cvp_link: string
+  raw_json: Record<string, DetailValue>
+}
+
+export interface MonitoringSourceLive {
+  id: number
+  name: string
+  region: string
+  host: string
+  port: number
+  enabled: boolean
+  status: MonitoringSourceRuntime
+  status_label: string
+  status_detail: string
+  last_event_at: string
+  last_connected_at: string
+  events: MonitoringEventItem[]
+}
+
+export interface MonitoringDashboardResponse {
+  last_updated: string
+  overlay_count: number
+  maintenance_count: number
+  source_count: number
+  sources: MonitoringSourceLive[]
+}
+
+export interface MonitoringHistoryResponse {
+  items: MonitoringEventItem[]
+  total_count: number
 }

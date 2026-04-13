@@ -11,6 +11,7 @@ class KanbanColumnKey(str, Enum):
     ready = "ready"
     in_progress = "in_progress"
     verifying = "verifying"
+    incident = "incident"
     done = "done"
 
 

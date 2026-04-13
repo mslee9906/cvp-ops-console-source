@@ -1,0 +1,376 @@
+.planwriter-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.planwriter-hero,
+.planwriter-panel,
+.planwriter-empty,
+.planwriter-banner {
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 22px;
+  box-shadow: var(--shadow-panel);
+}
+
+.planwriter-hero,
+.planwriter-panel {
+  padding: 16px;
+}
+
+.planwriter-hero,
+.planwriter-panel-head,
+.planwriter-fixed-stage,
+.planwriter-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.planwriter-hero {
+  align-items: flex-start;
+}
+
+.planwriter-kicker {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #74839a;
+}
+
+.planwriter-hero h3,
+.planwriter-panel h4,
+.planwriter-stat-card strong,
+.planwriter-sheet-card strong {
+  margin: 0;
+}
+
+.planwriter-copy,
+.planwriter-notice p,
+.planwriter-sheet-card p,
+.planwriter-empty,
+.planwriter-inline-error {
+  color: #67768c;
+  line-height: 1.6;
+}
+
+.planwriter-primary,
+.planwriter-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.planwriter-primary:hover,
+.planwriter-secondary:hover {
+  transform: translateY(-1px);
+}
+
+.planwriter-primary {
+  padding: 11px 16px;
+  background: linear-gradient(135deg, #1f6feb, #2f8ed9);
+  color: white;
+  border-color: rgba(31, 111, 235, 0.24);
+}
+
+.planwriter-secondary {
+  padding: 9px 12px;
+  background: var(--surface-soft);
+  color: #132236;
+}
+
+.planwriter-secondary.compact {
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.planwriter-primary:disabled,
+.planwriter-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  transform: none;
+}
+
+.planwriter-banner,
+.planwriter-empty,
+.planwriter-inline-error {
+  padding: 13px 15px;
+}
+
+.planwriter-banner.error,
+.planwriter-inline-error {
+  border-color: rgba(190, 83, 100, 0.18);
+  background: var(--accent-rose-soft);
+  color: #8e3748;
+}
+
+.planwriter-banner.success {
+  border-color: rgba(31, 139, 119, 0.2);
+  background: var(--accent-teal-soft);
+  color: #1f6b58;
+}
+
+.planwriter-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.planwriter-stack,
+.planwriter-form-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.planwriter-field {
+  display: grid;
+  gap: 8px;
+}
+
+.planwriter-field span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #586880;
+}
+
+.planwriter-field select,
+.planwriter-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border-radius: 14px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface-base);
+  padding: 10px 12px;
+  color: #152234;
+  font: inherit;
+}
+
+.planwriter-field select:focus,
+.planwriter-field input:focus {
+  outline: none;
+  border-color: rgba(31, 111, 235, 0.3);
+  box-shadow: 0 0 0 4px rgba(31, 111, 235, 0.08);
+}
+
+.planwriter-fixed-stage {
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(222, 239, 255, 0.84), rgba(242, 248, 255, 0.98));
+  border: 1px solid rgba(31, 111, 235, 0.12);
+}
+
+.planwriter-fixed-stage strong {
+  font-size: 13px;
+}
+
+.planwriter-fixed-stage span,
+.planwriter-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #235fa8;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.planwriter-notice {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px 13px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(255, 248, 232, 0.92), rgba(255, 253, 246, 0.98));
+  border: 1px solid rgba(186, 135, 28, 0.14);
+}
+
+.planwriter-notice p {
+  margin: 0;
+}
+
+.planwriter-progress {
+  display: grid;
+  gap: 10px;
+  padding: 12px 13px;
+  border-radius: 16px;
+  border: 1px solid var(--line-soft);
+  background: linear-gradient(135deg, rgba(237, 245, 255, 0.94), rgba(255, 255, 255, 0.98));
+}
+
+.planwriter-progress.success {
+  border-color: rgba(31, 139, 119, 0.2);
+  background: linear-gradient(135deg, rgba(231, 250, 245, 0.96), rgba(255, 255, 255, 0.98));
+}
+
+.planwriter-progress.failed {
+  border-color: rgba(190, 83, 100, 0.18);
+  background: linear-gradient(135deg, rgba(255, 240, 243, 0.96), rgba(255, 255, 255, 0.98));
+}
+
+.planwriter-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.planwriter-progress-head strong,
+.planwriter-progress-head span {
+  font-size: 13px;
+}
+
+.planwriter-progress-head span {
+  color: #174d83;
+  font-weight: 800;
+}
+
+.planwriter-progress-bar {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(31, 111, 235, 0.12);
+}
+
+.planwriter-progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #1f6feb, #22a2c3);
+  transition: width 220ms ease;
+}
+
+.planwriter-progress.success .planwriter-progress-bar span {
+  background: linear-gradient(135deg, #1f8b77, #39b79d);
+}
+
+.planwriter-progress.failed .planwriter-progress-bar span {
+  background: linear-gradient(135deg, #be5364, #d4727f);
+}
+
+.planwriter-progress-detail,
+.planwriter-progress-meta {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.planwriter-progress-detail {
+  color: #223248;
+  font-size: 13px;
+}
+
+.planwriter-progress-meta {
+  color: #6a7b91;
+  font-size: 12px;
+}
+
+.planwriter-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.planwriter-meta-grid.expanded {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.planwriter-stat-card,
+.planwriter-sheet-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px 13px;
+  border-radius: 16px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface-soft);
+}
+
+.planwriter-stat-card span {
+  font-size: 12px;
+  color: #68788d;
+}
+
+.planwriter-stat-card strong {
+  font-size: 15px;
+  color: #152234;
+  word-break: break-word;
+}
+
+.planwriter-sheet-list {
+  display: grid;
+  gap: 10px;
+}
+
+.planwriter-target-list {
+  display: grid;
+  gap: 10px;
+}
+
+.planwriter-target-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px 13px;
+  border-radius: 16px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface-soft);
+}
+
+.planwriter-target-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.planwriter-target-card p {
+  margin: 0;
+  color: #67768c;
+}
+
+.planwriter-target-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.planwriter-target-badge.linked {
+  background: rgba(31, 139, 119, 0.12);
+  color: #1f6b58;
+}
+
+.planwriter-target-badge.missing {
+  background: rgba(190, 83, 100, 0.12);
+  color: #8e3748;
+}
+
+.planwriter-sheet-head {
+  justify-content: flex-start;
+  color: #174d83;
+}
+
+.planwriter-sheet-card p {
+  margin: 0;
+}
+
+@media (max-width: 1180px) {
+  .planwriter-grid,
+  .planwriter-meta-grid,
+  .planwriter-meta-grid.expanded {
+    grid-template-columns: 1fr;
+  }
+}

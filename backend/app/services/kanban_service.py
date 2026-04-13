@@ -14,6 +14,7 @@ from app.services.config_parser import extract_ip_records, extract_vmac_records
 
 
 ROUTER_BGP_RE = re.compile(r"^\s*router bgp (\S+)", re.MULTILINE)
+VALID_KANBAN_COLUMN_KEYS = {"blocked", "planned", "ready", "in_progress", "verifying", "incident", "done"}
 
 
 class KanbanService:
@@ -41,6 +42,27 @@ class KanbanService:
             payload["updated_by_user_id"] = int(current_user["id"])
         return self._apply_workflow_progress(self.repository.create_card(payload))
 
+    def create_monitoring_alert_card(self, event: dict[str, Any]) -> dict:
+        payload = {
+            "title": str(event.get("title") or event.get("event_type") or "Monitoring Alert").strip(),
+            "description": (
+                str(event.get("description") or "").strip()
+                or str(event.get("message") or "").strip()
+                or str(event.get("event_type") or "").strip()
+            ),
+            "due_at": "",
+            "assignee": "",
+            "assignee_user_id": None,
+            "created_by_label": "경고 발신",
+            "column_key": "incident",
+            "card_type": "existing",
+            "priority": "high" if str(event.get("severity") or "").lower() == "critical" else "medium",
+            "targets": self._build_monitoring_targets(event),
+            "planned_configs": [],
+            "checklist_items": [],
+        }
+        return self.create_card(payload, current_user=None)
+
     def update_card(self, card_id: int, changes: dict, current_user: dict[str, Any] | None = None) -> dict | None:
         if current_user:
             changes["updated_by_user_id"] = int(current_user["id"])
@@ -53,6 +75,12 @@ class KanbanService:
 
     def delete_card(self, card_id: int) -> bool:
         return self.repository.delete_card(card_id)
+
+    def clear_column_cards(self, column_key: str) -> int:
+        normalized_column_key = str(column_key or "").strip()
+        if normalized_column_key not in VALID_KANBAN_COLUMN_KEYS:
+            raise ValueError("Unknown kanban column")
+        return self.repository.delete_cards_by_column(normalized_column_key)
 
     def reorder_cards(self, items: list[dict]) -> list[dict]:
         return [self._apply_workflow_progress(card) for card in self.repository.reorder_cards(items)]
@@ -613,6 +641,75 @@ class KanbanService:
     def _get_saved_config_text(self, target_id: int) -> str:
         saved = self.repository.get_planned_config(target_id)
         return str(saved.get("config_text", "") if saved else "")
+
+    def _build_monitoring_targets(self, event: dict[str, Any]) -> list[dict[str, Any]]:
+        targets: list[dict[str, Any]] = []
+        seen_device_ids: set[str] = set()
+        seen_names: set[str] = set()
+
+        for device_id in [event.get("device_id"), event.get("device_id2")]:
+            normalized_device_id = str(device_id or "").strip()
+            if not normalized_device_id or normalized_device_id in seen_device_ids:
+                continue
+            device = self.snapshot_repository.get_device(normalized_device_id)
+            if not device:
+                continue
+            seen_device_ids.add(normalized_device_id)
+            seen_names.add(str(device.get("hostname") or "").strip().lower())
+            targets.append(
+                {
+                    "target_kind": "existing",
+                    "display_name": str(device.get("hostname") or normalized_device_id),
+                    "mgmt_ip": str(device.get("mgmt_ip") or ""),
+                    "model": str(device.get("model") or ""),
+                    "role_hint": str(device.get("site") or ""),
+                    "cvp_device_id": normalized_device_id,
+                    "match_status": "linked_to_cvp",
+                }
+            )
+
+        host_candidates = [
+            event.get("hostname"),
+            event.get("hostname1"),
+            event.get("hostname2"),
+            event.get("comp_name"),
+        ]
+        for host in host_candidates:
+            normalized_host = str(host or "").strip()
+            host_key = normalized_host.lower()
+            if not normalized_host or host_key in seen_names:
+                continue
+            seen_names.add(host_key)
+            device = self.snapshot_repository.find_device_by_hostname(normalized_host)
+            if device:
+                normalized_device_id = str(device.get("device_id") or "").strip()
+                if normalized_device_id and normalized_device_id not in seen_device_ids:
+                    seen_device_ids.add(normalized_device_id)
+                    targets.append(
+                        {
+                            "target_kind": "existing",
+                            "display_name": str(device.get("hostname") or normalized_host),
+                            "mgmt_ip": str(device.get("mgmt_ip") or ""),
+                            "model": str(device.get("model") or ""),
+                            "role_hint": str(device.get("site") or ""),
+                            "cvp_device_id": normalized_device_id,
+                            "match_status": "linked_to_cvp",
+                        }
+                    )
+                    continue
+            targets.append(
+                {
+                    "target_kind": "existing",
+                    "display_name": normalized_host,
+                    "mgmt_ip": "",
+                    "model": "",
+                    "role_hint": "",
+                    "cvp_device_id": "",
+                    "match_status": "manual_only",
+                }
+            )
+
+        return targets
 
     def _build_diff_lines(self, snapshot_text: str, planned_text: str) -> list[dict[str, Any]]:
         left_lines = self._prepare_diff_lines(snapshot_text)

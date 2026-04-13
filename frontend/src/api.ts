@@ -9,7 +9,9 @@ import type {
   AutomationToolSummary,
   BackupCreateResponse,
   BackupItem,
+  BgpManagementResponse,
   BackupRestoreResponse,
+  BgpManagementManualEntry,
   CollectionProgressResponse,
   CardReservationsResponse,
   ConfigPreviewResponse,
@@ -24,9 +26,13 @@ import type {
   KanbanTargetSnapshotResponse,
   KanbanValidationResponse,
   LoginResponse,
+  LookupResponse,
+  MonitoringDashboardResponse,
+  MonitoringHistoryResponse,
+  MonitoringSourceConfig,
+  MonitoringSourceConfigInput,
   NotificationItem,
   NotificationListResponse,
-  LookupResponse,
   OverviewResponse,
   RecordListResponse,
   RecordScope,
@@ -38,6 +44,8 @@ import type {
   VrfGroupListResponse,
   WorkHistoryItem,
   WorkHistoryRestoreResponse,
+  WorkPlanExportRequest,
+  WorkPlanProgressResponse,
   WorkflowDocument,
   WorkflowDocumentResponse,
   WorkflowPhaseCompleteResponse,
@@ -77,6 +85,37 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
 
   return response.json() as Promise<T>
+}
+
+async function requestBlob(path: string, options?: RequestInit): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options?.headers ?? {}),
+    },
+    ...options,
+  })
+
+  if (!response.ok) {
+    const raw = await response.text()
+    let message = raw
+    try {
+      message = raw ? JSON.parse(raw).detail ?? raw : raw
+    } catch {
+      message = raw
+    }
+    throw new ApiError(response.status, message || `Request failed with status ${response.status}`)
+  }
+
+  const blob = await response.blob()
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const encodedNameMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i)
+  const basicNameMatch = disposition.match(/filename="?([^";]+)"?/i)
+  const filename = encodedNameMatch?.[1]
+    ? decodeURIComponent(encodedNameMatch[1])
+    : basicNameMatch?.[1] ?? 'workplan.xlsx'
+  return { blob, filename }
 }
 
 export const api = {
@@ -140,6 +179,33 @@ export const api = {
     request<VrfGroupListResponse>(
       `/api/records/vrf?limit=${limit}&exclude_default=${excludeDefault}${name ? `&name=${encodeURIComponent(name)}` : ''}`,
     ),
+  getBgpManagementSnapshot: () => request<BgpManagementResponse>('/api/bgp/management'),
+  createBgpManagementEntry: (payload: {
+    asn: string
+    entry_kind: 'reserved' | 'custom'
+    device_names: string[]
+    note: string
+  }) =>
+    request<BgpManagementManualEntry>('/api/bgp/management/entries', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  deleteBgpManagementEntry: async (entryId: number) => {
+    await request<{ ok: boolean }>(`/api/bgp/management/entries/${entryId}`, { method: 'DELETE' })
+  },
+  updateBgpManagementEntry: (
+    entryId: number,
+    payload: {
+      asn: string
+      entry_kind: 'reserved' | 'custom'
+      device_names: string[]
+      note: string
+    },
+  ) =>
+    request<BgpManagementManualEntry>(`/api/bgp/management/entries/${entryId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
   getVniGroups: (limit = 200, vni = '') =>
     request<VniGroupListResponse>(`/api/records/vni?limit=${limit}${vni ? `&vni=${encodeURIComponent(vni)}` : ''}`),
   getVmacGroups: (limit = 200, vmac = '') =>
@@ -174,6 +240,10 @@ export const api = {
   deleteKanbanCard: async (cardId: number) => {
     await request<{ ok: boolean }>(`/api/kanban/cards/${cardId}`, { method: 'DELETE' })
   },
+  clearKanbanColumnCards: (columnKey: string) =>
+    request<{ ok: boolean; deleted: number }>(`/api/kanban/columns/${encodeURIComponent(columnKey)}/cards`, {
+      method: 'DELETE',
+    }),
   completeKanbanCard: (cardId: number, completedNote: string) =>
     request<WorkHistoryItem>(`/api/history/cards/${cardId}/complete`, {
       method: 'POST',
@@ -186,6 +256,26 @@ export const api = {
     }),
   getKanbanTargetSnapshot: (targetId: number) =>
     request<KanbanTargetSnapshotResponse>(`/api/kanban/targets/${targetId}/snapshot`),
+  startWorkPlanWorkbookJob: (cardId: number, payload: WorkPlanExportRequest) =>
+    request<WorkPlanProgressResponse>(`/api/workplans/cards/${cardId}/jobs`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  getWorkPlanWorkbookJob: (jobId: string) =>
+    request<WorkPlanProgressResponse>(`/api/workplans/jobs/${encodeURIComponent(jobId)}`),
+  downloadWorkPlanWorkbookJob: (jobId: string) =>
+    requestBlob(`/api/workplans/jobs/${encodeURIComponent(jobId)}/download`, {
+      method: 'GET',
+    }),
+  downloadWorkPlanSnapshotArchiveJob: (jobId: string) =>
+    requestBlob(`/api/workplans/jobs/${encodeURIComponent(jobId)}/snapshot-archive`, {
+      method: 'GET',
+    }),
+  downloadWorkPlanWorkbook: (cardId: number, payload: WorkPlanExportRequest) =>
+    requestBlob(`/api/workplans/cards/${cardId}/export`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   getCardReservations: (cardId: number) =>
     request<CardReservationsResponse>(`/api/reservations/cards/${cardId}`),
   createBgpAsReservation: (cardId: number, asn: string) =>
@@ -293,4 +383,23 @@ export const api = {
         .join('&')}`,
     ),
   lookupVrf: (name: string) => request<LookupResponse>(`/api/lookup/vrf?name=${encodeURIComponent(name)}`),
+  getMonitoringSources: () => request<MonitoringSourceConfig[]>('/api/monitoring/sources'),
+  saveMonitoringSources: (sources: MonitoringSourceConfigInput[]) =>
+    request<MonitoringSourceConfig[]>('/api/monitoring/sources', {
+      method: 'PUT',
+      body: JSON.stringify({ sources }),
+    }),
+  getMonitoringLive: () => request<MonitoringDashboardResponse>('/api/monitoring/live'),
+  refreshMonitoringLive: () =>
+    request<MonitoringDashboardResponse>('/api/monitoring/live/refresh', {
+      method: 'POST',
+    }),
+  acknowledgeMonitoringSourceAlerts: (sourceId: number) =>
+    request<MonitoringDashboardResponse>(`/api/monitoring/sources/${sourceId}/acknowledge`, {
+      method: 'POST',
+    }),
+  getMonitoringHistory: (query = '', severity = '', startDate = '', endDate = '', limit = 100, offset = 0) =>
+    request<MonitoringHistoryResponse>(
+      `/api/monitoring/history?query=${encodeURIComponent(query)}&severity=${encodeURIComponent(severity)}&start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}&limit=${limit}&offset=${offset}`,
+    ),
 }

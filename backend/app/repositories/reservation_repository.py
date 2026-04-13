@@ -81,6 +81,18 @@ class ReservationRepository:
     def get_active_vni_reservation(self, vni: str) -> dict[str, Any] | None:
         return self._get_active_by_value("vni", vni)
 
+    def list_active_bgp_as_reservations(self, asn_filter: str | None = None) -> list[dict[str, Any]]:
+        filter_value = str(asn_filter or "").strip().lower()
+        query = self._base_select_sql("bgp_as") + " WHERE r.status = 'reserved'"
+        params: list[Any] = []
+        if filter_value:
+            query += " AND lower(r.asn) LIKE ?"
+            params.append(f"%{filter_value}%")
+        query += " ORDER BY CAST(r.asn AS INTEGER), r.asn"
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [self._serialize_row("bgp_as", row) for row in rows]
+
     def list_active_vni_reservations(self, vni_filter: str | None = None) -> list[dict[str, Any]]:
         filter_value = str(vni_filter or "").strip().lower()
         query = self._base_select_sql("vni") + " WHERE r.status = 'reserved'"

@@ -2,7 +2,10 @@
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from app.schemas.bgp_management import BgpManagementEntryCreateRequest, BgpManagementEntryUpdateRequest
 from app.schemas.responses import (
+    BgpManagementManualEntry,
+    BgpManagementResponse,
     CollectionProgressResponse,
     ConfigSearchResponse,
     ConfigPreviewResponse,
@@ -52,6 +55,71 @@ def list_bgp_records(
     limit: int = Query(default=200, ge=1, le=10000),
 ) -> RecordListResponse:
     return request.app.state.query_service.list_bgp(limit=limit)
+
+
+@router.get('/bgp/management', response_model=BgpManagementResponse)
+def get_bgp_management_snapshot(request: Request) -> BgpManagementResponse:
+    return request.app.state.query_service.get_bgp_management_snapshot()
+
+
+@router.post('/bgp/management/entries', response_model=BgpManagementManualEntry)
+def create_bgp_management_entry(
+    request: Request,
+    payload: BgpManagementEntryCreateRequest,
+) -> BgpManagementManualEntry:
+    _require_editor(request)
+    normalized_asn = payload.asn.strip()
+    if request.app.state.query_service.bgp_as_exists(normalized_asn):
+        raise HTTPException(status_code=409, detail='이미 스냅샷에서 사용 중인 ASN입니다.')
+    existing = request.app.state.bgp_management_repository.get_entry_by_asn(normalized_asn)
+    if existing:
+        raise HTTPException(status_code=409, detail='이미 등록된 ASN입니다.')
+    user = request.state.current_user
+    return request.app.state.bgp_management_repository.create_entry(
+        asn=normalized_asn,
+        entry_kind=payload.entry_kind.value,
+        device_names=payload.device_names,
+        note=payload.note,
+        created_by_user_id=user.get('id'),
+        created_by_name=user.get('display_name') or user.get('username') or '',
+    )
+
+
+@router.delete('/bgp/management/entries/{entry_id}')
+def delete_bgp_management_entry(request: Request, entry_id: int) -> dict[str, bool]:
+    _require_editor(request)
+    deleted = request.app.state.bgp_management_repository.delete_entry(entry_id)
+    if deleted <= 0:
+        raise HTTPException(status_code=404, detail='등록된 항목을 찾을 수 없습니다.')
+    return {'ok': True}
+
+
+@router.patch('/bgp/management/entries/{entry_id}', response_model=BgpManagementManualEntry)
+def update_bgp_management_entry(
+    request: Request,
+    entry_id: int,
+    payload: BgpManagementEntryUpdateRequest,
+) -> BgpManagementManualEntry:
+    _require_editor(request)
+    existing_entry = request.app.state.bgp_management_repository.get_entry(entry_id)
+    if not existing_entry:
+        raise HTTPException(status_code=404, detail='등록된 항목을 찾을 수 없습니다.')
+    normalized_asn = payload.asn.strip()
+    if request.app.state.query_service.bgp_as_exists(normalized_asn):
+        raise HTTPException(status_code=409, detail='이미 스냅샷에서 사용 중인 ASN입니다.')
+    duplicate = request.app.state.bgp_management_repository.get_entry_by_asn(normalized_asn)
+    if duplicate and int(duplicate['id']) != entry_id:
+        raise HTTPException(status_code=409, detail='이미 등록된 ASN입니다.')
+    updated = request.app.state.bgp_management_repository.update_entry(
+        entry_id,
+        asn=normalized_asn,
+        entry_kind=payload.entry_kind.value,
+        device_names=payload.device_names,
+        note=payload.note,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail='등록된 항목을 찾을 수 없습니다.')
+    return updated
 
 
 @router.get('/records/vlan', response_model=RecordListResponse)

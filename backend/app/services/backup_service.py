@@ -14,12 +14,14 @@ class BackupService:
         backend_dir: Path,
         primary_db_path: Path,
         history_db_path: Path,
+        monitoring_db_path: Path,
         config_snapshot_dir: Path,
     ) -> None:
         self.console_dir = Path(console_dir)
         self.backend_dir = Path(backend_dir)
         self.primary_db_path = Path(primary_db_path)
         self.history_db_path = Path(history_db_path)
+        self.monitoring_db_path = Path(monitoring_db_path)
         self.config_snapshot_dir = Path(config_snapshot_dir)
         self.backup_root = self.backend_dir / "data" / "backups"
 
@@ -45,6 +47,7 @@ class BackupService:
 
         self._copy_if_exists(self.primary_db_path, destination / "db" / self.primary_db_path.name)
         self._copy_if_exists(self.history_db_path, destination / "db" / self.history_db_path.name)
+        self._copy_if_exists(self.monitoring_db_path, destination / "db" / self.monitoring_db_path.name)
         self._copy_dir_if_exists(self.config_snapshot_dir, destination / "configs")
         self._copy_dir_if_exists(self.backend_dir / "config", destination / "backend-config")
         self._copy_if_exists(self.backend_dir / ".env", destination / ".env")
@@ -74,6 +77,7 @@ class BackupService:
 
         self._copy_if_exists(source / "db" / self.primary_db_path.name, self.primary_db_path)
         self._copy_if_exists(source / "db" / self.history_db_path.name, self.history_db_path)
+        self._copy_if_exists(source / "db" / self.monitoring_db_path.name, self.monitoring_db_path)
         self._replace_dir(source / "configs", self.config_snapshot_dir)
         self._replace_dir(source / "backend-config", self.backend_dir / "config")
         self._copy_if_exists(source / ".env", self.backend_dir / ".env")

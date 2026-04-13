@@ -33,11 +33,14 @@ import { ApiError, api } from './api'
 import { LoginScreen } from './features/auth/LoginScreen'
 import { UserSettingsModal } from './features/auth/UserSettingsModal'
 import { AutomationConsole } from './features/automation/AutomationConsole'
+import { BgpAsManagementPanel } from './features/bgp/BgpAsManagementPanel'
 import { EdmLinkManager } from './features/edm-links/EdmLinkManager'
 import { WorkHistoryBoard } from './features/history/WorkHistoryBoard'
 import { KanbanBoard } from './features/kanban/KanbanBoard'
+import { MonitoringPrototype } from './features/monitoring/MonitoringPrototype'
 import { WorkflowBoard } from './features/workflow/WorkflowBoard'
 import { WorkPlanBoard } from './features/workplan/WorkPlanBoard'
+import { WorkPlanWriterBoard } from './features/workplan/WorkPlanWriterBoard'
 import type {
   AutomationSource,
   BackupItem,
@@ -73,9 +76,12 @@ type ViewId =
   | 'edm_link'
   | 'automation_ip_tags'
   | 'automation_lldp_tags'
+  | 'monitoring_live'
+  | 'monitoring_history'
   | 'kanban'
   | 'work_history'
   | 'work_tool'
+  | 'work_plan_writer'
   | 'work_plan'
 type ViewMeta = {
   label: string
@@ -121,8 +127,8 @@ const viewMeta: Record<ViewId, ViewMeta> = {
   bgp: {
     label: 'BGP AS',
     eyebrow: 'Routing Context',
-    title: 'BGP AS 사용 현황 조회',
-    description: 'ASN이 현재 어디에서 사용 중인지 조회하고, 전체 BGP 목록도 함께 확인합니다.',
+    title: 'BGP AS 현황 관리',
+    description: '서비스 풀 단위로 BGP AS 범위를 보고, 현재 점유 현황을 막대 범위와 표로 함께 확인합니다.',
     icon: GitBranchPlus,
   },
   vlan: {
@@ -188,6 +194,20 @@ const viewMeta: Record<ViewId, ViewMeta> = {
     description: '실제 LLDP neighbor와 CVP LLDP device/interface TAG를 비교해 추가/삭제 대상을 계산하고 workspace submit까지 실행합니다.',
     icon: Wrench,
   },
+  monitoring_live: {
+    label: '실시간 이벤트',
+    eyebrow: 'Live Event Domain',
+    title: 'CVP 실시간 이벤트',
+    description: 'WEB UI 예제 구조를 기준으로 6개 CVP 이벤트 카드와 우측 상세 드로어를 구성합니다.',
+    icon: Bell,
+  },
+  monitoring_history: {
+    label: '이벤트 DB',
+    eyebrow: 'Stored Event Search',
+    title: '이벤트 DB 조회',
+    description: '수집한 이벤트를 DB 기준으로 조회하고, 검색/필터/상세를 별도 작업영역에서 확인합니다.',
+    icon: Database,
+  },
   kanban: {
     label: '작업 보드',
     eyebrow: 'Kanban Workflow',
@@ -216,11 +236,19 @@ const viewMeta: Record<ViewId, ViewMeta> = {
     description: '작업 카드와 연결된 실행 절차, 단계 진행률, 템플릿, 블록 기반 작업 문서를 관리합니다.',
     icon: ClipboardList,
   },
+  work_plan_writer: {
+    label: '작업 계획서',
+    eyebrow: 'Draft Workbook',
+    title: '작업 계획서 작성',
+    description: '작업 카드에 할당된 대상장비 전체를 기준으로 작업 전 xlsx 초안을 생성합니다.',
+    icon: FileText,
+  },
 }
 
 const managementViews: ViewId[] = ['ip', 'bgp', 'vlan', 'vmac', 'vni', 'vrf', 'devices', 'config', 'edm_link']
 const automationViews: ViewId[] = ['automation_ip_tags', 'automation_lldp_tags']
-const kanbanViews: ViewId[] = ['kanban', 'work_tool', 'work_plan', 'work_history']
+const monitoringViews: ViewId[] = ['monitoring_live', 'monitoring_history']
+const kanbanViews: ViewId[] = ['kanban', 'work_tool', 'work_plan_writer', 'work_plan', 'work_history']
 
 const initialLookupState = {
   loading: false,
@@ -294,12 +322,13 @@ function App() {
   const [activeView, setActiveView] = useState<ViewId>('home')
   const [managementOpen, setManagementOpen] = useState(true)
   const [automationOpen, setAutomationOpen] = useState(true)
+  const [monitoringOpen, setMonitoringOpen] = useState(true)
   const [kanbanOpen, setKanbanOpen] = useState(true)
-  const [railNavScrollable, setRailNavScrollable] = useState(false)
   const [overview, setOverview] = useState<OverviewResponse | null>(null)
   const [overviewError, setOverviewError] = useState('')
   const [collectionProgress, setCollectionProgress] = useState<CollectionProgressResponse | null>(null)
   const [refreshError, setRefreshError] = useState('')
+  const [snapshotRefreshOpen, setSnapshotRefreshOpen] = useState(false)
   const [backups, setBackups] = useState<BackupItem[]>([])
   const [backupsLoading, setBackupsLoading] = useState(false)
   const [backupsError, setBackupsError] = useState('')
@@ -363,7 +392,6 @@ function App() {
 
   const [ipQuery, setIpQuery] = useState('')
   const [ipVrf, setIpVrf] = useState('')
-  const [bgpAsn, setBgpAsn] = useState('')
   const [vlanId, setVlanId] = useState('')
   const [vlanName, setVlanName] = useState('')
 
@@ -371,7 +399,16 @@ function App() {
   const currentView = viewMeta[activeView]
   const currentScope = isRecordScope(activeView) ? activeView : null
   const activeConfigDevice = devices.find((item) => item.device_id === selectedDeviceId)
-  const showSnapshotRefreshPanels = !['kanban', 'work_history', 'work_tool', 'work_plan', 'edm_link'].includes(activeView)
+  const showSnapshotRefreshPanels = ![
+    'kanban',
+    'work_history',
+    'work_tool',
+    'work_plan',
+    'work_plan_writer',
+    'edm_link',
+    'monitoring_live',
+    'monitoring_history',
+  ].includes(activeView)
 
   const filteredDevices = useMemo(() => {
     const token = deferredDeviceSearch.trim().toLowerCase()
@@ -450,6 +487,12 @@ function App() {
 
     return () => window.clearInterval(timer)
   }, [collectionProgress?.status])
+
+  useEffect(() => {
+    if (collectionProgress?.status === 'running' || refreshError) {
+      setSnapshotRefreshOpen(true)
+    }
+  }, [collectionProgress?.status, refreshError])
   /* eslint-enable react-hooks/exhaustive-deps */
 
   useEffect(() => {
@@ -520,30 +563,6 @@ function App() {
       setSelectedLldpAutomationDeviceIds([])
     }
   }, [automationSources, selectedIpAutomationSource, selectedLldpAutomationSource])
-
-  useEffect(() => {
-    const nav = document.querySelector<HTMLElement>('.rail-nav.grouped')
-    if (!nav) {
-      return
-    }
-
-    const measureOverflow = () => {
-      const nextScrollable = nav.scrollHeight > nav.clientHeight + 2
-      setRailNavScrollable((current) => (current === nextScrollable ? current : nextScrollable))
-    }
-
-    measureOverflow()
-    const frameId = window.requestAnimationFrame(measureOverflow)
-    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measureOverflow) : null
-    resizeObserver?.observe(nav)
-    window.addEventListener('resize', measureOverflow)
-
-    return () => {
-      window.cancelAnimationFrame(frameId)
-      resizeObserver?.disconnect()
-      window.removeEventListener('resize', measureOverflow)
-    }
-  }, [managementOpen, automationOpen, kanbanOpen, showSnapshotRefreshPanels])
 
   useEffect(() => {
     if (!configSearchOverlay.open && !showConfigGuide) {
@@ -1073,9 +1092,6 @@ function App() {
         case 'ip':
           result = await api.lookupIp(ipQuery, ipVrf || undefined)
           break
-        case 'bgp':
-          result = await api.lookupBgp(bgpAsn)
-          break
         case 'vlan':
           result = await api.lookupVlan(vlanId || undefined, vlanName || undefined)
           break
@@ -1272,7 +1288,7 @@ function App() {
           <p>CVP 등록 장비의 현황과 사용 여부를 조회하는 읽기 전용 운영 포털입니다.</p>
         </div>
 
-        <nav className={`rail-nav grouped ${railNavScrollable ? 'scrollable' : 'static'}`}>
+        <nav className="rail-nav grouped">
           <button className={`rail-home-link ${activeView === 'home' ? 'active' : ''}`} onClick={() => changeView('home')}>
             <House />
             <div>
@@ -1295,6 +1311,15 @@ function App() {
             open={managementOpen}
             onToggle={() => setManagementOpen((value) => !value)}
             items={managementViews}
+            activeView={activeView}
+            onSelect={changeView}
+          />
+
+          <SidebarSection
+            title="모니터링"
+            open={monitoringOpen}
+            onToggle={() => setMonitoringOpen((value) => !value)}
+            items={monitoringViews}
             activeView={activeView}
             onSelect={changeView}
           />
@@ -1361,8 +1386,8 @@ function App() {
           </button>
         </div>
       </aside>
-      <main className="workspace">
-        {!kanbanViews.includes(activeView) ? (
+      <main className={`workspace ${showSnapshotRefreshPanels ? 'workspace-compact' : ''}`}>
+        {!kanbanViews.includes(activeView) && activeView !== 'bgp' && activeView !== 'monitoring_live' && activeView !== 'monitoring_history' ? (
           <section className="hero-panel compact">
             <div className="hero-copy">
               <p className="eyebrow">{currentView.eyebrow}</p>
@@ -1383,9 +1408,18 @@ function App() {
           </section>
         ) : null}
 
-        {showSnapshotRefreshPanels && collectionProgress ? <CollectionProgressCard progress={collectionProgress} /> : null}
+        {showSnapshotRefreshPanels ? (
+          <SnapshotRefreshPanel
+            open={snapshotRefreshOpen}
+            onToggle={() => setSnapshotRefreshOpen((current) => !current)}
+            progress={collectionProgress}
+            latestCollectionAt={overview?.latest_collection_at ?? ''}
+            latestStatus={overview?.latest_job?.status}
+            refreshError={refreshError}
+            onStartRefresh={() => void handleStartRefresh()}
+          />
+        ) : null}
         {overviewError ? <div className="message-banner error">{overviewError}</div> : null}
-        {showSnapshotRefreshPanels && refreshError ? <div className="message-banner error">{refreshError}</div> : null}
 
         {activeView === 'home'
           ? renderHome({
@@ -1529,7 +1563,9 @@ function App() {
           </section>
         ) : null}
 
-        {currentScope ? (
+        {activeView === 'bgp' ? <BgpAsManagementPanel /> : null}
+
+        {currentScope && (activeView === 'ip' || activeView === 'vlan') ? (
           <section className="stack-layout">
             <div className="main-card">
               <div className="card-head">
@@ -1556,8 +1592,6 @@ function App() {
                     <Field label="VRF (선택)" value={ipVrf} onChange={setIpVrf} placeholder="예: default, MGMT, Tenant_A" />
                   </>
                 ) : null}
-
-                {activeView === 'bgp' ? <Field label="AS 번호" value={bgpAsn} onChange={setBgpAsn} placeholder="예: 65101" /> : null}
 
                 {activeView === 'vlan' ? (
                   <>
@@ -2106,6 +2140,18 @@ function App() {
           </section>
         ) : null}
 
+        {activeView === 'monitoring_live' ? (
+          <section className="stack-layout">
+            <MonitoringPrototype mode="live" />
+          </section>
+        ) : null}
+
+        {activeView === 'monitoring_history' ? (
+          <section className="stack-layout">
+            <MonitoringPrototype mode="history" />
+          </section>
+        ) : null}
+
         {activeView === 'kanban' ? (
           <section className="stack-layout">
             <KanbanBoard users={users} />
@@ -2121,6 +2167,12 @@ function App() {
         {activeView === 'work_tool' ? (
           <section className="stack-layout">
             <WorkPlanBoard />
+          </section>
+        ) : null}
+
+        {activeView === 'work_plan_writer' ? (
+          <section className="stack-layout">
+            <WorkPlanWriterBoard />
           </section>
         ) : null}
 
@@ -2543,9 +2595,9 @@ function translateProgressStep(step: string) {
   return labels[step] ?? step
 }
 
-function CollectionProgressCard({ progress }: { progress: CollectionProgressResponse }) {
+function CollectionProgressCard({ progress, compact = false }: { progress: CollectionProgressResponse; compact?: boolean }) {
   return (
-    <section className="progress-card">
+    <section className={`progress-card ${compact ? 'compact' : ''}`}>
       <div className="progress-head">
         <div>
           <p className="section-kicker">Snapshot Refresh</p>
@@ -2557,6 +2609,66 @@ function CollectionProgressCard({ progress }: { progress: CollectionProgressResp
       <div className="progress-bar">
         <span style={{ width: `${progress.progress_percent}%` }} />
       </div>
+    </section>
+  )
+}
+
+function SnapshotRefreshPanel({
+  open,
+  onToggle,
+  progress,
+  latestCollectionAt,
+  latestStatus,
+  refreshError,
+  onStartRefresh,
+}: {
+  open: boolean
+  onToggle: () => void
+  progress: CollectionProgressResponse | null
+  latestCollectionAt: string
+  latestStatus?: string
+  refreshError: string
+  onStartRefresh: () => void
+}) {
+  const refreshing = progress?.status === 'running'
+
+  return (
+    <section className={`snapshot-refresh-shell ${open ? 'open' : ''}`}>
+      <button className="snapshot-refresh-toggle" type="button" onClick={onToggle}>
+        <div className="snapshot-refresh-toggle-copy">
+          <RefreshCcw className={refreshing ? 'spin' : ''} size={16} />
+          <div>
+            <p className="section-kicker">Snapshot Refresh</p>
+            <strong>스냅샷 갱신 패널</strong>
+          </div>
+        </div>
+        <div className="snapshot-refresh-toggle-meta">
+          <span>{translateCollectionStatus(progress, latestStatus)}</span>
+          {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </div>
+      </button>
+
+      {open ? (
+        <div className="snapshot-refresh-body">
+          <div className="snapshot-refresh-row">
+            <div className="hero-chip">
+              <Clock3 size={15} />
+              <span>{latestCollectionAt ? formatDateTime(latestCollectionAt) : '수집 기록 없음'}</span>
+            </div>
+            <div className={`hero-chip ${refreshing ? 'accent' : ''}`}>
+              <Activity size={15} />
+              <span>{translateCollectionStatus(progress, latestStatus)}</span>
+            </div>
+            <button className="refresh-button" type="button" onClick={onStartRefresh} disabled={refreshing}>
+              <RefreshCcw className={refreshing ? 'spin' : ''} />
+              <span>{refreshing ? '스냅샷 갱신 중' : '스냅샷 갱신'}</span>
+            </button>
+          </div>
+
+          {progress ? <CollectionProgressCard progress={progress} compact /> : null}
+          {refreshError ? <div className="message-banner error">{refreshError}</div> : null}
+        </div>
+      ) : null}
     </section>
   )
 }

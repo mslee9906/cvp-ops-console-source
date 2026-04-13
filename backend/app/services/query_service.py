@@ -4,6 +4,7 @@ import ipaddress
 from pathlib import Path
 from typing import Any
 
+from app.repositories.bgp_management_repository import BgpManagementRepository
 from app.repositories.reservation_repository import ReservationRepository
 from app.repositories.snapshot_repository import SnapshotRepository
 from app.schemas.responses import LookupResponse, LookupStatus
@@ -14,9 +15,11 @@ class QueryService:
         self,
         repository: SnapshotRepository,
         reservation_repository: ReservationRepository | None = None,
+        bgp_management_repository: BgpManagementRepository | None = None,
     ) -> None:
         self.repository = repository
         self.reservation_repository = reservation_repository
+        self.bgp_management_repository = bgp_management_repository
 
     def get_overview(self, source_mode: str) -> dict[str, Any]:
         overview = self.repository.get_overview()
@@ -56,6 +59,59 @@ class QueryService:
                 for item in rows
             ],
         }
+
+    def get_bgp_management_snapshot(self) -> dict[str, Any]:
+        rows = self.repository.list_bgp_entries(limit=None)
+        manual_entries = self.bgp_management_repository.list_entries() if self.bgp_management_repository else []
+        numeric_asns: list[int] = []
+        for raw_asn in [*(str(item.get('asn', '')) for item in rows), *(entry['asn'] for entry in manual_entries)]:
+            token = str(raw_asn).strip()
+            if not token.isdigit():
+                continue
+            value = int(token)
+            if value <= 0:
+                continue
+            numeric_asns.append(value)
+        numeric_asns = sorted(set(numeric_asns))
+
+        return {
+            'scope': 'bgp_management',
+            'total_count': len(rows) + len(manual_entries),
+            'min_asn': numeric_asns[0] if numeric_asns else None,
+            'max_asn': numeric_asns[-1] if numeric_asns else None,
+            'items': [
+                {
+                    'device_id': item['device_id'],
+                    'hostname': item['hostname'],
+                    'vrf': item['vrf'],
+                    'asn': item['asn'],
+                    'router_id': str(item.get('router_id') or ''),
+                    'shutdown': bool(item['shutdown']),
+                }
+                for item in rows
+            ],
+            'reservations': [],
+            'manual_entries': [
+                {
+                    'id': item['id'],
+                    'asn': item['asn'],
+                    'entry_kind': item['entry_kind'],
+                    'device_names': item['device_names'],
+                    'note': item['note'],
+                    'created_by_user_id': item['created_by_user_id'],
+                    'created_by_name': item['created_by_name'],
+                    'created_at': item['created_at'],
+                    'updated_at': item['updated_at'],
+                }
+                for item in manual_entries
+            ],
+        }
+
+    def bgp_as_exists(self, asn: str) -> bool:
+        normalized = str(asn or '').strip()
+        if not normalized:
+            return False
+        return any(str(item.get('asn') or '').strip() == normalized for item in self.repository.list_bgp_entries(limit=None))
 
     def list_vrf(self, limit: int = 200) -> dict[str, Any]:
         rows = self.repository.list_vrf_entries(limit=limit)

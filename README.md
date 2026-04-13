@@ -1,14 +1,14 @@
 # CVP Ops Console
 
-Read-only prototype console for CVP-managed devices.
+Operational console for CVP-managed devices with snapshot lookup, work management, and lightweight monitoring.
 
-This app is designed for simple operational lookup:
+This app is designed for day-to-day operations:
 
 - Check whether an IP, VLAN, BGP AS, or VRF is already visible in the current CVP snapshot
 - Browse CVP-registered devices and open the latest saved running config
 - Support operator judgment before allocating values to a new device or service
-
-It is not positioned as an incident detector or change automation tool.
+- Monitor selected CVP event streams and persist live/history events
+- Create incident cards on the work board from alert-class events
 
 ## Current Scope
 
@@ -44,6 +44,10 @@ cvp-ops-console/
 - Device explorer
   - lists indexed devices
   - opens the latest config backup stored on disk
+- Monitoring
+  - subscribes to selected CVP event types
+  - stores live/history events in a separate monitoring database
+  - links alert-class events into the kanban incident column
 
 ## Local Run
 
@@ -105,6 +109,7 @@ The portable package contains:
 - backend dependencies already installed
 - the built frontend static files
 - the local `cloudvision-python-trunk` library
+- the bundled monitoring runtime copied from `CVP_Monitoring/app`
 - simple launchers: `run-live.bat` and `run-demo.bat`
 
 Target PC workflow:

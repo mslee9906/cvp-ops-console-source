@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BGP AS 관리 프로토타입</title>
+    <style>
+      :root{--panel:rgba(255,255,255,.94);--soft:#f8fbfd;--line:#d8e1ea;--lineStrong:#c3d0dd;--text:#1f2937;--muted:#64748b;--blue:#2563eb;--blueSoft:#eff6ff;--teal:#0f766e;--amber:#d97706;--amberSoft:#fff7ed;--violet:#7c3aed;--violetSoft:#f5f3ff;--rose:#dc2626;--roseSoft:#fef2f2;--slateSoft:#f1f5f9;--shadow:0 14px 36px rgba(15,23,42,.08)}
+      *{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:"Segoe UI","Pretendard","Noto Sans KR",sans-serif;color:var(--text);background:radial-gradient(circle at top left,rgba(37,99,235,.09),transparent 26rem),linear-gradient(180deg,#f7f9fb 0%,#edf2f7 100%)}body{padding:16px}
+      .page{display:grid;gap:14px}.shell{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:14px;align-items:start}.card{background:var(--panel);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow)}.topGrid{display:contents}
+      .rangePanel{grid-column:1}.poolPanel{grid-column:2;grid-row:1 / span 2}.tablePanel{grid-column:1}
+      .rangePanel{padding:18px 20px 20px;display:grid;gap:14px}.poolPanel{padding:18px;display:grid;gap:14px}.head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.head h1,.head h2,.head h3,.head p{margin:0}.head h1,.head h2{font-size:20px;letter-spacing:-.03em}.head h3{font-size:16px;letter-spacing:-.02em}.head p{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.55}
+      .chips,.metaRow,.legend,.poolActions,.badgeRow,.formGrid{display:grid;gap:10px}.chips{display:flex;flex-wrap:wrap;gap:8px}.chip,.legendItem,.pill,.tag,.mini{display:inline-flex;align-items:center;min-height:30px;padding:0 11px;border-radius:999px;border:1px solid var(--line);background:#fff;font-size:12px;font-weight:700}
+      .metaRow{grid-template-columns:repeat(4,minmax(0,1fr))}.metaBox{padding:14px;border-radius:18px;border:1px solid var(--line);background:var(--soft)}.metaBox span{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:800}.metaBox strong{display:block;margin-top:8px;font-size:24px;letter-spacing:-.04em}
+      .rangeBoard{padding:16px;border-radius:20px;background:linear-gradient(180deg,#fbfdff,#f3f7fb);border:1px solid var(--line)}.rangeTop{display:flex;justify-content:space-between;gap:12px;align-items:flex-end;margin-bottom:12px}.rangeTop strong{display:block;font-size:17px}.rangeTop small{display:block;margin-top:4px;color:var(--muted);font-size:12px}
+      .stripShell{position:relative;padding:16px 12px 14px;border-radius:18px;background:#fff;border:1px solid var(--line)}.stripAxis{display:grid;grid-template-columns:92px minmax(0,1fr) 92px;gap:10px;align-items:center}.edge{font-family:Consolas,monospace;font-size:12px;font-weight:700;color:var(--muted)}.edge:last-child{text-align:right}
+      .stripTrack{position:relative;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:1px;min-height:42px;padding:6px 0;border-radius:12px;background:#e7edf4;overflow:hidden}.asnSeg{min-width:2px;cursor:pointer;transition:transform .12s ease,filter .12s ease}.asnSeg:hover{transform:scaleY(1.18);filter:brightness(1.02)}.asnSeg.in-use{background:var(--blue)}.asnSeg.reserved{background:var(--amber)}.asnSeg.available{background:#cfd8e3}.asnSeg.blocked{background:var(--rose)}.asnSeg.legacy{background:var(--violet)}
+      .tooltip{position:absolute;top:12px;left:12px;z-index:5;min-width:220px;max-width:320px;padding:12px 13px;border-radius:16px;background:rgba(15,23,42,.96);color:rgba(248,250,252,.95);border:1px solid rgba(255,255,255,.08);box-shadow:0 16px 26px rgba(15,23,42,.2);pointer-events:none;opacity:0;transform:translateY(-4px);transition:opacity .12s ease,transform .12s ease}.tooltip.show{opacity:1;transform:translateY(0)}.tooltip strong{display:block;font-size:14px}.tooltip p{margin:6px 0 0;color:rgba(248,250,252,.78);font-size:12px;line-height:1.5}.tooltip small{display:block;margin-top:8px;color:rgba(248,250,252,.64);font-size:11px}
+      .legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.legendItem{background:#fff}.dot{width:9px;height:9px;border-radius:50%;margin-right:8px}.dot.in-use{background:var(--blue)}.dot.reserved{background:var(--amber)}.dot.available{background:#cfd8e3}.dot.blocked{background:var(--rose)}.dot.legacy{background:var(--violet)}
+      .poolList{display:grid;gap:10px}.poolItem{padding:14px;border-radius:18px;border:1px solid var(--line);background:var(--soft)}.poolItem.active{border-color:#bfdbfe;background:#f8fbff}.poolItem strong{display:block;font-size:14px}.rangeText{margin-top:4px;font-family:Consolas,monospace;font-size:12px;color:var(--muted)}.poolMeta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 10px;margin-top:10px;font-size:12px;color:var(--muted)}
+      .poolBar{margin-top:10px;height:8px;border-radius:999px;overflow:hidden;display:grid;grid-auto-flow:column;background:#e6edf5}.poolBar span{height:100%}.u{background:var(--blue)}.r{background:var(--amber)}.f{background:#cfd8e3}.b{background:var(--rose)}.l{background:var(--violet)}.poolActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+      .formGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.full{grid-column:1/-1}input,select,button{font:inherit}input,select{width:100%;min-height:40px;padding:0 12px;border-radius:12px;border:1px solid var(--line);background:#fff;color:var(--text)}.btn{min-height:38px;padding:0 12px;border-radius:12px;border:1px solid transparent;font-weight:700;cursor:pointer}.btn.primary{background:linear-gradient(180deg,#2563eb,#1d4ed8);color:#fff}.btn.soft{background:var(--soft);border-color:var(--line);color:var(--text)}
+      .tablePanel{padding:0;overflow:hidden}.tableTools{padding:16px 18px 14px;display:grid;grid-template-columns:1fr 150px 150px 120px;gap:10px;border-bottom:1px solid var(--line)}.tableHead{padding:12px 18px;display:flex;justify-content:space-between;gap:12px;align-items:center;background:#fbfcfd;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px}.tableWrap{overflow:auto;max-height:calc(100vh - 388px)}table{width:100%;border-collapse:collapse}thead th{position:sticky;top:0;padding:12px 14px;background:#f8fafc;border-bottom:1px solid var(--lineStrong);color:var(--muted);text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.1em}tbody td{padding:14px;border-bottom:1px solid #edf2f7;vertical-align:top;font-size:13px}tbody tr:hover{background:#f8fbff}
+      .mono{font-family:Consolas,monospace}.pill{min-height:26px;font-size:11px;font-weight:800}.pill.in-use{background:var(--blueSoft);border-color:#bfdbfe;color:#1d4ed8}.pill.reserved{background:var(--amberSoft);border-color:#fed7aa;color:#b45309}.pill.available{background:var(--slateSoft);border-color:#e2e8f0;color:#64748b}.pill.blocked{background:var(--roseSoft);border-color:#fecaca;color:#b91c1c}.pill.legacy{background:var(--violetSoft);border-color:#ddd6fe;color:#6d28d9}
+      .badgeRow{display:flex;flex-wrap:wrap;gap:6px}.mini{min-height:24px;padding:0 8px;font-size:11px}.mini.vrf{background:var(--blueSoft);border-color:#bfdbfe;color:#1d4ed8}.mini.tag{background:#f8fafc;color:#475569}
+      @media (max-width:1380px){.shell{grid-template-columns:minmax(0,1fr) 320px}.tableTools{grid-template-columns:1fr 150px 150px}.tableTools .btn{grid-column:1/-1}}
+      @media (max-width:1180px){.shell,.metaRow,.formGrid{grid-template-columns:1fr}.poolPanel,.rangePanel,.tablePanel{grid-column:auto;grid-row:auto}.tableTools{grid-template-columns:1fr}.tableWrap{max-height:none}}
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="shell">
+        <section class="topGrid">
+          <article class="card rangePanel">
+            <div class="head">
+              <div>
+                <h1 id="rangeTitle">서비스 풀 범위</h1>
+                <p id="rangeSub">선택한 서비스 풀 기준 AS 범위를 일자 그래프로 확인합니다.</p>
+              </div>
+              <div class="chips"><span class="chip" id="rangeOwner">Owner</span></div>
+            </div>
+            <div class="metaRow" id="rangeMeta"></div>
+            <div class="rangeBoard">
+              <div class="rangeTop">
+                <div><strong id="selectedPoolName">Pool Name</strong><small id="selectedPoolRange">64512 - 64600</small></div>
+                <div class="chips"><span class="chip" id="reservedCountChip">예약 0</span><span class="chip" id="availableCountChip">가용 0</span></div>
+              </div>
+              <div class="stripShell">
+                <div class="stripAxis">
+                  <div class="edge mono" id="rangeMin">64512</div>
+                  <div class="stripTrack" id="stripTrack"></div>
+                  <div class="edge mono" id="rangeMax">64600</div>
+                </div>
+                <div id="tooltip" class="tooltip"></div>
+                <div class="legend">
+                  <span class="legendItem"><span class="dot in-use"></span>사용중</span>
+                  <span class="legendItem"><span class="dot reserved"></span>예약</span>
+                  <span class="legendItem"><span class="dot available"></span>가용</span>
+                  <span class="legendItem"><span class="dot blocked"></span>차단</span>
+                  <span class="legendItem"><span class="dot legacy"></span>레거시</span>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <aside class="card poolPanel">
+            <div class="head">
+              <div><h2>서비스 풀</h2><p>풀 등록, 지정, 삭제를 이 영역에서 처리합니다.</p></div>
+            </div>
+            <div id="poolList" class="poolList"></div>
+            <div class="head" style="margin-top:2px">
+              <div><h3>서비스 풀 등록</h3><p>이름과 범위를 지정해서 새 풀을 추가합니다.</p></div>
+            </div>
+            <div class="formGrid">
+              <input id="poolNameInput" class="full" type="text" placeholder="서비스 풀 이름" />
+              <input id="poolStartInput" type="number" placeholder="최소 AS" />
+              <input id="poolEndInput" type="number" placeholder="최대 AS" />
+              <select id="poolToneInput"><option value="core">Blue</option><option value="tenant">Teal</option><option value="security">Amber</option><option value="legacy">Violet</option></select>
+              <input id="poolOwnerInput" type="text" placeholder="담당 조직" />
+              <button id="addPoolButton" class="btn primary full" type="button">서비스 풀 등록</button>
+            </div>
+          </aside>
+        </section>
+
+        <section class="card tablePanel">
+          <div class="tableTools">
+            <input id="searchInput" type="search" placeholder="ASN, 설명, 장비, VRF, 태그, 담당으로 검색" />
+            <select id="statusFilter"><option value="all">전체 상태</option><option value="in-use">사용중</option><option value="reserved">예약</option><option value="available">가용</option><option value="blocked">차단</option><option value="legacy">레거시</option></select>
+            <select id="focusFilter"><option value="all">전체 표시</option><option value="focus">사용/예약/예외만</option></select>
+            <button class="btn primary" type="button">예약 등록</button>
+          </div>
+          <div class="tableHead"><span id="tableTitle">선택된 서비스 풀</span><span id="tableCount">0 rows</span></div>
+          <div class="tableWrap">
+            <table>
+              <thead><tr><th>AS 번호</th><th>상태</th><th>설명 / 용도</th><th>장비</th><th>VRF</th><th>태그</th><th>담당</th></tr></thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+    <script>
+      const initialPools=[{id:"core",tone:"core",name:"Core Backbone (KRJP)",owner:"NetEng-Core",start:64512,end:64600,assignments:{64512:{status:"in-use",desc:"KR-Seoul Core Router iBGP",owner:"NetEng-Core",devices:["RT-CORE-SEL-01","RT-CORE-SEL-02"],vrfs:["default","VRF-MGMT","VRF-INFRA"],tags:["core","critical"]},64513:{status:"in-use",desc:"JP-Tokyo Core Router iBGP",owner:"NetEng-Core",devices:["RT-CORE-TYO-01","RT-CORE-TYO-02"],vrfs:["default","VRF-MGMT"],tags:["core","jp"]},64514:{status:"reserved",desc:"US-West Core Expansion",owner:"Global-Ops",devices:[],vrfs:[],tags:["planned","expansion"]},64520:{status:"in-use",desc:"Seoul Edge Peering",owner:"NetEng-Edge",devices:["RT-EDGE-SEL-01"],vrfs:["default","VRF-PEERING-A"],tags:["edge","peering"]},64544:{status:"blocked",desc:"Carrier Interop Reserved Block",owner:"NetEng-Core",devices:[],vrfs:[],tags:["blocked","carrier"]},64561:{status:"legacy",desc:"Legacy Core Handoff",owner:"Infra-Ops",devices:["RT-LEGACY-01"],vrfs:["VRF-OLD"],tags:["legacy"]}}},{id:"tenant",tone:"tenant",name:"Cloud Tenant Fabric",owner:"CloudOps",start:64601,end:64980,assignments:{64601:{status:"in-use",desc:"Tenant A (DB Zone)",owner:"CloudOps",devices:["LEAF-101","LEAF-102"],vrfs:["VRF-TN-A-DB"],tags:["tenant-a","db-zone"]},64602:{status:"in-use",desc:"Tenant A (Web Zone)",owner:"CloudOps",devices:["LEAF-103","LEAF-104"],vrfs:["VRF-TN-A-WEB"],tags:["tenant-a","web-zone"]},64603:{status:"legacy",desc:"Tenant B (Legacy)",owner:"CloudOps",devices:["LEAF-201"],vrfs:["VRF-TN-B"],tags:["legacy","tenant-b"]},64610:{status:"in-use",desc:"Shared Services",owner:"SecOps",devices:["FW-CORE-01","FW-CORE-02"],vrfs:["VRF-SHARED","VRF-SEC"],tags:["shared","security"]},64618:{status:"reserved",desc:"Tenant C New Build",owner:"CloudOps",devices:[],vrfs:[],tags:["planned","tenant-c"]},64661:{status:"reserved",desc:"Tenant D Expansion",owner:"CloudOps",devices:[],vrfs:[],tags:["planned"]},64711:{status:"blocked",desc:"Customer Hold",owner:"CloudOps",devices:[],vrfs:[],tags:["blocked"]}}},{id:"security",tone:"security",name:"Security / DMZ Edge",owner:"Security-Network",start:64981,end:65250,assignments:{64981:{status:"in-use",desc:"DMZ Edge Active",owner:"Security-Network",devices:["FW-DMZ-01","FW-DMZ-02"],vrfs:["VRF-DMZ"],tags:["dmz"]},64990:{status:"reserved",desc:"Zero Trust Gateway Expansion",owner:"Security-Network",devices:[],vrfs:[],tags:["planned","ztna"]},65011:{status:"blocked",desc:"Manual Hold by Security Policy",owner:"Security-Network",devices:[],vrfs:[],tags:["policy","blocked"]},65033:{status:"legacy",desc:"Legacy Security Interop",owner:"Security-Network",devices:["FW-OLD-01"],vrfs:["VRF-SEC-OLD"],tags:["legacy"]}}},{id:"legacy",tone:"legacy",name:"Legacy / Special Cases",owner:"Infra-Ops",start:65251,end:65500,assignments:{65260:{status:"in-use",desc:"Legacy MPLS Interop",owner:"Infra-Ops",devices:["PE-LEGACY-01"],vrfs:["VRF-MPLS-LG"],tags:["legacy","mpls"]},65270:{status:"reserved",desc:"Special Handoff Pending",owner:"Infra-Ops",devices:[],vrfs:[],tags:["handoff","pending"]},65311:{status:"available",desc:"Available Slot",owner:"Infra-Ops",devices:[],vrfs:[],tags:["free"]}}}];
+      const statusMeta={"in-use":{label:"사용중",className:"in-use"},reserved:{label:"예약",className:"reserved"},available:{label:"가용",className:"available"},blocked:{label:"차단",className:"blocked"},legacy:{label:"레거시",className:"legacy"}};
+      const state={pools:structuredClone(initialPools),activePoolId:"core",search:"",status:"all",focus:"all"};
+      const active=()=>state.pools.find(pool=>pool.id===state.activePoolId)||state.pools[0];
+      function rowsFor(pool){const rows=[];for(let asn=pool.start;asn<=pool.end;asn+=1){const override=pool.assignments[String(asn)]??pool.assignments[asn]??null;rows.push({asn,status:override?.status??"available",desc:override?.desc??"Available Slot",owner:override?.owner??pool.owner,devices:override?.devices??[],vrfs:override?.vrfs??[],tags:override?.tags??[]})}return rows}
+      function counts(pool){return rowsFor(pool).reduce((acc,row)=>{acc[row.status]+=1;return acc},{"in-use":0,reserved:0,available:0,blocked:0,legacy:0})}
+      function visibleRows(){const token=state.search.trim().toLowerCase();return rowsFor(active()).filter(row=>{const statusOk=state.status==="all"||row.status===state.status;const focusOk=state.focus==="focus"?row.status!=="available":true;const hay=[row.asn,row.desc,row.owner,...row.devices,...row.vrfs,...row.tags].join(" ").toLowerCase();const searchOk=token?hay.includes(token):true;return statusOk&&focusOk&&searchOk})}
+      function totalMeta(){const items=state.pools.flatMap(pool=>rowsFor(pool));return{total:items.length,used:items.filter(x=>x.status==="in-use").length,reserved:items.filter(x=>x.status==="reserved").length,available:items.filter(x=>x.status==="available").length}}
+      function renderMeta(){const pool=active();const c=counts(pool);document.getElementById("rangeTitle").textContent=`${pool.name} 범위`;document.getElementById("rangeSub").textContent=`${pool.start} - ${pool.end} 범위를 최소 AS부터 최대 AS까지 일자 그래프로 표시합니다.`;document.getElementById("rangeOwner").textContent=pool.owner;document.getElementById("selectedPoolName").textContent=pool.name;document.getElementById("selectedPoolRange").textContent=`${pool.start} - ${pool.end}`;document.getElementById("rangeMin").textContent=pool.start;document.getElementById("rangeMax").textContent=pool.end;document.getElementById("reservedCountChip").textContent=`예약 ${c.reserved}`;document.getElementById("availableCountChip").textContent=`가용 ${c.available}`;const total=totalMeta();document.getElementById("rangeMeta").innerHTML=[["전체 AS",pool.end-pool.start+1],["사용중",c["in-use"]],["예약",c.reserved],["가용",c.available]].map(([l,v])=>`<div class="metaBox"><span>${l}</span><strong>${v}</strong></div>`).join("")}
+      function renderStrip(){const pool=active();const rows=rowsFor(pool);const strip=document.getElementById("stripTrack");const tooltip=document.getElementById("tooltip");strip.innerHTML=rows.map(row=>`<div class="asnSeg ${row.status}" data-asn="${row.asn}" data-status="${statusMeta[row.status].label}" data-desc="${row.desc.replace(/"/g,"&quot;")}" data-owner="${row.owner.replace(/"/g,"&quot;")}"></div>`).join("");strip.querySelectorAll(".asnSeg").forEach(seg=>{seg.addEventListener("mouseenter",e=>{tooltip.innerHTML=`<strong>AS ${e.currentTarget.dataset.asn}</strong><p>${e.currentTarget.dataset.status} / ${e.currentTarget.dataset.desc}</p><small>${pool.name} · ${e.currentTarget.dataset.owner}</small>`;tooltip.classList.add("show")});seg.addEventListener("mousemove",e=>{const host=strip.getBoundingClientRect();const body=document.body.getBoundingClientRect();tooltip.style.left=`${Math.min(e.clientX-host.left+8,host.width-240)}px`;tooltip.style.top=`${Math.max(e.clientY-body.top-64,0)}px`});seg.addEventListener("mouseleave",()=>tooltip.classList.remove("show"))})}
+      function renderPools(){const root=document.getElementById("poolList");root.innerHTML=state.pools.map(pool=>{const c=counts(pool);const total=pool.end-pool.start+1;const u=Math.round(c["in-use"]/total*100),r=Math.round(c.reserved/total*100),b=Math.round(c.blocked/total*100),l=Math.round(c.legacy/total*100),f=Math.max(100-u-r-b-l,0);return`<article class="poolItem ${pool.id===state.activePoolId?"active":""}"><strong>${pool.name}</strong><div class="rangeText">${pool.start} - ${pool.end}</div><div class="poolBar"><span class="u" style="width:${u}%"></span><span class="r" style="width:${r}%"></span><span class="b" style="width:${b}%"></span><span class="l" style="width:${l}%"></span><span class="f" style="width:${f}%"></span></div><div class="poolMeta"><div>사용 ${c["in-use"]}</div><div>예약 ${c.reserved}</div><div>가용 ${c.available}</div><div>${pool.owner}</div></div><div class="poolActions"><button class="btn primary designate" data-id="${pool.id}" type="button">지정</button><button class="btn soft remove" data-id="${pool.id}" type="button">삭제</button></div></article>`}).join("");root.querySelectorAll(".designate").forEach(btn=>btn.onclick=()=>{state.activePoolId=btn.dataset.id;renderAll()});root.querySelectorAll(".remove").forEach(btn=>btn.onclick=()=>{const next=state.pools.filter(pool=>pool.id!==btn.dataset.id);if(!next.length)return;state.pools=next;if(!state.pools.some(pool=>pool.id===state.activePoolId))state.activePoolId=state.pools[0].id;renderAll()})}
+      function renderTable(){const pool=active();const rows=visibleRows();document.getElementById("tableTitle").textContent=`${pool.name} | ${pool.start} - ${pool.end}`;document.getElementById("tableCount").textContent=`${rows.length} rows`;document.getElementById("tableBody").innerHTML=rows.map(row=>`<tr><td><strong class="mono">${row.asn}</strong></td><td><span class="pill ${statusMeta[row.status].className}">${statusMeta[row.status].label}</span></td><td><strong>${row.desc}</strong><div style="margin-top:6px;color:var(--muted)">${pool.name}</div></td><td><div class="badgeRow">${row.devices.length?row.devices.map(device=>`<span class="mini">${device}</span>`).join(""):'<span style="color:var(--muted)">-</span>'}</div></td><td><div class="badgeRow">${row.vrfs.length?row.vrfs.map(vrf=>`<span class="mini vrf">${vrf}</span>`).join(""):'<span style="color:var(--muted)">-</span>'}</div></td><td><div class="badgeRow">${row.tags.length?row.tags.map(tag=>`<span class="mini tag">${tag}</span>`).join(""):'<span style="color:var(--muted)">-</span>'}</div></td><td>${row.owner}</td></tr>`).join("")}
+      function addPool(){const name=document.getElementById("poolNameInput").value.trim();const start=Number(document.getElementById("poolStartInput").value);const end=Number(document.getElementById("poolEndInput").value);const tone=document.getElementById("poolToneInput").value;const owner=document.getElementById("poolOwnerInput").value.trim()||"Unassigned";if(!name||!Number.isFinite(start)||!Number.isFinite(end)||end<start)return;const id=`pool-${Date.now()}`;state.pools=[...state.pools,{id,tone,name,owner,start,end,assignments:{[start]:{status:"reserved",desc:`${name} Initial Reservation`,owner,devices:[],vrfs:[],tags:["planned"]}}}];state.activePoolId=id;document.getElementById("poolNameInput").value="";document.getElementById("poolStartInput").value="";document.getElementById("poolEndInput").value="";document.getElementById("poolOwnerInput").value="";renderAll()}
+      function renderAll(){renderMeta();renderStrip();renderPools();renderTable()}
+      document.getElementById("addPoolButton").onclick=addPool;document.getElementById("searchInput").oninput=e=>{state.search=e.target.value;renderTable()};document.getElementById("statusFilter").onchange=e=>{state.status=e.target.value;renderTable()};document.getElementById("focusFilter").onchange=e=>{state.focus=e.target.value;renderTable()};renderAll();
+    </script>
+  </body>
+</html>
