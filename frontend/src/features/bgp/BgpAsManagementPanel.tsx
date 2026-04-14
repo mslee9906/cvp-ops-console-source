@@ -20,7 +20,7 @@ type DisplayRow = {
   key: string
   asn: string
   asnNumber: number | null
-  status: 'in_use' | 'reserved' | 'custom'
+  status: 'in_use' | 'reserved' | 'custom' | 'available'
   statusLabel: string
   deviceNames: string[]
   detailPrimary: string
@@ -42,6 +42,7 @@ type StripSegment = {
 type AsnRange = { start: number; end: number }
 
 const STORAGE_KEY = 'cvp-ops-console.bgp-service-pools.v3'
+const MAX_AVAILABLE_ROWS = 4000
 const toneOptions: Array<{ value: PoolTone; label: string }> = [
   { value: 'core', label: '코어' },
   { value: 'tenant', label: '테넌트' },
@@ -233,6 +234,38 @@ function buildOccupiedSegments(pool: ServicePool, rows: DisplayRow[]): StripSegm
   flush()
   return segments
 }
+function buildAvailableRows(pool: ServicePool, rows: DisplayRow[], scope: AsnRange | null = null, maxRows: number = MAX_AVAILABLE_ROWS): { rows: DisplayRow[]; truncated: boolean } {
+  const occupiedAsn = new Set<number>()
+  rows.forEach((row) => {
+    if (row.asnNumber !== null) occupiedAsn.add(row.asnNumber)
+  })
+  const scopeStart = scope ? Math.max(pool.rangeStart, scope.start) : pool.rangeStart
+  const scopeEnd = scope ? Math.min(pool.rangeEnd, scope.end) : pool.rangeEnd
+  if (scopeStart > scopeEnd) return { rows: [], truncated: false }
+  const availableRows: DisplayRow[] = []
+  let truncated = false
+  for (let asn = scopeStart; asn <= scopeEnd; asn += 1) {
+    if (occupiedAsn.has(asn)) continue
+    if (availableRows.length >= maxRows) {
+      truncated = true
+      break
+    }
+    availableRows.push({
+      key: `available-${pool.id}-${asn}`,
+      asn: String(asn),
+      asnNumber: asn,
+      status: 'available',
+      statusLabel: '가용',
+      deviceNames: [],
+      detailPrimary: '미할당 ASN',
+      detailSecondary: '-',
+      poolId: pool.id,
+      poolName: pool.name,
+      sortKey: asn,
+    })
+  }
+  return { rows: availableRows, truncated }
+}
 function buildPoolUsage(pool: ServicePool, rows: DisplayRow[]) {
   const total = Math.max(pool.rangeEnd - pool.rangeStart + 1, 0)
   const usedCount = rows.filter((row) => row.poolId === pool.id && row.status === 'in_use').length
@@ -266,6 +299,8 @@ export function BgpAsManagementPanel() {
   const [hoveredBlock, setHoveredBlock] = useState<StripSegment | null>(null)
   const [rangeFilter, setRangeFilter] = useState<AsnRange | null>(null)
   const [rangeDragStart, setRangeDragStart] = useState<number | null>(null)
+  const [rangeDragMoved, setRangeDragMoved] = useState(false)
+  const [rangeDragHadFilter, setRangeDragHadFilter] = useState(false)
   const [isRangeDragging, setIsRangeDragging] = useState(false)
   const stripTrackRef = useRef<HTMLDivElement | null>(null)
   const deferredSearch = useDeferredValue(search)
@@ -279,6 +314,16 @@ export function BgpAsManagementPanel() {
   const selectedPool = useMemo(() => pools.find((pool) => pool.id === selectedPoolId) ?? pools[0], [pools, selectedPoolId])
   const selectedPoolTotal = selectedPool ? Math.max(selectedPool.rangeEnd - selectedPool.rangeStart + 1, 0) : 0
   const poolRows = useMemo(() => (selectedPool ? allRows.filter((row) => poolIncludesAsn(selectedPool, row.asnNumber)) : allRows), [allRows, selectedPool])
+  const includeAvailableRows = !isRangeDragging && Boolean(selectedPool?.locked || rangeFilter)
+  const availableResult = useMemo(() => {
+    if (!selectedPool || !includeAvailableRows) return { rows: [] as DisplayRow[], truncated: false }
+    return buildAvailableRows(selectedPool, poolRows, rangeFilter, MAX_AVAILABLE_ROWS)
+  }, [includeAvailableRows, poolRows, rangeFilter, selectedPool])
+  const availableRows = availableResult.rows
+  const tableRows = useMemo(
+    () => (availableRows.length ? [...poolRows, ...availableRows].sort((left, right) => left.sortKey - right.sortKey) : poolRows),
+    [availableRows, poolRows],
+  )
   const stripSegments = useMemo(() => (selectedPool ? buildOccupiedSegments(selectedPool, poolRows) : []), [poolRows, selectedPool])
 
   useEffect(() => { void loadSnapshot() }, [])
@@ -288,6 +333,8 @@ export function BgpAsManagementPanel() {
     setHoveredBlock(null)
     setRangeFilter(null)
     setRangeDragStart(null)
+    setRangeDragMoved(false)
+    setRangeDragHadFilter(false)
     setIsRangeDragging(false)
   }, [selectedPoolId])
   useEffect(() => {
@@ -397,14 +444,19 @@ export function BgpAsManagementPanel() {
     if (startAsn === null) return
     event.currentTarget.setPointerCapture(event.pointerId)
     setHoveredBlock(null)
+    setRangeDragHadFilter(Boolean(rangeFilter))
+    setRangeDragMoved(false)
     setIsRangeDragging(true)
     setRangeDragStart(startAsn)
-    setRangeFilter({ start: startAsn, end: startAsn })
+    if (!rangeFilter) setRangeFilter({ start: startAsn, end: startAsn })
   }
   function handleStripPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
     if (!isRangeDragging || rangeDragStart === null) return
     const currentAsn = resolveAsnByClientX(event.clientX)
     if (currentAsn === null) return
+    const moved = currentAsn !== rangeDragStart
+    if (moved) setRangeDragMoved(true)
+    if (!rangeFilter && !moved) return
     setRangeFilter({
       start: Math.min(rangeDragStart, currentAsn),
       end: Math.max(rangeDragStart, currentAsn),
@@ -415,18 +467,26 @@ export function BgpAsManagementPanel() {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId)
     }
+    if (!rangeDragMoved && rangeDragHadFilter) {
+      clearRangeFilter()
+      return
+    }
     setIsRangeDragging(false)
     setRangeDragStart(null)
+    setRangeDragMoved(false)
+    setRangeDragHadFilter(false)
   }
   function clearRangeFilter() {
     setRangeFilter(null)
     setRangeDragStart(null)
+    setRangeDragMoved(false)
+    setRangeDragHadFilter(false)
     setIsRangeDragging(false)
   }
 
-  const filteredRows = poolRows.filter((row) => {
+  const filteredRows = tableRows.filter((row) => {
     if (viewMode === 'used' && row.status !== 'in_use') return false
-    if (viewMode === 'reserved' && row.status === 'in_use') return false
+    if (viewMode === 'reserved' && row.status !== 'reserved' && row.status !== 'custom') return false
     if (rangeFilter) {
       if (row.asnNumber === null) return false
       if (row.asnNumber < rangeFilter.start || row.asnNumber > rangeFilter.end) return false
@@ -522,6 +582,7 @@ export function BgpAsManagementPanel() {
                   <span className="bgp-proto-legend-item"><span className="bgp-proto-dot reserved" />예약 / 기타</span>
                   <span className="bgp-proto-legend-item"><span className="bgp-proto-dot available" />미사용</span>
                 </div>
+                <p className="bgp-proto-range-hint">드래그로 조회 범위를 선택하고, 범위를 해제하려면 바를 한 번 클릭해 전체로 돌아옵니다.</p>
               </div>
             ) : null}
           </article>
@@ -550,7 +611,18 @@ export function BgpAsManagementPanel() {
                 </button>
               </div>
             </div>
-            <div className="bgp-proto-table-head"><span>{selectedPool?.name ?? 'BGP AS 전체 범위'} · 총 {formatCount(filteredRows.length)}건</span><span>{rangeFilter ? `드래그 범위 필터: ${rangeFilterLabel}` : '표 헤더는 스크롤 중에도 상단에 고정됩니다.'}</span></div>
+            <div className="bgp-proto-table-head">
+              <span>{selectedPool?.name ?? 'BGP AS 전체 범위'} · 총 {formatCount(filteredRows.length)}건</span>
+              <span>
+                {availableResult.truncated
+                  ? `가용 ASN이 많아 상위 ${formatCount(MAX_AVAILABLE_ROWS)}건만 표시됩니다. 범위를 더 좁혀주세요.`
+                  : rangeFilter
+                    ? `드래그 범위 필터: ${rangeFilterLabel}`
+                    : selectedPool?.locked
+                      ? '전체 범위에서는 가용 ASN도 함께 조회됩니다.'
+                      : '표 헤더는 스크롤 중에도 상단에 고정됩니다.'}
+              </span>
+            </div>
             <div className="bgp-proto-table-wrap bgp-table-shell">
               <table className="data-table">
                 <thead><tr><th>ASN</th><th>상태</th><th>장비 목록</th><th>상세</th><th>서비스 풀</th></tr></thead>
