@@ -31,6 +31,7 @@ from app.repositories.notification_repository import NotificationRepository
 from app.repositories.monitoring_repository import MonitoringRepository
 from app.repositories.reservation_repository import ReservationRepository
 from app.repositories.snapshot_repository import SnapshotRepository
+from app.repositories.winscp_profile_repository import WinScpProfileRepository
 from app.repositories.workflow_repository import WorkflowRepository
 from app.services.auth_service import AuthService
 from app.services.automation_service import AutomationService
@@ -44,7 +45,8 @@ from app.services.monitoring_service import MonitoringService
 from app.services.query_service import QueryService
 from app.services.reservation_service import ReservationService
 from app.services.workflow_service import WorkflowService
-from app.services.workplan_service import WorkPlanService
+from app.services.winscp_service import WinScpService
+from app.services.workplan_runtime_service import WorkPlanRuntimeService
 from app.storage.config_files import ConfigFileManager
 
 
@@ -67,6 +69,7 @@ notification_repository = NotificationRepository(settings.db_path)
 reservation_repository = ReservationRepository(settings.db_path)
 bgp_management_repository = BgpManagementRepository(settings.db_path)
 workflow_repository = WorkflowRepository(settings.db_path)
+winscp_profile_repository = WinScpProfileRepository(settings.db_path)
 file_manager = ConfigFileManager(settings.config_dir)
 reservation_service = ReservationService(reservation_repository, kanban_repository, repository)
 collection_service = CollectionService(repository, file_manager, settings, reservation_service=reservation_service)
@@ -79,7 +82,8 @@ notification_service = NotificationService(notification_repository)
 monitoring_service = MonitoringService(monitoring_repository, settings, kanban_service)
 workflow_service = WorkflowService(workflow_repository, kanban_repository, notification_service)
 history_service = HistoryService(history_repository, kanban_repository, workflow_repository)
-workplan_service = WorkPlanService(kanban_service, settings)
+workplan_service = WorkPlanRuntimeService(kanban_service, settings)
+winscp_service = WinScpService(winscp_profile_repository, workplan_service)
 backup_service = BackupService(
     console_dir=settings.console_dir,
     backend_dir=settings.backend_dir,
@@ -118,6 +122,7 @@ app.state.workplan_service = workplan_service
 app.state.backup_service = backup_service
 app.state.source_mode = "demo"
 app.state.settings = settings
+app.state.winscp_service = winscp_service
 app.include_router(auth_router, prefix="/api/auth")
 app.include_router(router, prefix="/api")
 app.include_router(automation_router, prefix="/api/automation")
@@ -155,6 +160,7 @@ def bootstrap_demo_snapshot() -> None:
     bgp_management_repository.initialize()
     workflow_service.initialize()
     history_service.initialize()
+    winscp_service.initialize()
     latest_job = collection_service.ensure_seed_data()
     reservation_service.reconcile_snapshot()
     monitoring_service.start()

@@ -43,9 +43,13 @@ import type {
   VniGroupListResponse,
   VrfGroupListResponse,
   WorkHistoryItem,
+  WorkPlanEvidenceSummary,
+  WorkPlanEvidenceUploadResponse,
   WorkHistoryRestoreResponse,
   WorkPlanExportRequest,
   WorkPlanProgressResponse,
+  WinScpProfileConfig,
+  WinScpProfileInput,
   WorkflowDocument,
   WorkflowDocumentResponse,
   WorkflowPhaseCompleteResponse,
@@ -261,6 +265,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  getWorkPlanEvidence: (cardId: number, projectName: string) =>
+    request<WorkPlanEvidenceSummary>(
+      `/api/workplans/cards/${cardId}/evidence?project_name=${encodeURIComponent(projectName)}`,
+    ),
   getWorkPlanWorkbookJob: (jobId: string) =>
     request<WorkPlanProgressResponse>(`/api/workplans/jobs/${encodeURIComponent(jobId)}`),
   downloadWorkPlanWorkbookJob: (jobId: string) =>
@@ -273,6 +281,17 @@ export const api = {
     }),
   downloadWorkPlanWorkbook: (cardId: number, payload: WorkPlanExportRequest) =>
     requestBlob(`/api/workplans/cards/${cardId}/export`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  getWinScpProfiles: () => request<WinScpProfileConfig[]>('/api/workplans/winscp/profiles'),
+  saveWinScpProfiles: (profiles: WinScpProfileInput[]) =>
+    request<WinScpProfileConfig[]>('/api/workplans/winscp/profiles', {
+      method: 'PUT',
+      body: JSON.stringify({ profiles }),
+    }),
+  uploadWorkPlanEvidence: (cardId: number, payload: { project_name: string; profile_id?: number | null }) =>
+    request<WorkPlanEvidenceUploadResponse>(`/api/workplans/cards/${cardId}/evidence/upload`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),

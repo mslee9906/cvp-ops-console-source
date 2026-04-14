@@ -101,6 +101,7 @@ class WorkPlanProgressResponse(BaseModel):
     job_id: str
     card_id: int | None = None
     project_name: str = ""
+    step_label: str = "작업 전"
     status: str
     progress_percent: int
     step: str

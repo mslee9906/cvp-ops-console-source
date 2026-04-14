@@ -440,12 +440,16 @@ export interface WorkHistoryRestoreResponse {
 
 export interface WorkPlanExportRequest {
   project_name: string
+  step_label: '작업 전' | '작업 후'
+  source_workbook_name?: string
+  source_workbook_base64?: string
 }
 
 export interface WorkPlanProgressResponse {
   job_id: string
   card_id: number | null
   project_name: string
+  step_label: string
   status: string
   progress_percent: number
   step: string
@@ -456,6 +460,60 @@ export interface WorkPlanProgressResponse {
   filename: string
   error_message: string
   download_ready: boolean
+}
+
+export interface WorkPlanEvidenceStageSummary {
+  step_label: '작업 전' | '작업 후'
+  exists: boolean
+  updated_at: string
+  workbook_filename: string
+  source_workbook_filename: string
+  snapshot_archive_filename: string
+  snapshot_output_count: number
+  history_count: number
+}
+
+export interface WorkPlanEvidenceSummary {
+  card_id: number
+  project_name: string
+  evidence_key: string
+  root_path: string
+  latest_path: string
+  before: WorkPlanEvidenceStageSummary
+  after: WorkPlanEvidenceStageSummary
+  upload_log_count: number
+  upload_logs: string[]
+}
+
+export interface WinScpProfileInput {
+  name: string
+  winscp_path: string
+  protocol: 'sftp' | 'scp' | 'ftp'
+  host: string
+  port: number
+  username: string
+  password: string
+  remote_path: string
+  host_key: string
+  enabled: boolean
+  is_default: boolean
+}
+
+export interface WinScpProfileConfig extends WinScpProfileInput {
+  id: number
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkPlanEvidenceUploadResponse {
+  profile_id: number
+  profile_name: string
+  card_id: number
+  project_name: string
+  uploaded_at: string
+  remote_path: string
+  local_path: string
+  log_path: string
 }
 
 export interface BackupItem {

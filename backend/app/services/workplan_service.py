@@ -100,12 +100,18 @@ class WorkPlanService:
     def start_export_job(self, card_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         card = self.kanban_service.get_card(card_id) or {}
         project_name = str(payload.get("project_name") or card.get("title") or card.get("card_code") or "").strip()
+        step_label = self._normalize_step_label(payload.get("step_label"))
+        source_workbook_path = Path(str(payload.get("source_workbook_path") or "").strip()) if payload.get("source_workbook_path") else None
+        step_label = self._normalize_step_label(payload.get("step_label"))
+        source_workbook_path = Path(str(payload.get("source_workbook_path") or "").strip()) if payload.get("source_workbook_path") else None
+        step_label = self._normalize_step_label(payload.get("step_label"))
         now = self._now_iso()
         job_id = uuid4().hex
         job_state = {
             "job_id": job_id,
             "card_id": card_id,
             "project_name": project_name,
+            "step_label": step_label,
             "status": "queued",
             "progress_percent": 1,
             "step": "queued",
@@ -117,8 +123,18 @@ class WorkPlanService:
             "error_message": "",
             "download_ready": False,
             "result_path": "",
+            "source_workbook_name": "",
         }
-        worker = Thread(target=self._run_export_job, args=(job_id, card_id, dict(payload)), daemon=True)
+        payload_copy = dict(payload)
+        payload_copy["step_label"] = step_label
+        if str(payload.get("source_workbook_base64") or "").strip():
+            uploaded_path, uploaded_name = self._save_uploaded_workbook(job_id, payload)
+            payload_copy["source_workbook_path"] = str(uploaded_path)
+            payload_copy["source_workbook_name"] = uploaded_name
+            job_state["source_workbook_name"] = uploaded_name
+        elif step_label == "작업 후":
+            raise ValueError("작업 후 작업계획서는 기존 작업계획서 xlsx 업로드가 필요합니다.")
+        worker = Thread(target=self._run_export_job, args=(job_id, card_id, payload_copy), daemon=True)
         with self._job_lock:
             self._jobs[job_id] = job_state
             self._job_threads[job_id] = worker
@@ -172,11 +188,13 @@ class WorkPlanService:
 
     def _run_export_job(self, job_id: str, card_id: int, payload: dict[str, Any]) -> None:
         try:
+            step_label = self._normalize_step_label(payload.get("step_label"))
             self._set_job_progress(
                 job_id,
                 status="running",
                 progress_percent=2,
                 step="prepare",
+                step_label=step_label,
                 detail="작업 계획서 생성을 시작합니다.",
             )
             self._log_job(job_id, f"작업 계획서 생성 시작: card_id={card_id}")
@@ -185,6 +203,14 @@ class WorkPlanService:
             result_path = output_dir / (filename or f"{job_id}.xlsx")
             with result_path.open("wb") as file_handle:
                 file_handle.write(stream.getvalue())
+            self._sync_job_artifacts_to_evidence(
+                job_id=job_id,
+                card_id=card_id,
+                project_name=project_name,
+                step_label=step_label,
+                workbook_path=result_path,
+                source_workbook_path=Path(str(payload.get("source_workbook_path") or "").strip()) if payload.get("source_workbook_path") else None,
+            )
             finished_at = self._now_iso()
             self._log_job(job_id, f"작업 계획서 생성 완료: filename={filename}, result_path={result_path}")
             self._set_job_progress(
@@ -200,6 +226,7 @@ class WorkPlanService:
                 error_message="",
                 result_path=str(result_path),
                 download_ready=True,
+                step_label=step_label,
             )
         except Exception as exc:
             finished_at = self._now_iso()

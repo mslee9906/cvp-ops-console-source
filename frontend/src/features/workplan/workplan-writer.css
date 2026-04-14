@@ -163,6 +163,36 @@
   box-shadow: 0 0 0 4px rgba(31, 111, 235, 0.08);
 }
 
+.planwriter-field-hint,
+.planwriter-stat-sub {
+  color: #6d7b91;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.planwriter-step-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.planwriter-step-toggle button {
+  min-height: 42px;
+  border-radius: 14px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface-soft);
+  color: #314158;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.planwriter-step-toggle button.active {
+  background: linear-gradient(135deg, rgba(31, 111, 235, 0.14), rgba(74, 158, 217, 0.12));
+  border-color: rgba(31, 111, 235, 0.25);
+  color: #184f86;
+}
+
 .planwriter-fixed-stage {
   padding: 10px 12px;
   border-radius: 16px;
@@ -318,6 +348,75 @@
   gap: 10px;
 }
 
+.planwriter-upload-row,
+.planwriter-profile-flags {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+}
+
+.planwriter-upload-row .planwriter-field {
+  flex: 1 1 auto;
+}
+
+.planwriter-log-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.planwriter-log-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(31, 111, 235, 0.08);
+  color: #22578f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.planwriter-profile-list {
+  display: grid;
+  gap: 12px;
+}
+
+.planwriter-profile-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px 13px;
+  border-radius: 16px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface-soft);
+}
+
+.planwriter-profile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.planwriter-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.planwriter-profile-flags {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+}
+
+.planwriter-profile-flags label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #55657b;
+  font-size: 13px;
+}
+
 .planwriter-target-card {
   display: grid;
   gap: 8px;
@@ -370,7 +469,14 @@
 @media (max-width: 1180px) {
   .planwriter-grid,
   .planwriter-meta-grid,
-  .planwriter-meta-grid.expanded {
+  .planwriter-meta-grid.expanded,
+  .planwriter-profile-grid {
     grid-template-columns: 1fr;
+  }
+
+  .planwriter-upload-row,
+  .planwriter-profile-flags {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
