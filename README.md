@@ -159,3 +159,11 @@ For on-prem systems with self-signed TLS, the backend will try to fetch the serv
 - Config files are stored on disk under `backend/data/configs/`
 - SQLite data is stored under `backend/data/db/`
 - If a refresh fails, the previous snapshot is preserved and only the latest job status changes to `failed`
+
+
+## API Request
+
+```cmd
+curl -i -c cookies.txt -H "Content-Type: application/json" -d "{\"username\":\"ID\",\"password\":\"PASSWORD\"}" http://192.168.x.x:8000/api/auth/login
+curl -s -b cookies.txt http://192.168.x.x:8000/api/history | python -m json.tool
+```
